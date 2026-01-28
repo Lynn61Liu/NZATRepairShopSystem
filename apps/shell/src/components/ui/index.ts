@@ -7,3 +7,4 @@ export * from "./InfoRow";
 export * from "./TagPill";
 export * from "./Tabs";
 export * from "./EmptyState";
+export * from "./Alert";

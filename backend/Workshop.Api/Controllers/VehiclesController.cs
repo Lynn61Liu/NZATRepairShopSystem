@@ -62,6 +62,35 @@ public class VehiclesController : ControllerBase
         });
     }
 
+    [HttpGet("by-plate")]
+    public async Task<IActionResult> GetByPlate([FromQuery] string plate, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(plate))
+            return BadRequest(new { error = "Plate is required." });
+
+        var normalized = NormalizePlate(plate);
+        var vehicle = await _db.Vehicles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Plate == normalized, ct);
+
+        if (vehicle is null)
+            return NotFound(new { error = "Vehicle not found." });
+
+        return Ok(new
+        {
+            vehicle = new
+            {
+                vehicle.Plate,
+                vehicle.Make,
+                vehicle.Model,
+                vehicle.Year,
+                vehicle.Vin,
+                vehicle.Odometer,
+                vehicle.UpdatedAt
+            }
+        });
+    }
+
     private static string NormalizePlate(string plate)
         => new string(plate.Trim().ToUpperInvariant().Where(char.IsLetterOrDigit).ToArray());
 }

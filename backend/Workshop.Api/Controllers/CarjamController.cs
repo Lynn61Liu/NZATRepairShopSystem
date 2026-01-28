@@ -1,3 +1,4 @@
+using System;
 using CarjamImporter;
 using Microsoft.AspNetCore.Mvc;
 using Workshop.Api.DTOs;
@@ -17,7 +18,9 @@ public class CarjamController : ControllerBase
 
     [HttpPost("import")]
     public async Task<IActionResult> Import([FromBody] CarjamImportRequest req, CancellationToken ct)
+
     {
+        Console.WriteLine("-------API Import Vehicle by Plate:", req?.Plate);
         if (req == null || string.IsNullOrWhiteSpace(req.Plate))
             return BadRequest(new { success = false, error = "Plate is required." });
 
