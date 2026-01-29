@@ -34,6 +34,8 @@ public class NewJobController : ControllerBase
 
         var plate = NormalizePlate(req.Plate);
         var vehicle = await _db.Vehicles.FirstOrDefaultAsync(x => x.Plate == plate, ct);
+      
+      
         if (vehicle is null)
             return BadRequest(new { error = "Vehicle not found for plate." });
 
