@@ -6,6 +6,9 @@ namespace Workshop.Api.Data;
 public class AppDbContext : DbContext
 {
     public DbSet<Vehicle> Vehicles => Set<Vehicle>();
+    public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<Job> Jobs => Set<Job>();
+    public DbSet<WofRecord> WofRecords => Set<WofRecord>();
 
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
@@ -49,5 +52,36 @@ public class AppDbContext : DbContext
         e.Property(x => x.UpdatedAt)
             .HasColumnName("updated_at")
             .HasDefaultValueSql("now()");
+
+        var c = modelBuilder.Entity<Customer>();
+        c.ToTable("customers");
+        c.HasKey(x => x.Id);
+        c.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        c.Property(x => x.Type).HasColumnName("type").IsRequired();
+        c.Property(x => x.Name).HasColumnName("name").IsRequired();
+        c.Property(x => x.Phone).HasColumnName("phone");
+        c.Property(x => x.Email).HasColumnName("email");
+        c.Property(x => x.Address).HasColumnName("address");
+        c.Property(x => x.BusinessCode).HasColumnName("business_code");
+        c.Property(x => x.Notes).HasColumnName("notes");
+
+        var j = modelBuilder.Entity<Job>();
+        j.ToTable("jobs");
+        j.HasKey(x => x.Id);
+        j.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        j.Property(x => x.Status).HasColumnName("status").IsRequired();
+        j.Property(x => x.IsUrgent).HasColumnName("is_urgent");
+        j.Property(x => x.VehicleId).HasColumnName("vehicle_id");
+        j.Property(x => x.CustomerId).HasColumnName("customer_id");
+        j.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
+        j.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
+
+        var w = modelBuilder.Entity<WofRecord>();
+        w.ToTable("wof");
+        w.HasKey(x => x.Id);
+        w.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        w.Property(x => x.JobId).HasColumnName("job_id").IsRequired();
+        w.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
+        w.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
     }
 }

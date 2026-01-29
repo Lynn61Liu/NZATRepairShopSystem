@@ -49,33 +49,45 @@ export function NewJobPage() {
     setVehicleInfo(null);
   };
 
+  const fetchVehicleFromDb = async (plate: string) => {
+    const res = await fetch(`/api/vehicles/by-plate?plate=${encodeURIComponent(plate)}`);
+    const data = await res.json().catch(() => null);
+
+    if (res.ok) return data;
+    if (res.status === 404) return null;
+    throw new Error(data?.error || "读取数据库失败");
+  };
+
   const importVehicle = async (plate: string) => {
 
-     console.log('in importVehicle:', plate, lastRequestedPlate, importState);
+    //  console.log('in importVehicle:', plate, lastRequestedPlate, importState);
     if (plate === lastRequestedPlate || importState === "loading") return;
     setLastRequestedPlate(plate);
     setImportState("loading");
     setImportError("");
     setVehicleInfo(null);
-// API call
-// after fetch vehicle info based on plate number the DB save all info
-// 
+
     try {
-      console.log('-------PLATE CALL API:', plate);
+      // console.log('-------PLATE CALL API:', plate);
       const res = await fetch("/api/carjam/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ plate }),
       });
 
-      console.log('【【【【【【res:】】】】】】】】', res);
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        throw new Error(data?.error || "导入失败，请稍后重试");
+        throw new Error(data?.error || "导入失败，请稍后重试 or Link");
       }
 
-      setVehicleInfo(extractVehicleInfo(data));
+      const dbData = await fetchVehicleFromDb(plate);
+      if (!dbData) {
+        throw new Error("已导入，但未在数据库中找到车辆");
+      }
+
+      console.log("vehicle from db", dbData?.vehicle ?? dbData);
+      setVehicleInfo(extractVehicleInfo(dbData));
       setImportState("success");
     } catch (err) {
       setImportState("error");
@@ -89,15 +101,36 @@ export function NewJobPage() {
 
     setRego(normalized);
 
+    // IF vehicle has saved data, do not auto import
+    
     if (shouldAutoImport(normalized)) {
-      console.log('=========AUTO IMPORT TRIGGERED=======');
-      importVehicle(normalized);
+      (async () => {
+        try {
+          setImportState("loading");
+          setImportError("");
+          setVehicleInfo(null);
+
+          const dbData = await fetchVehicleFromDb(normalized);
+          if (dbData) {
+            console.log("vehicle from db", dbData?.vehicle ?? dbData);
+            setVehicleInfo(extractVehicleInfo(dbData));
+            setImportState("success");
+            return;
+          }
+
+          setImportState("idle");
+          await importVehicle(normalized);
+        } catch (err) {
+          setImportState("error");
+          setImportError(err instanceof Error ? err.message : "导入失败，请稍后重试");
+        }
+      })();
     } else {
       resetImportState();
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setFormAlert(null);
     if (!rego) {
       setFormAlert({ variant: "error", message: "请输入车牌号" });
@@ -116,20 +149,41 @@ export function NewJobPage() {
       return;
     }
 
-    console.log({
-      rego,
-      vehicleInfo,
-      selectedServices,
-      customerType,
-      personalName,
-      personalPhone,
-      personalWechat,
-      personalEmail,
-      businessId,
-      notes,
-    });
+    const selectedBusiness = businessOptions.find((biz) => biz.id === businessId);
+    const customerName = customerType === "personal" ? personalName : selectedBusiness?.label ?? "";
 
-    setFormAlert({ variant: "success", message: "保存成功！" });
+    try {
+      const res = await fetch("/api/newJob", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plate: rego,
+          services: selectedServices,
+          notes,
+          customer: {
+            type: customerType,
+            name: customerName,
+            phone: customerType === "personal" ? personalPhone : undefined,
+            email: customerType === "personal" ? personalEmail : undefined,
+            businessCode: customerType === "business" ? businessId : undefined,
+            notes,
+          },
+        }),
+      });
+
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || "工单保存失败，请稍后重试");
+      }
+
+      console.log("++++++++++++++++++++job created", data);
+      setFormAlert({ variant: "success", message: "工单保存成功！" });
+    } catch (err) {
+      setFormAlert({
+        variant: "error",
+        message: err instanceof Error ? err.message : "工单保存失败，请稍后重试",
+      });
+    }
   };
 
   return (

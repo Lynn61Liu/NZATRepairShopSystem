@@ -21,46 +21,46 @@ public class VehiclesController : ControllerBase
         _scraper = scraper;
     }
 
-    [HttpPost("import-by-plate")]
-    public async Task<IActionResult> ImportByPlate([FromBody] ImportVehicleRequest req, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(req.Plate))
-            return BadRequest("Plate is required.");
+    // [HttpPost("import-by-plate")]
+    // public async Task<IActionResult> ImportByPlate([FromBody] ImportVehicleRequest req, CancellationToken ct)
+    // {
+    //     if (string.IsNullOrWhiteSpace(req.Plate))
+    //         return BadRequest("Plate is required.");
 
-        var plate = NormalizePlate(req.Plate);
+    //     var plate = NormalizePlate(req.Plate);
 
-        var jsonText = await _scraper.GetVehicleJsonByPlateAsync(plate, ct);
-        var jsonDoc = JsonDocument.Parse(jsonText);
+    //     var jsonText = await _scraper.GetVehicleJsonByPlateAsync(plate, ct);
+    //     var jsonDoc = JsonDocument.Parse(jsonText);
 
-        // TODO: 下一步我们根据真实 JSON 结构，把字段准确解析出来
-        // 先把 raw_json 存进去（你选的方案 2 的核心）
-        var existing = await _db.Vehicles.FirstOrDefaultAsync(x => x.Plate == plate, ct);
+    //     // TODO: 下一步我们根据真实 JSON 结构，把字段准确解析出来
+    //     // 先把 raw_json 存进去（你选的方案 2 的核心）
+    //     var existing = await _db.Vehicles.FirstOrDefaultAsync(x => x.Plate == plate, ct);
 
-        if (existing is null)
-        {
-            existing = new Vehicle
-            {
-                Plate = plate,
-                RawJson = jsonDoc,
-                UpdatedAt = DateTime.UtcNow
-            };
-            _db.Vehicles.Add(existing);
-        }
-        else
-        {
-            existing.RawJson = jsonDoc;
-            existing.UpdatedAt = DateTime.UtcNow;
-        }
+    //     if (existing is null)
+    //     {
+    //         existing = new Vehicle
+    //         {
+    //             Plate = plate,
+    //             RawJson = jsonDoc,
+    //             UpdatedAt = DateTime.UtcNow
+    //         };
+    //         _db.Vehicles.Add(existing);
+    //     }
+    //     else
+    //     {
+    //         existing.RawJson = jsonDoc;
+    //         existing.UpdatedAt = DateTime.UtcNow;
+    //     }
 
-        await _db.SaveChangesAsync(ct);
+    //     await _db.SaveChangesAsync(ct);
 
-        return Ok(new
-        {
-            existing.Id,
-            existing.Plate,
-            existing.UpdatedAt
-        });
-    }
+    //     return Ok(new
+    //     {
+    //         existing.Id,
+    //         existing.Plate,
+    //         existing.UpdatedAt
+    //     });
+    // }
 
     [HttpGet("by-plate")]
     public async Task<IActionResult> GetByPlate([FromQuery] string plate, CancellationToken ct)
