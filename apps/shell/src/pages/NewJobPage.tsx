@@ -68,7 +68,7 @@ export function NewJobPage() {
     setVehicleInfo(null);
 
     try {
-      // console.log('-------PLATE CALL API:', plate);
+     
       const res = await fetch("/api/carjam/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -100,9 +100,6 @@ export function NewJobPage() {
     if (normalized === null) return;
 
     setRego(normalized);
-
-    // IF vehicle has saved data, do not auto import
-    
     if (shouldAutoImport(normalized)) {
       (async () => {
         try {
@@ -152,10 +149,20 @@ export function NewJobPage() {
     const selectedBusiness = businessOptions.find((biz) => biz.id === businessId);
     const customerName = customerType === "personal" ? personalName : selectedBusiness?.label ?? "";
 
+    // if (customerType === "personal") {
+
+    // } else {
+    //   console.log("Business ID:", businessId);
+    // }
+    console.log("===========selectedServices============", selectedServices);
+
+
+    
     try {
       const res = await fetch("/api/newJob", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        
         body: JSON.stringify({
           plate: rego,
           services: selectedServices,

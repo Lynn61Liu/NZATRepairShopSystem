@@ -32,6 +32,12 @@ public class NewJobController : ControllerBase
         if (string.IsNullOrWhiteSpace(req.Customer.Type))
             return BadRequest(new { error = "Customer type is required." });
 
+        var normalizedCustomerType = NormalizeCustomerType(req.Customer.Type);
+        if (!IsValidCustomerType(normalizedCustomerType))
+            return BadRequest(new { error = "Customer type must be Personal or Business." });
+
+        req.Customer.Type = normalizedCustomerType;
+
         var plate = NormalizePlate(req.Plate);
         var vehicle = await _db.Vehicles.FirstOrDefaultAsync(x => x.Plate == plate, ct);
       
@@ -45,7 +51,7 @@ public class NewJobController : ControllerBase
 
         var job = new Job
         {
-            Status = "In Progress",
+            Status = "InProgress",
             IsUrgent = false,
             VehicleId = vehicle.Id,
             CustomerId = customer.Id,
@@ -57,15 +63,16 @@ public class NewJobController : ControllerBase
         await _db.SaveChangesAsync(ct);
 
         var wofCreated = false;
+        Console.WriteLine("======Checking if WOF service is requested: {0}", string.Join(",", req.Services ?? new string[0]));
         if (req.Services?.Any(s => string.Equals(s, "wof", StringComparison.OrdinalIgnoreCase)) == true)
         {
-            var wof = new WofRecord
+            var wof = new WofService
             {
                 JobId = job.Id,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
             };
-            _db.WofRecords.Add(wof);
+            _db.WofServices.Add(wof);
             await _db.SaveChangesAsync(ct);
             wofCreated = true;
         }
@@ -87,6 +94,8 @@ public class NewJobController : ControllerBase
         if (!string.IsNullOrWhiteSpace(input.Phone))
         {
             existing = await _db.Customers.FirstOrDefaultAsync(x => x.Phone == input.Phone, ct);
+            Console.WriteLine($"======Looking up customer by phone '{input.Phone}': {(existing is null ? "not found" : "found")}");
+            Console.WriteLine($"======Existing customer: {existing} ");
         }
 
         if (existing is null)
@@ -101,6 +110,7 @@ public class NewJobController : ControllerBase
                 BusinessCode = input.BusinessCode,
                 Notes = input.Notes,
             };
+            Console.WriteLine("======Creating new customer & saving to database");
             _db.Customers.Add(existing);
         }
         else
@@ -111,12 +121,29 @@ public class NewJobController : ControllerBase
             existing.Address = input.Address;
             existing.BusinessCode = input.BusinessCode;
             existing.Notes = input.Notes;
+            existing.Id = existing.Id; // ensure id is set
+            Console.WriteLine("======Updating existing customer");
         }
 
         await _db.SaveChangesAsync(ct);
+        
         return existing;
     }
 
     private static string NormalizePlate(string plate)
         => new string(plate.Trim().ToUpperInvariant().Where(char.IsLetterOrDigit).ToArray());
+
+    private static string NormalizeCustomerType(string? type)
+    {
+        var trimmed = type?.Trim() ?? "";
+        if (string.Equals(trimmed, "personal", StringComparison.OrdinalIgnoreCase))
+            return "Personal";
+        if (string.Equals(trimmed, "business", StringComparison.OrdinalIgnoreCase))
+            return "Business";
+        return trimmed;
+    }
+
+    private static bool IsValidCustomerType(string type)
+        => string.Equals(type, "Personal", StringComparison.Ordinal) ||
+           string.Equals(type, "Business", StringComparison.Ordinal);
 }

@@ -8,7 +8,10 @@ public class AppDbContext : DbContext
     public DbSet<Vehicle> Vehicles => Set<Vehicle>();
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<Job> Jobs => Set<Job>();
-    public DbSet<WofRecord> WofRecords => Set<WofRecord>();
+
+    //wof_service
+    public DbSet<WofService> WofServices => Set<WofService>();
+    
 
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
@@ -76,8 +79,8 @@ public class AppDbContext : DbContext
         j.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
         j.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
 
-        var w = modelBuilder.Entity<WofRecord>();
-        w.ToTable("wof");
+        var w = modelBuilder.Entity<WofService>();
+        w.ToTable("wof_service");
         w.HasKey(x => x.Id);
         w.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
         w.Property(x => x.JobId).HasColumnName("job_id").IsRequired();

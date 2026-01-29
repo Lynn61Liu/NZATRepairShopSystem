@@ -1,6 +1,6 @@
 namespace Workshop.Api.Models;
 
-public class WofRecord
+public class WofService
 {
     public long Id { get; set; }
     public long JobId { get; set; }
