@@ -3,7 +3,7 @@ import { Button, SectionCard } from "@/components/ui";
 import { JOB_DETAIL_TEXT } from "@/features/jobDetail/jobDetail.constants";
 import { EmptyPanel } from "./EmptyPanel";
 import { WofResultsCard } from "./WofResultsCard";
-import { ExternalLink, RefreshCw} from 'lucide-react';
+import { ExternalLink, RefreshCw } from 'lucide-react';
 import type { WofCheckItem, WofFailReason, WofRecord } from "@/types";
 
 export type WofPanelProps = {
@@ -71,73 +71,75 @@ export function WofPanel({
       <SectionCard
         title={JOB_DETAIL_TEXT.labels.wofRecords}
         actions={
-          <div className="flex items-center gap-2">
-             <Button ><ExternalLink className="w-4 h-4" />
-               {JOB_DETAIL_TEXT.buttons.openNzta}
-         </Button>
-
-            <Button> <RefreshCw className="w-4 h-4" />
-                {JOB_DETAIL_TEXT.buttons.refresh}</Button>
-           
+          <div className="flex items-center gap-2 mb-4">
             <Button variant="primary" >{JOB_DETAIL_TEXT.buttons.print}</Button>
+
+
           </div>
         }
       >
-        
-             {checkItems.length ? (
-               <div className="mt-4 rounded-[12px]  p-4">
-                 <div className="text-xs font-semibold text-[var(--ds-text)]">WOF Check Items</div>
-                 <div className="mt-3 space-y-4 text-sm">
-                   {checkItems.map((item) => (
-                     <div key={item.id} className="rounded-[10px] border border-[var(--ds-border)] p-3">
-                       {/* <div className="text-xs text-[var(--ds-muted)]">ID {item.id}</div> */}
-                       <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                         <div>ODO: {item.odo || "—"}</div>
-                         <div>Auth Code: {item.authCode || "—"}</div>
-                         <div>Check Sheet: {item.checkSheet || "—"}</div>
-                         <div>CS No: {item.csNo || "—"}</div>
-                         <div>WOF Label: {item.wofLabel || "—"}</div>
-                         <div>Label No: {item.labelNo || "—"}</div>
-                         <div>Source: {item.source || "—"}</div>
-                         <div>Source Row: {item.sourceRow || "—"}</div>
-                         <div>Updated At: {item.updatedAt || "—"}</div>
-                       </div>
-                     </div>
-                   ))}
-                 </div>
-               </div>
-             ) :<button className="text-sm text-[rgba(0,0,0,0.55)] underline">Empty WOF Records</button>}
-          {/* <button className="text-sm text-[rgba(0,0,0,0.55)] underline">Empty WOF Records</button> */}
-      
-         
-       
-             {isLoading ? (
-               <div className="py-6 text-center text-sm text-[var(--ds-muted)]">加载中...</div>
-             ) : null}
+        <div className="mb-4 rounded-[12px] border border-[var(--ds-border)] pb-4">    
+          {checkItems.length ? (
+            <div className="mt-3 space-y-4 text-sm">
+              {checkItems.map((item) => (
+                <div key={item.id} className="rounded-[10px]  p-3">
+                  {/* <div className="text-xs text-[var(--ds-muted)]">ID {item.id}</div> */}
+                  <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <div>ODO: {item.odo || "—"}</div>
+                    <div>Auth Code: {item.authCode || "—"}</div>
+                    <div>Check Sheet: {item.checkSheet || "—"}</div>
+                    <div>CS No: {item.csNo || "—"}</div>
+                    <div>WOF Label: {item.wofLabel || "—"}</div>
+                    <div>Label No: {item.labelNo || "—"}</div>
+                    <div>Source: {item.source || "—"}</div>
+                    <div>Source Row: {item.sourceRow || "—"}</div>
+                    <div>Updated At: {item.updatedAt || "—"}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
 
-        
+          ) : <button className="text-sm text-[rgba(0,0,0,0.55)] underline">Empty WOF Records</button>
 
-             {records.length ? (
-      // add mutil WofResultsCard component here
-      <WofResultsCard
-        wofResults={records.map((record) => ({
-          id: record.id,
-          date: record.date,
-          source: record.source ?? "DB",
-          status: record.status ?? null,
-          expiryDate: record.expiryDate ?? "",
-          notes: record.notes ?? "",
-          failReason: record.failReason,
-        }))}
-      />
-      ) : null}
+          }
+          <div className="pb-4 flex  gap-2 justify-end items-end pr-4">
+            <Button className="flex items-center gap-2"><ExternalLink className="w-4 h-4" />
+              {JOB_DETAIL_TEXT.buttons.openNzta}
+            </Button>
+
+            <Button> <RefreshCw className="w-4 h-4" />
+              {JOB_DETAIL_TEXT.buttons.refresh}</Button>
+          </div>
+        </div>
+
+
+        {isLoading ? (
+          <div className="py-6 text-center text-sm text-[var(--ds-muted)]">加载中...</div>
+        ) : null}
+
+
+
+        {records.length ? (
+          // add mutil WofResultsCard component here
+          <WofResultsCard
+            wofResults={records.map((record) => ({
+              id: record.id,
+              date: record.date,
+              source: record.source ?? "DB",
+              status: record.status ?? null,
+              expiryDate: record.expiryDate ?? "",
+              notes: record.notes ?? "",
+              failReason: record.failReason,
+            }))}
+          />
+        ) : null}
       </SectionCard>
 
-   
 
- 
 
-         <SectionCard title={JOB_DETAIL_TEXT.labels.result}>
+
+
+      <SectionCard title={JOB_DETAIL_TEXT.labels.result}>
         <div className="mt-4 space-y-3 text-sm">
           <div>
             <div className="text-xs text-[var(--ds-muted)]">{JOB_DETAIL_TEXT.labels.initiateResult}</div>

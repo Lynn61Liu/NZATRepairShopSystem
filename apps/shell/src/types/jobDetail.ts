@@ -68,6 +68,7 @@ export type WofCheckItem = {
 export type WofFailReason = {
   id: string;
   label: string;
+  isActive?: boolean;
 };
 
 export type JobDetailData = {

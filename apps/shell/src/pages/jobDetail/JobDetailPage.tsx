@@ -109,7 +109,8 @@ export function JobDetailPage() {
           throw new Error(data?.error || "加载 WOF fail reasons 失败");
         }
         if (!cancelled) {
-          setWofFailReasons(Array.isArray(data) ? data : []);
+          const list = Array.isArray(data) ? data : [];
+          setWofFailReasons(list.filter((item) => item?.isActive !== false));
         }
       } catch {
         if (!cancelled) {
