@@ -233,6 +233,48 @@ public class JobsController : ControllerBase
         return Ok(new { success = true, vehicleDeleted, customerDeleted });
     }
 
+    public record UpdateJobTagsRequest(long[] TagIds);
+
+    [HttpPut("{id:long}/tags")]
+    public async Task<IActionResult> UpdateJobTags(long id, [FromBody] UpdateJobTagsRequest req, CancellationToken ct)
+    {
+        var jobExists = await _db.Jobs.AsNoTracking().AnyAsync(x => x.Id == id, ct);
+        if (!jobExists)
+            return NotFound(new { error = "Job not found." });
+
+        var tagIds = req?.TagIds?.Distinct().ToArray() ?? Array.Empty<long>();
+        if (tagIds.Length > 0)
+        {
+            var existingIds = await _db.Tags.AsNoTracking()
+                .Where(x => tagIds.Contains(x.Id))
+                .Select(x => x.Id)
+                .ToListAsync(ct);
+            if (existingIds.Count != tagIds.Length)
+                return BadRequest(new { error = "One or more tags are invalid." });
+        }
+
+        await _db.JobTags.Where(x => x.JobId == id).ExecuteDeleteAsync(ct);
+
+        if (tagIds.Length > 0)
+        {
+            var items = tagIds.Select(tagId => new JobTag
+            {
+                JobId = id,
+                TagId = tagId,
+                CreatedAt = DateTime.UtcNow
+            });
+            _db.JobTags.AddRange(items);
+            await _db.SaveChangesAsync(ct);
+        }
+
+        var tagNames = await _db.Tags.AsNoTracking()
+            .Where(x => tagIds.Contains(x.Id))
+            .Select(x => x.Name)
+            .ToArrayAsync(ct);
+
+        return Ok(new { tags = tagNames });
+    }
+
     [HttpGet("{id:long}/wof-server")]
     public async Task<IActionResult> GetWofRecords(long id, CancellationToken ct)
     {

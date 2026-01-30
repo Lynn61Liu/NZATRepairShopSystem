@@ -4,6 +4,7 @@ import { JobDetailLayout, MainColumn, useJobDetailState } from "@/features/jobDe
 import { RightSidebar } from "@/components/jobDetail/RightSidebar";
 import { Alert, EmptyState } from "@/components/ui";
 import type { JobDetailData, WofCheckItem, WofFailReason, WofRecord } from "@/types";
+import type { TagOption } from "@/components/MultiTagSelect";
 
 export function JobDetailPage() {
   const { id } = useParams();
@@ -18,6 +19,7 @@ export function JobDetailPage() {
   const [wofLoading, setWofLoading] = useState(false);
   const [wofCheckItems, setWofCheckItems] = useState<WofCheckItem[]>([]);
   const [wofFailReasons, setWofFailReasons] = useState<WofFailReason[]>([]);
+  const [tagOptions, setTagOptions] = useState<TagOption[]>([]);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deletingJob, setDeletingJob] = useState(false);
 
@@ -158,6 +160,28 @@ export function JobDetailPage() {
       }
     };
 
+    const loadTagOptions = async () => {
+      try {
+        const res = await fetch("/api/tags");
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          throw new Error(data?.error || "加载标签失败");
+        }
+        if (!cancelled) {
+          const tags = Array.isArray(data) ? data : [];
+          setTagOptions(
+            tags
+              .filter((tag: any) => tag?.isActive !== false && typeof tag?.name === "string")
+              .map((tag: any) => ({ id: String(tag.id), label: tag.name }))
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setTagOptions([]);
+        }
+      }
+    };
+
     const loadJob = async () => {
       if (!id) {
         setLoadError("缺少工单 ID");
@@ -198,6 +222,7 @@ export function JobDetailPage() {
 
     loadJob();
     loadWofFailReasons();
+    loadTagOptions();
 
     return () => {
       cancelled = true;
@@ -243,6 +268,29 @@ export function JobDetailPage() {
             onDeleteWofServer={deleteWofServer}
             onDeleteJob={deleteJob}
             isDeletingJob={deletingJob}
+            tagOptions={tagOptions}
+            onSaveTags={async (tagIds) => {
+              if (!id) return { success: false, message: "缺少工单 ID" };
+              const res = await fetch(`/api/jobs/${encodeURIComponent(id)}/tags`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ tagIds: tagIds.map((t) => Number(t)) }),
+              });
+              const data = await res.json().catch(() => null);
+              if (!res.ok) {
+                return { success: false, message: data?.error || "保存失败" };
+              }
+              const nameMap = new Map(tagOptions.map((t) => [t.id, t.label]));
+              setJobData((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      tags: tagIds.map((t) => nameMap.get(String(t)) || String(t)),
+                    }
+                  : prev
+              );
+              return { success: true, message: "保存成功", tags: data?.tags };
+            }}
           />
         }
         sidebar={
