@@ -276,6 +276,94 @@ public class JobsController : ControllerBase
         });
     }
 
+    public record CreateWofResultRequest(string Result, string? RecheckExpiryDate, long? FailReasonId, string? Note);
+
+    [HttpPost("{id:long}/wof-results")]
+    public async Task<IActionResult> CreateWofResult(long id, [FromBody] CreateWofResultRequest req, CancellationToken ct)
+    {
+        if (req is null || string.IsNullOrWhiteSpace(req.Result))
+            return BadRequest(new { error = "Result is required." });
+
+        var resultValue = req.Result.Trim();
+        if (!string.Equals(resultValue, "Pass", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(resultValue, "Fail", StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(new { error = "Result must be Pass or Fail." });
+        }
+
+        DateOnly? recheckDate = null;
+        if (!string.IsNullOrWhiteSpace(req.RecheckExpiryDate))
+        {
+            if (!DateOnly.TryParse(req.RecheckExpiryDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed))
+                return BadRequest(new { error = "Invalid recheck expiry date." });
+            recheckDate = parsed;
+        }
+
+        var jobExists = await _db.Jobs.AsNoTracking().AnyAsync(x => x.Id == id, ct);
+        if (!jobExists)
+            return NotFound(new { error = "Job not found." });
+
+        var wof = await _db.WofServices
+            .FirstOrDefaultAsync(x => x.JobId == id, ct);
+
+        if (wof is null)
+        {
+            wof = new WofService
+            {
+                JobId = id,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            _db.WofServices.Add(wof);
+            await _db.SaveChangesAsync(ct);
+        }
+
+        var failReasonId = req.FailReasonId;
+        if (string.Equals(resultValue, "Pass", StringComparison.OrdinalIgnoreCase))
+        {
+            failReasonId = null;
+            recheckDate = null;
+        }
+
+        var record = new WofResult
+        {
+            WofId = wof.Id,
+            Result = resultValue,
+            RecheckExpiryDate = recheckDate,
+            FailReasonId = failReasonId,
+            Note = req.Note ?? "",
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _db.WofResults.Add(record);
+        await _db.SaveChangesAsync(ct);
+
+        string? failReason = null;
+        if (failReasonId.HasValue)
+        {
+            failReason = await _db.WofFailReasons.AsNoTracking()
+                .Where(x => x.Id == failReasonId.Value)
+                .Select(x => x.Label)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        return Ok(new
+        {
+            hasWofServer = true,
+            record = new
+            {
+                id = record.Id.ToString(CultureInfo.InvariantCulture),
+                wofId = record.WofId.ToString(CultureInfo.InvariantCulture),
+                date = record.CreatedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                result = record.Result,
+                recheckExpiryDate = FormatDate(record.RecheckExpiryDate),
+                failReasonId = record.FailReasonId,
+                failReason,
+                note = record.Note ?? ""
+            }
+        });
+    }
+
     private static string MapStatus(string? status)
     {
         var value = status?.Trim() ?? "";

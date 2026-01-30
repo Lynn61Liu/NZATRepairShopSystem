@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { JobDetailLayout, MainColumn, useJobDetailState } from "@/features/jobDetail";
 import { RightSidebar } from "@/components/jobDetail/RightSidebar";
@@ -9,6 +9,7 @@ export function JobDetailPage() {
   const { id } = useParams();
   const { activeTab, setActiveTab, isSidebarOpen, setIsSidebarOpen, hasWofRecord, setHasWofRecord } =
     useJobDetailState({ initialTab: "WOF" });
+  const isMountedRef = useRef(true);
   const [jobData, setJobData] = useState<JobDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -17,6 +18,43 @@ export function JobDetailPage() {
   const [wofCheckItems, setWofCheckItems] = useState<WofCheckItem[]>([]);
   const [wofFailReasons, setWofFailReasons] = useState<WofFailReason[]>([]);
 
+  const mapWofResult = (record: any): WofRecord => ({
+    id: String(record.id ?? ""),
+    date: String(record.date ?? ""),
+    source: "WOF Result",
+    status: record.result ?? null,
+    expiryDate: record.recheckExpiryDate ?? "",
+    notes: record.note ?? "",
+    failReason: record.failReason ?? (record.failReasonId ? String(record.failReasonId) : undefined),
+  });
+
+  const refreshWofServer = async (jobId: string) => {
+    setWofLoading(true);
+    try {
+      const wofRes = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/wof-server`);
+      const wofData = await wofRes.json().catch(() => null);
+      if (!wofRes.ok) {
+        throw new Error(wofData?.error || "加载 WOF 记录失败");
+      }
+      if (isMountedRef.current) {
+        const hasWofServer = Boolean(wofData?.hasWofServer);
+        setHasWofRecord(hasWofServer);
+        setWofCheckItems(Array.isArray(wofData?.checkItems) ? wofData.checkItems : []);
+        const results = Array.isArray(wofData?.results) ? wofData.results : [];
+        setWofRecords(results.map(mapWofResult));
+      }
+    } catch {
+      if (isMountedRef.current) {
+        setWofRecords([]);
+        setWofCheckItems([]);
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setWofLoading(false);
+      }
+    }
+  };
+
   const createWofRecord = async () => {
     if (!id || wofLoading) return;
     if (hasWofRecord || wofRecords.length > 0 || wofCheckItems.length > 0) return;
@@ -24,27 +62,43 @@ export function JobDetailPage() {
       method: "POST",
     });
     const data = await res.json().catch(() => null);
-    if (res.ok) {
-      const hasWofServer = Boolean(data?.hasWofServer);
-      setHasWofRecord(hasWofServer);
-      setWofCheckItems(Array.isArray(data?.checkItems) ? data.checkItems : []);
-      const results = Array.isArray(data?.results) ? data.results : [];
-      setWofRecords(
-        results.map((record: any) => ({
-          id: String(record.id ?? ""),
-          date: String(record.date ?? ""),
-          source: "WOF Result",
-          status: record.result ?? null,
-          expiryDate: record.recheckExpiryDate ?? "",
-          notes: record.note ?? "",
-          failReason: record.failReason ?? (record.failReasonId ? String(record.failReasonId) : undefined),
-        }))
-      );
+    if (res.ok && id) {
+      await refreshWofServer(id);
     }
+  };
+
+  const saveWofResult = async (payload: {
+    result: "Pass" | "Fail";
+    expiryDate?: string;
+    failReasonId?: string;
+    note?: string;
+  }) => {
+    if (!id) {
+      return { success: false, message: "缺少工单 ID" };
+    }
+
+    const res = await fetch(`/api/jobs/${encodeURIComponent(id)}/wof-results`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        result: payload.result,
+        recheckExpiryDate: payload.expiryDate || null,
+        failReasonId: payload.failReasonId ? Number(payload.failReasonId) : null,
+        note: payload.note || "",
+      }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      return { success: false, message: data?.error || "保存失败" };
+    }
+
+    await refreshWofServer(id);
+    return { success: true, message: "保存成功" };
   };
 
   useEffect(() => {
     let cancelled = false;
+    isMountedRef.current = true;
 
     const loadWofFailReasons = async () => {
       try {
@@ -60,43 +114,6 @@ export function JobDetailPage() {
       } catch {
         if (!cancelled) {
           setWofFailReasons([]);
-        }
-      }
-    };
-
-    const loadWofRecords = async (jobId: string) => {
-      setWofLoading(true);
-      try {
-        const wofRes = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/wof-server`);
-        const wofData = await wofRes.json().catch(() => null);
-        if (!wofRes.ok) {
-          throw new Error(wofData?.error || "加载 WOF 记录失败");
-        }
-        if (!cancelled) {
-          const hasWofServer = Boolean(wofData?.hasWofServer);
-          setHasWofRecord(hasWofServer);
-          setWofCheckItems(Array.isArray(wofData?.checkItems) ? wofData.checkItems : []);
-          const results = Array.isArray(wofData?.results) ? wofData.results : [];
-          setWofRecords(
-            results.map((record: any) => ({
-              id: String(record.id ?? ""),
-              date: String(record.date ?? ""),
-              source: "WOF Result",
-              status: record.result ?? null,
-              expiryDate: record.recheckExpiryDate ?? "",
-              notes: record.note ?? "",
-              failReason: record.failReason ?? (record.failReasonId ? String(record.failReasonId) : undefined),
-            }))
-          );
-        }
-      } catch {
-        if (!cancelled) {
-          setWofRecords([]);
-          setWofCheckItems([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setWofLoading(false);
         }
       }
     };
@@ -128,7 +145,7 @@ export function JobDetailPage() {
           }
         }
 
-        await loadWofRecords(id);
+        await refreshWofServer(id);
       } catch (err) {
         if (!cancelled) {
           setLoadError(err instanceof Error ? err.message : "加载工单失败");
@@ -144,6 +161,7 @@ export function JobDetailPage() {
 
     return () => {
       cancelled = true;
+      isMountedRef.current = false;
     };
   }, [id, setHasWofRecord]);
 
@@ -178,7 +196,7 @@ export function JobDetailPage() {
             failReasons={wofFailReasons}
             wofLoading={wofLoading}
             onAddWof={createWofRecord}
-            onCreateWofRecord={createWofRecord}
+            onSaveWofResult={saveWofResult}
           />
         }
         sidebar={

@@ -19,7 +19,12 @@ type MainColumnProps = {
   failReasons: WofFailReason[];
   wofLoading?: boolean;
   onAddWof: () => void;
-  onCreateWofRecord?: () => Promise<void> | void;
+  onSaveWofResult?: (payload: {
+    result: "Pass" | "Fail";
+    expiryDate?: string;
+    failReasonId?: string;
+    note?: string;
+  }) => Promise<{ success: boolean; message?: string }>;
 };
 
 export function MainColumn({
@@ -32,7 +37,7 @@ export function MainColumn({
   failReasons,
   wofLoading,
   onAddWof,
-  onCreateWofRecord,
+  onSaveWofResult,
 }: MainColumnProps) {
   return (
     <div className="flex-1 space-y-4">
@@ -57,7 +62,7 @@ export function MainColumn({
             checkItems={wofCheckItems}
             failReasons={failReasons}
             isLoading={wofLoading}
-            onCreateRecord={onCreateWofRecord}
+            onSaveResult={onSaveWofResult}
           />
         ) : null}
         {activeTab === "Mechanical" ? <RepairPanel /> : null}

@@ -13,7 +13,12 @@ export type WofPanelProps = {
   checkItems?: WofCheckItem[];
   failReasons?: WofFailReason[];
   isLoading?: boolean;
-  onCreateRecord?: () => Promise<void> | void;
+  onSaveResult?: (payload: {
+    result: "Pass" | "Fail";
+    expiryDate?: string;
+    failReasonId?: string;
+    note?: string;
+  }) => Promise<{ success: boolean; message?: string }>;
 };
 
 export function WofPanel({
@@ -23,16 +28,32 @@ export function WofPanel({
   checkItems = [],
   failReasons = [],
   isLoading,
-  onCreateRecord,
+  onSaveResult,
 }: WofPanelProps) {
   const [result, setResult] = useState<"Pass" | "Fail">("Pass");
   const [expiryDate, setExpiryDate] = useState("");
   const [failReason, setFailReason] = useState("");
   const [note, setNote] = useState("");
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const onSaveResult = async () => {
-    if (onCreateRecord) {
-      await onCreateRecord();
+  const handleSaveResult = async () => {
+    if (!onSaveResult) return;
+    setSaveMessage(null);
+    setSaveError(null);
+    setSaving(true);
+    const response = await onSaveResult({
+      result,
+      expiryDate: result === "Fail" ? expiryDate : "",
+      failReasonId: result === "Fail" ? failReason : "",
+      note,
+    });
+    setSaving(false);
+    if (response.success) {
+      setSaveMessage(response.message || "保存成功");
+    } else {
+      setSaveError(response.message || "保存失败");
     }
     setResult("Pass");
     setExpiryDate("");
@@ -147,7 +168,7 @@ export function WofPanel({
                   value={failReason}
                   onChange={(event) => setFailReason(event.target.value)}
                 >
-                  <option>Fail list...</option>
+                  <option value="">Fail list...</option>
                   {failReasons.map((reason) => (
                     <option key={reason.id} value={reason.id}>
                       {reason.label}
@@ -168,7 +189,9 @@ export function WofPanel({
           </div>
         </div>
         <div className="mt-4 flex justify-end gap-2">
-          <Button variant="primary" onClick={onSaveResult}>
+          {saveMessage ? <div className="text-xs text-green-600">{saveMessage}</div> : null}
+          {saveError ? <div className="text-xs text-red-600">{saveError}</div> : null}
+          <Button variant="primary" onClick={handleSaveResult} disabled={saving}>
             {JOB_DETAIL_TEXT.buttons.saveResult}
           </Button>
         </div>
