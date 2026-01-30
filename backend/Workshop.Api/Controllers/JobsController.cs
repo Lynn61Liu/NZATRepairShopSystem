@@ -174,6 +174,65 @@ public class JobsController : ControllerBase
         return Ok(new { job, hasWofRecord });
     }
 
+    [HttpDelete("{id:long}")]
+    public async Task<IActionResult> DeleteJob(long id, CancellationToken ct)
+    {
+        var job = await _db.Jobs.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (job is null)
+            return NotFound(new { error = "Job not found." });
+
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
+
+        var wofId = await _db.WofServices.AsNoTracking()
+            .Where(x => x.JobId == id)
+            .Select(x => x.Id)
+            .FirstOrDefaultAsync(ct);
+
+        if (wofId != 0)
+        {
+            await _db.WofResults.Where(x => x.WofId == wofId).ExecuteDeleteAsync(ct);
+            await _db.WofCheckItems.Where(x => x.WofId == wofId).ExecuteDeleteAsync(ct);
+            await _db.WofServices.Where(x => x.Id == wofId).ExecuteDeleteAsync(ct);
+        }
+
+        var deletedJobs = await _db.Jobs.Where(x => x.Id == id).ExecuteDeleteAsync(ct);
+        if (deletedJobs == 0)
+            return NotFound(new { error = "Job not found." });
+
+        var vehicleDeleted = false;
+        var customerDeleted = false;
+
+        if (job.VehicleId.HasValue)
+        {
+            var otherJobs = await _db.Jobs.AsNoTracking()
+                .AnyAsync(x => x.VehicleId == job.VehicleId.Value, ct);
+            if (!otherJobs)
+            {
+                var deletedVehicles = await _db.Vehicles
+                    .Where(x => x.Id == job.VehicleId.Value)
+                    .ExecuteDeleteAsync(ct);
+                vehicleDeleted = deletedVehicles > 0;
+            }
+        }
+
+        if (job.CustomerId.HasValue)
+        {
+            var otherJobs = await _db.Jobs.AsNoTracking()
+                .AnyAsync(x => x.CustomerId == job.CustomerId.Value, ct);
+            if (!otherJobs)
+            {
+                var deletedCustomers = await _db.Customers
+                    .Where(x => x.Id == job.CustomerId.Value)
+                    .ExecuteDeleteAsync(ct);
+                customerDeleted = deletedCustomers > 0;
+            }
+        }
+
+        await tx.CommitAsync(ct);
+
+        return Ok(new { success = true, vehicleDeleted, customerDeleted });
+    }
+
     [HttpGet("{id:long}/wof-server")]
     public async Task<IActionResult> GetWofRecords(long id, CancellationToken ct)
     {
@@ -324,22 +383,17 @@ public class JobsController : ControllerBase
     [HttpDelete("{id:long}/wof-server")]
     public async Task<IActionResult> DeleteWofServer(long id, CancellationToken ct)
     {
-        var wof = await _db.WofServices.FirstOrDefaultAsync(x => x.JobId == id, ct);
-        if (wof is null)
+        var wofId = await _db.WofServices.AsNoTracking()
+            .Where(x => x.JobId == id)
+            .Select(x => x.Id)
+            .FirstOrDefaultAsync(ct);
+
+        if (wofId == 0)
             return NotFound(new { error = "WOF record not found." });
 
-        var wofId = wof.Id;
-
-        var checkItems = await _db.WofCheckItems.Where(x => x.WofId == wofId).ToListAsync(ct);
-        if (checkItems.Count > 0)
-            _db.WofCheckItems.RemoveRange(checkItems);
-
-        var results = await _db.WofResults.Where(x => x.WofId == wofId).ToListAsync(ct);
-        if (results.Count > 0)
-            _db.WofResults.RemoveRange(results);
-
-        _db.WofServices.Remove(wof);
-        await _db.SaveChangesAsync(ct);
+        await _db.WofResults.Where(x => x.WofId == wofId).ExecuteDeleteAsync(ct);
+        await _db.WofCheckItems.Where(x => x.WofId == wofId).ExecuteDeleteAsync(ct);
+        await _db.WofServices.Where(x => x.Id == wofId).ExecuteDeleteAsync(ct);
 
         return Ok(new { success = true });
     }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { JobDetailLayout, MainColumn, useJobDetailState } from "@/features/jobDetail";
 import { RightSidebar } from "@/components/jobDetail/RightSidebar";
 import { Alert, EmptyState } from "@/components/ui";
@@ -7,6 +7,7 @@ import type { JobDetailData, WofCheckItem, WofFailReason, WofRecord } from "@/ty
 
 export function JobDetailPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { activeTab, setActiveTab, isSidebarOpen, setIsSidebarOpen, hasWofRecord, setHasWofRecord } =
     useJobDetailState({ initialTab: "WOF" });
   const isMountedRef = useRef(true);
@@ -17,6 +18,8 @@ export function JobDetailPage() {
   const [wofLoading, setWofLoading] = useState(false);
   const [wofCheckItems, setWofCheckItems] = useState<WofCheckItem[]>([]);
   const [wofFailReasons, setWofFailReasons] = useState<WofFailReason[]>([]);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletingJob, setDeletingJob] = useState(false);
 
   const mapWofResult = (record: any): WofRecord => ({
     id: String(record.id ?? ""),
@@ -113,6 +116,25 @@ export function JobDetailPage() {
     return { success: true, message: "删除成功" };
   };
 
+  const deleteJob = async () => {
+    if (!id) return;
+    if (!window.confirm("确定删除该工单及相关数据？")) return;
+    setDeletingJob(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/jobs/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || "删除失败");
+      }
+      navigate("/jobs");
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "删除失败");
+    } finally {
+      setDeletingJob(false);
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
     isMountedRef.current = true;
@@ -202,6 +224,9 @@ export function JobDetailPage() {
 
   return (
     <div className="space-y-4">
+      {deleteError ? (
+        <Alert variant="error" description={deleteError} onClose={() => setDeleteError(null)} />
+      ) : null}
       <JobDetailLayout
         main={
           <MainColumn
@@ -216,6 +241,8 @@ export function JobDetailPage() {
             onAddWof={createWofRecord}
             onSaveWofResult={saveWofResult}
             onDeleteWofServer={deleteWofServer}
+            onDeleteJob={deleteJob}
+            isDeletingJob={deletingJob}
           />
         }
         sidebar={

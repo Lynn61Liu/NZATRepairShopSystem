@@ -7,9 +7,11 @@ interface JobHeaderProps {
   status: string;
   isUrgent: boolean;
   tags: string[];
+  onDelete?: () => void;
+  isDeleting?: boolean;
 }
 
-export function JobHeader({ jobId, status, isUrgent, tags }: JobHeaderProps) {
+export function JobHeader({ jobId, status, isUrgent, tags, onDelete, isDeleting }: JobHeaderProps) {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "In Shop":
@@ -57,6 +59,8 @@ export function JobHeader({ jobId, status, isUrgent, tags }: JobHeaderProps) {
         <Button
           leftIcon={<Trash2 className="w-4 h-4" />}
           className="border-red-300 text-red-700 hover:bg-red-50"
+          onClick={onDelete}
+          disabled={isDeleting}
         >
           删除Job
         </Button>

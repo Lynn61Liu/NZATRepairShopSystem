@@ -1,6 +1,6 @@
 import { useState, type ChangeEvent } from "react";
 import { ArrowLeft } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Alert } from "@/components/ui";
 import {
   ActionsRow,
@@ -20,6 +20,7 @@ import {
 } from "@/features/newJob";
 
 export function NewJobPage() {
+  const navigate = useNavigate();
   const [rego, setRego] = useState("");
   const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null);
   const [importState, setImportState] = useState<ImportState>("idle");
@@ -185,6 +186,7 @@ export function NewJobPage() {
 
       console.log("++++++++++++++++++++job created", data);
       setFormAlert({ variant: "success", message: "工单保存成功！" });
+      navigate("/jobs");
     } catch (err) {
       setFormAlert({
         variant: "error",

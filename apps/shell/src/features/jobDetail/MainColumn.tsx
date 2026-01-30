@@ -26,6 +26,8 @@ type MainColumnProps = {
     note?: string;
   }) => Promise<{ success: boolean; message?: string }>;
   onDeleteWofServer?: () => Promise<{ success: boolean; message?: string }>;
+  onDeleteJob?: () => void;
+  isDeletingJob?: boolean;
 };
 
 export function MainColumn({
@@ -40,6 +42,8 @@ export function MainColumn({
   onAddWof,
   onSaveWofResult,
   onDeleteWofServer,
+  onDeleteJob,
+  isDeletingJob,
 }: MainColumnProps) {
   return (
     <div className="flex-1 space-y-4">
@@ -49,6 +53,8 @@ export function MainColumn({
           status={jobData.status}
           isUrgent={jobData.isUrgent}
           tags={jobData.tags}
+          onDelete={onDeleteJob}
+          isDeleting={isDeletingJob}
         />
       </Card>
       <SummaryCard vehicle={jobData.vehicle} customer={jobData.customer} />
