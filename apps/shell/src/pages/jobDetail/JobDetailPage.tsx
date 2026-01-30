@@ -96,6 +96,23 @@ export function JobDetailPage() {
     return { success: true, message: "保存成功" };
   };
 
+  const deleteWofServer = async () => {
+    if (!id) {
+      return { success: false, message: "缺少工单 ID" };
+    }
+
+    const res = await fetch(`/api/jobs/${encodeURIComponent(id)}/wof-server`, {
+      method: "DELETE",
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      return { success: false, message: data?.error || "删除失败" };
+    }
+
+    await refreshWofServer(id);
+    return { success: true, message: "删除成功" };
+  };
+
   useEffect(() => {
     let cancelled = false;
     isMountedRef.current = true;
@@ -198,6 +215,7 @@ export function JobDetailPage() {
             wofLoading={wofLoading}
             onAddWof={createWofRecord}
             onSaveWofResult={saveWofResult}
+            onDeleteWofServer={deleteWofServer}
           />
         }
         sidebar={

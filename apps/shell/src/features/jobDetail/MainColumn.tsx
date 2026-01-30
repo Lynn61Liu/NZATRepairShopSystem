@@ -25,6 +25,7 @@ type MainColumnProps = {
     failReasonId?: string;
     note?: string;
   }) => Promise<{ success: boolean; message?: string }>;
+  onDeleteWofServer?: () => Promise<{ success: boolean; message?: string }>;
 };
 
 export function MainColumn({
@@ -38,6 +39,7 @@ export function MainColumn({
   wofLoading,
   onAddWof,
   onSaveWofResult,
+  onDeleteWofServer,
 }: MainColumnProps) {
   return (
     <div className="flex-1 space-y-4">
@@ -63,6 +65,7 @@ export function MainColumn({
             failReasons={failReasons}
             isLoading={wofLoading}
             onSaveResult={onSaveWofResult}
+            onDeleteWofServer={onDeleteWofServer}
           />
         ) : null}
         {activeTab === "Mechanical" ? <RepairPanel /> : null}

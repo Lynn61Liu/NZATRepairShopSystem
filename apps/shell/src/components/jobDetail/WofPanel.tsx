@@ -3,7 +3,7 @@ import { Button, SectionCard } from "@/components/ui";
 import { JOB_DETAIL_TEXT } from "@/features/jobDetail/jobDetail.constants";
 import { EmptyPanel } from "./EmptyPanel";
 import { WofResultsCard } from "./WofResultsCard";
-import { ExternalLink, RefreshCw } from 'lucide-react';
+import { ExternalLink, RefreshCw, Trash2 } from 'lucide-react';
 import type { WofCheckItem, WofFailReason, WofRecord } from "@/types";
 
 export type WofPanelProps = {
@@ -19,6 +19,7 @@ export type WofPanelProps = {
     failReasonId?: string;
     note?: string;
   }) => Promise<{ success: boolean; message?: string }>;
+  onDeleteWofServer?: () => Promise<{ success: boolean; message?: string }>;
 };
 
 export function WofPanel({
@@ -29,6 +30,7 @@ export function WofPanel({
   failReasons = [],
   isLoading,
   onSaveResult,
+  onDeleteWofServer,
 }: WofPanelProps) {
   const [result, setResult] = useState<"Pass" | "Fail">("Pass");
   const [expiryDate, setExpiryDate] = useState("");
@@ -37,6 +39,8 @@ export function WofPanel({
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const handleSaveResult = async () => {
     if (!onSaveResult) return;
@@ -61,6 +65,19 @@ export function WofPanel({
     setNote("");
   };
 
+  const handleDelete = async () => {
+    if (!onDeleteWofServer) return;
+    if (!window.confirm("确定删除该 WOF 记录及相关数据？")) return;
+    setDeleteMessage(null);
+    setDeleteError(null);
+    const response = await onDeleteWofServer();
+    if (response.success) {
+      setDeleteMessage(response.message || "删除成功");
+    } else {
+      setDeleteError(response.message || "删除失败");
+    }
+  };
+
   const hasAnyData = records.length > 0 || checkItems.length > 0;
   if (!hasRecord && !hasAnyData && !isLoading) {
     return <EmptyPanel onAdd={onAdd} />;
@@ -72,9 +89,15 @@ export function WofPanel({
         title={JOB_DETAIL_TEXT.labels.wofRecords}
         actions={
           <div className="flex items-center gap-2 mb-4">
-            <Button variant="primary" >{JOB_DETAIL_TEXT.buttons.print}</Button>
+            {deleteMessage ? <div className="text-xs text-green-600">{deleteMessage}</div> : null}
+            {deleteError ? <div className="text-xs text-red-600">{deleteError}</div> : null}
+            <Button variant="primary">{JOB_DETAIL_TEXT.buttons.print}</Button>
+            <Button   leftIcon={<Trash2 className="w-4 h-4" />}
+          className="border-red-300 text-red-700 hover:bg-red-50" onClick={handleDelete} disabled={isLoading}>
+              删除WOF
+            </Button>
 
-
+            
           </div>
         }
       >
@@ -99,7 +122,7 @@ export function WofPanel({
               ))}
             </div>
 
-          ) : <button className="text-sm text-[rgba(0,0,0,0.55)] underline">Empty WOF Records</button>
+          ) : <div className="text-sm text-[rgba(0,0,0,0.55)] underline p-4">Empty WOF Records</div>
 
           }
           <div className="pb-4 flex  gap-2 justify-end items-end pr-4">

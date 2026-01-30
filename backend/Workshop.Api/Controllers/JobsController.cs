@@ -321,6 +321,29 @@ public class JobsController : ControllerBase
         });
     }
 
+    [HttpDelete("{id:long}/wof-server")]
+    public async Task<IActionResult> DeleteWofServer(long id, CancellationToken ct)
+    {
+        var wof = await _db.WofServices.FirstOrDefaultAsync(x => x.JobId == id, ct);
+        if (wof is null)
+            return NotFound(new { error = "WOF record not found." });
+
+        var wofId = wof.Id;
+
+        var checkItems = await _db.WofCheckItems.Where(x => x.WofId == wofId).ToListAsync(ct);
+        if (checkItems.Count > 0)
+            _db.WofCheckItems.RemoveRange(checkItems);
+
+        var results = await _db.WofResults.Where(x => x.WofId == wofId).ToListAsync(ct);
+        if (results.Count > 0)
+            _db.WofResults.RemoveRange(results);
+
+        _db.WofServices.Remove(wof);
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new { success = true });
+    }
+
     public record CreateWofResultRequest(string Result, string? RecheckExpiryDate, long? FailReasonId, string? Note);
 
     [HttpPost("{id:long}/wof-results")]

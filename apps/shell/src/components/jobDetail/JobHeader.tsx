@@ -48,9 +48,9 @@ export function JobHeader({ jobId, status, isUrgent, tags }: JobHeaderProps) {
         </div>
 
         <div className="flex items-center gap-3  ml-auto">
-        <Button variant="primary" leftIcon={<Save className="w-4 h-4" />}>
+        {/* <Button variant="primary" leftIcon={<Save className="w-4 h-4" />}>
           {JOB_DETAIL_TEXT.buttons.save}
-        </Button>
+        </Button> */}
         <Button leftIcon={<Archive className="w-4 h-4" />}>
           {JOB_DETAIL_TEXT.buttons.archive}
         </Button>
@@ -58,7 +58,7 @@ export function JobHeader({ jobId, status, isUrgent, tags }: JobHeaderProps) {
           leftIcon={<Trash2 className="w-4 h-4" />}
           className="border-red-300 text-red-700 hover:bg-red-50"
         >
-          {JOB_DETAIL_TEXT.buttons.delete}
+          删除Job
         </Button>
         </div>
       </div>
