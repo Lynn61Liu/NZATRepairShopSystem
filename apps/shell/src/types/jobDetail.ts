@@ -43,12 +43,28 @@ export type WofRecordStatus = "Pass" | "Fail" | "Recheck";
 
 export type WofRecord = {
   id: string;
-  date: string;
+  jobId?: string;
+  occurredAt?: string;
+  rego?: string;
+  makeModel?: string;
+  odo?: string;
+  recordState?: WofRecordStatus | null;
+  isNewWof?: boolean | null;
+  authCode?: string;
+  checkSheet?: string;
+  csNo?: string;
+  wofLabel?: string;
+  labelNo?: string;
+  failReasons?: string;
+  previousExpiryDate?: string;
+  organisationName?: string;
+  excelRowNo?: number | string;
+  sourceFile?: string;
+  note?: string;
+  wofUiState?: "Pass" | "Fail" | "Recheck" | "Printed";
+  importedAt?: string;
+  updatedAt?: string;
   source?: string;
-  status?: WofRecordStatus | null;
-  expiryDate?: string;
-  notes?: string;
-  failReason?: string;
 };
 
 export type WofCheckItem = {

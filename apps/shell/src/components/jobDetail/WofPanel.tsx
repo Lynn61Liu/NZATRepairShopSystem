@@ -24,10 +24,9 @@ export type WofPanelProps = {
 };
 
 export function WofPanel({
-  hasRecord,
-  onAdd,
+
   records,
-  // checkItems = [],
+  checkItems = [],
   failReasons = [],
   isLoading,
   onRefresh,
@@ -102,7 +101,6 @@ export function WofPanel({
     }
   };
 
-  // const hasAnyData = records.length > 0 ;
   return (
     <div className="space-y-5 py-4">
       <SectionCard
@@ -122,42 +120,7 @@ export function WofPanel({
         }
       >
         <div className="mb-4 rounded-[12px] border border-[var(--ds-border)] pb-4">    
-          {records.length ? (
-            <div className="mt-3 space-y-4 text-sm">
-              {records.map((item) => (
-                <div key={item.id} className="rounded-[10px]  p-3">
-                  {/* <div className="text-xs text-[var(--ds-muted)]">ID {item.id}</div> */}
-                  <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <div>Date: {item.occurredAt || "—"}</div>
-                    <div>Rego: {item.rego || "—"}</div>
-                    <div>Make & Model: {item.makeModel || "—"}</div>
-                    <div>Record State: {item.recordState || "—"}</div>
-                    <div>
-                      New WOF: {item.isNewWof === null || item.isNewWof === undefined ? "—" : item.isNewWof ? "Yes" : "No"}
-                    </div>
-                    <div>ODO: {item.odo || "—"}</div>
-                    <div>Auth Code: {item.authCode || "—"}</div>
-                    <div>Check Sheet: {item.checkSheet || "—"}</div>
-                    <div>CS No: {item.csNo || "—"}</div>
-                    <div>WOF Label: {item.wofLabel || "—"}</div>
-                    <div>Label No: {item.labelNo || "—"}</div>
-                    <div>Fail Reasons: {item.failReasons || "—"}</div>
-                    <div>Previous Expiry Date: {item.previousExpiryDate || "—"}</div>
-                    <div>Organisation: {item.organisationName || "—"}</div>
-                    <div>Note: {item.note || "—"}</div>
-                    <div>UI State: {item.wofUiState || "—"}</div>
-                    <div>Imported At: {item.importedAt || "—"}</div>
-                    <div>Source: {item.source || "—"}</div>
-                    <div>Source Row: {item.sourceRow || "—"}</div>
-                    <div>Updated At: {item.updatedAt || "—"}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-          ) : <div className="text-sm text-[rgba(0,0,0,0.55)] underline p-4">Empty WOF Records</div>
-
-          }
+       
           <div className="pb-4 flex  gap-2 justify-end items-end pr-4">
             <Button className="flex items-center gap-2"><ExternalLink className="w-4 h-4" />
               {JOB_DETAIL_TEXT.buttons.openNzta}
@@ -177,20 +140,9 @@ export function WofPanel({
           <div className="py-6 text-center text-sm text-[var(--ds-muted)]">加载中...</div>
         ) : null}
 
-
-
-        {records.length ? (
-          // add mutil WofResultsCard component here
+        {checkItems.length ? (
           <WofResultsCard
-            wofResults={records.map((record) => ({
-              id: record.id,
-              date: record.date,
-              source: record.source ?? "DB",
-              status: record.status ?? null,
-              expiryDate: record.expiryDate ?? "",
-              notes: record.notes ?? "",
-              failReason: record.failReason,
-            }))}
+            wofResults={checkItems}
           />
         ) : null}
       </SectionCard>
