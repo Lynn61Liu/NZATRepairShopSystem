@@ -22,4 +22,5 @@ export type ServiceOption = {
 export type BusinessOption = {
   id: string;
   label: string;
+  businessCode?: string;
 };

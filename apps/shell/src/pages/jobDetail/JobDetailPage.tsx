@@ -30,6 +30,7 @@ export function JobDetailPage() {
     importWofRecords,
     deleteJob,
     saveTags,
+    refreshVehicleInfo,
   } = useJobDetailData({ jobId: id, onDeleted: () => navigate("/jobs") });
 
   if (loading) {
@@ -73,6 +74,7 @@ export function JobDetailPage() {
         isDeletingJob={deletingJob}
         tagOptions={tagOptions}
         onSaveTags={saveTags}
+        onRefreshVehicle={refreshVehicleInfo}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen((v) => !v)}
       />

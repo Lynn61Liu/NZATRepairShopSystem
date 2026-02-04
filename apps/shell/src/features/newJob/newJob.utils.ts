@@ -1,11 +1,9 @@
 import type { VehicleInfo } from "./newJob.types";
 
-export const PLATE_MAX_LENGTH = 8;
 export const PLATE_MIN_LENGTH = 6;
 
-export function normalizePlateInput(raw: string, maxLength = PLATE_MAX_LENGTH): string | null {
+export function normalizePlateInput(raw: string): string | null {
   const sanitized = raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (sanitized.length > maxLength) return null;
   return sanitized;
 }
 

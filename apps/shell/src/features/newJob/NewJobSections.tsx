@@ -1,16 +1,15 @@
-import type React from "react";
+import { type ChangeEvent, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button, Input, SectionCard, Select } from "@/components/ui";
 import { CustomerTypeToggle, ServiceOptionButton, VehicleInfoBanner } from "@/features/newJob/components";
 import type { BusinessOption, CustomerType, ImportState, ServiceOption, ServiceType, VehicleInfo } from "./newJob.types";
-import { PLATE_MAX_LENGTH } from "./newJob.utils";
 
 type VehicleSectionProps = {
   rego: string;
   importState: ImportState;
   importError: string;
   vehicleInfo: VehicleInfo | null;
-  onRegoChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onRegoChange: (event: ChangeEvent<HTMLInputElement>) => void;
 };
 
 export function VehicleSection({ rego, importState, importError, vehicleInfo, onRegoChange }: VehicleSectionProps) {
@@ -27,7 +26,6 @@ export function VehicleSection({ rego, importState, importError, vehicleInfo, on
                 placeholder="输入车牌"
                 value={rego}
                 onChange={onRegoChange}
-                maxLength={PLATE_MAX_LENGTH}
                 className={[
                   "px-3 text-sm font-semibold text-center rounded-[8px] border-2",
                   "bg-white tracking-widest",
@@ -38,11 +36,9 @@ export function VehicleSection({ rego, importState, importError, vehicleInfo, on
                 ].join(" ")}
               />
             </div>
-            {rego && (
-              <span className="text-xs text-[rgba(0,0,0,0.45)] flex-shrink-0">
-                {rego.length}/{PLATE_MAX_LENGTH}
-              </span>
-            )}
+            {rego ? (
+              <span className="text-xs text-[rgba(0,0,0,0.45)] flex-shrink-0">长度 {rego.length}</span>
+            ) : null}
           </div>
           {importState === "loading" && (
             <div className="text-xs text-[rgba(37,99,235,0.85)] mt-1">正在抓取车辆信息…</div>
@@ -67,9 +63,7 @@ export function ServicesSection({ selectedServices, onToggleService, options }: 
   return (
     <SectionCard title="服务项目">
       <div className="mt-3 space-y-3">
-        <label className="text-xs text-[rgba(0,0,0,0.55)] block">
-          请选择服务 <span className="text-red-500">*</span>
-        </label>
+        <label className="text-xs text-[rgba(0,0,0,0.55)] block">请选择服务</label>
         <div className="grid grid-cols-3 gap-3">
           {options.map((service) => (
             <ServiceOptionButton
@@ -97,6 +91,8 @@ type CustomerSectionProps = {
   onPersonalPhoneChange: (value: string) => void;
   onPersonalWechatChange: (value: string) => void;
   onPersonalEmailChange: (value: string) => void;
+  customerAddress: string;
+  onCustomerAddressChange: (value: string) => void;
   businessId: string;
   businessOptions: BusinessOption[];
   onBusinessChange: (value: string) => void;
@@ -113,6 +109,8 @@ export function CustomerSection({
   onPersonalPhoneChange,
   onPersonalWechatChange,
   onPersonalEmailChange,
+  customerAddress,
+  onCustomerAddressChange,
   businessId,
   businessOptions,
   onBusinessChange,
@@ -163,6 +161,14 @@ export function CustomerSection({
                 onChange={(event) => onPersonalEmailChange(event.target.value)}
               />
             </div>
+            <div className="col-span-2">
+              <label className="text-xs text-[rgba(0,0,0,0.55)] mb-1 block">地址</label>
+              <Input
+                placeholder="输入地址"
+                value={customerAddress}
+                onChange={(event) => onCustomerAddressChange(event.target.value)}
+              />
+            </div>
           </div>
         ) : (
           <div>
@@ -190,22 +196,35 @@ type NotesSectionProps = {
 };
 
 export function NotesSection({ notes, onNotesChange }: NotesSectionProps) {
+  const [isOpen, setIsOpen] = useState(false);
   return (
-    <SectionCard title="备注">
-      <div className="mt-3">
-        <label className="text-xs text-[rgba(0,0,0,0.55)] mb-1 block">备注信息（选填）</label>
-        <textarea
-          placeholder="输入备注信息"
-          value={notes}
-          onChange={(event) => onNotesChange(event.target.value)}
-          rows={4}
-          className={[
-            "w-full rounded-[8px] border border-[rgba(0,0,0,0.10)] bg-white px-3 py-2 text-sm",
-            "outline-none focus:border-[rgba(37,99,235,0.45)] focus:ring-2 focus:ring-[rgba(37,99,235,0.12)]",
-            "resize-none",
-          ].join(" ")}
-        />
-      </div>
+    <SectionCard
+      title="备注"
+      actions={
+        <button
+          className="text-xs text-[var(--ds-muted)] hover:text-[var(--ds-text)]"
+          onClick={() => setIsOpen((prev) => !prev)}
+        >
+          {isOpen ? "收起" : "展开"}
+        </button>
+      }
+    >
+      {isOpen ? (
+        <div className="mt-3">
+          <label className="text-xs text-[rgba(0,0,0,0.55)] mb-1 block">备注信息（选填）</label>
+          <textarea
+            placeholder="输入备注信息"
+            value={notes}
+            onChange={(event) => onNotesChange(event.target.value)}
+            rows={4}
+            className={[
+              "w-full rounded-[8px] border border-[rgba(0,0,0,0.10)] bg-white px-3 py-2 text-sm",
+              "outline-none focus:border-[rgba(37,99,235,0.45)] focus:ring-2 focus:ring-[rgba(37,99,235,0.12)]",
+              "resize-none",
+            ].join(" ")}
+          />
+        </div>
+      ) : null}
     </SectionCard>
   );
 }

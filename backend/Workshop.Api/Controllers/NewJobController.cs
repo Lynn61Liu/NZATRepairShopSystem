@@ -38,16 +38,23 @@ public class NewJobController : ControllerBase
 
         req.Customer.Type = normalizedCustomerType;
 
-        var plate = NormalizePlate(req.Plate);
-        var vehicle = await _db.Vehicles.FirstOrDefaultAsync(x => x.Plate == plate, ct);
-      
-      
-        if (vehicle is null)
-            return BadRequest(new { error = "Vehicle not found for plate." });
-
         using var tx = await _db.Database.BeginTransactionAsync(ct);
 
         var customer = await UpsertCustomerAsync(req.Customer, ct);
+        var plate = NormalizePlate(req.Plate);
+        var vehicle = await _db.Vehicles.FirstOrDefaultAsync(x => x.Plate == plate, ct);
+
+        if (vehicle is null)
+        {
+            vehicle = new Vehicle
+            {
+                Plate = plate,
+                CustomerId = customer.Id,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            _db.Vehicles.Add(vehicle);
+            await _db.SaveChangesAsync(ct);
+        }
 
         var job = new Job
         {

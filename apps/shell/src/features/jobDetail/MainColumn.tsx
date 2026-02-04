@@ -34,6 +34,7 @@ type MainColumnProps = {
   onCreateWofRecord?: (
     payload: WofRecordUpdatePayload
   ) => Promise<{ success: boolean; message?: string }>;
+  onRefreshVehicle?: () => Promise<{ success: boolean; message?: string }>;
   onDeleteJob?: () => void;
   isDeletingJob?: boolean;
   tagOptions?: { id: string; label: string }[];
@@ -55,6 +56,7 @@ export function MainColumn({
   onDeleteWofServer,
   onUpdateWofRecord,
   onCreateWofRecord,
+  onRefreshVehicle,
   onDeleteJob,
   isDeletingJob,
   tagOptions,
@@ -78,7 +80,7 @@ export function MainColumn({
           onSaveTags={onSaveTags}
         />
       </Card>
-      <SummaryCard vehicle={jobData.vehicle} customer={jobData.customer} />
+      <SummaryCard vehicle={jobData.vehicle} customer={jobData.customer} onRefreshVehicle={onRefreshVehicle} />
 
       <Card className="p-4">
         <JobTabs activeTab={activeTab} onChange={onTabChange} />

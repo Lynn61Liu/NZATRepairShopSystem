@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { JobDetailData, WofCheckItem, WofFailReason, WofRecord, WofRecordUpdatePayload } from "@/types";
 import type { TagOption } from "@/components/MultiTagSelect";
 import { fetchJob, fetchTags, updateJobTags, deleteJob as apiDeleteJob } from "../api/jobDetailApi";
+import { requestJson } from "@/utils/api";
 import {
   createWofRecord,
   createWofResult,
@@ -201,6 +202,38 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
     [jobId, tagOptions]
   );
 
+  const refreshVehicleInfo = useCallback(async () => {
+    if (!jobId) {
+      return { success: false, message: "缺少工单 ID" };
+    }
+    const plate = jobData?.vehicle?.plate;
+    if (!plate) {
+      return { success: false, message: "缺少车牌信息" };
+    }
+
+    const importRes = await requestJson<any>("/api/carjam/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plate }),
+    });
+    if (!importRes.ok) {
+      return { success: false, message: importRes.error || "抓取失败，请稍后重试" };
+    }
+
+    const jobRes = await fetchJob(jobId);
+    if (!jobRes.ok) {
+      return { success: false, message: jobRes.error || "刷新车辆信息失败" };
+    }
+
+    const data = jobRes.data as any;
+    const job = data?.job ?? data;
+    setJobData(job ?? null);
+
+    const vehicle = job?.vehicle;
+    const label = [vehicle?.year, vehicle?.make, vehicle?.model].filter(Boolean).join(" ");
+    return { success: true, message: label ? `抓取成功：${label}` : "抓取成功" };
+  }, [jobId, jobData?.vehicle?.plate]);
+
   useEffect(() => {
     let cancelled = false;
     isMountedRef.current = true;
@@ -302,5 +335,6 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
     importWofRecords: importWofRecordsForJob,
     deleteJob,
     saveTags,
+    refreshVehicleInfo,
   };
 }

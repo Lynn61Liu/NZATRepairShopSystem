@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import { ArrowLeft } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { Alert } from "@/components/ui";
@@ -8,11 +8,11 @@ import {
   NotesSection,
   ServicesSection,
   VehicleSection,
-  businessOptions,
   extractVehicleInfo,
   normalizePlateInput,
   serviceOptions,
   shouldAutoImport,
+  type BusinessOption,
   type CustomerType,
   type ImportState,
   type ServiceType,
@@ -32,11 +32,46 @@ export function NewJobPage() {
   const [personalPhone, setPersonalPhone] = useState("");
   const [personalWechat, setPersonalWechat] = useState("");
   const [personalEmail, setPersonalEmail] = useState("");
+  const [customerAddress, setCustomerAddress] = useState("");
   const [businessId, setBusinessId] = useState("");
+  const [businessOptions, setBusinessOptions] = useState<BusinessOption[]>([]);
   const [notes, setNotes] = useState("");
   const [formAlert, setFormAlert] = useState<{ variant: "error" | "success"; message: string } | null>(
     null
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadBusinesses = async () => {
+      try {
+        const res = await fetch("/api/customers");
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          throw new Error(data?.error || "加载商户失败");
+        }
+        if (!cancelled) {
+          const list = Array.isArray(data) ? data : [];
+          const businesses = list
+            .filter((item) => String(item?.type || "").toLowerCase() === "business")
+            .map((item) => ({
+              id: String(item.id),
+              label: String(item.name || ""),
+              businessCode: item.businessCode ? String(item.businessCode) : undefined,
+            }))
+            .filter((item) => item.label);
+          setBusinessOptions(businesses);
+        }
+      } catch {
+        if (!cancelled) {
+          setBusinessOptions([]);
+        }
+      }
+    };
+    loadBusinesses();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const toggleService = (service: ServiceType) => {
     setSelectedServices((prev) =>
@@ -134,10 +169,6 @@ export function NewJobPage() {
       setFormAlert({ variant: "error", message: "请输入车牌号" });
       return;
     }
-    if (selectedServices.length === 0) {
-      setFormAlert({ variant: "error", message: "请选择服务项目" });
-      return;
-    }
     if (customerType === "personal" && !personalName) {
       setFormAlert({ variant: "error", message: "请输入客户名字" });
       return;
@@ -173,7 +204,11 @@ export function NewJobPage() {
             name: customerName,
             phone: customerType === "personal" ? personalPhone : undefined,
             email: customerType === "personal" ? personalEmail : undefined,
-            businessCode: customerType === "business" ? businessId : undefined,
+            address: customerAddress || undefined,
+            businessCode:
+              customerType === "business"
+                ? selectedBusiness?.businessCode ?? selectedBusiness?.id
+                : undefined,
             notes,
           },
         }),
@@ -237,6 +272,8 @@ export function NewJobPage() {
         onPersonalPhoneChange={setPersonalPhone}
         onPersonalWechatChange={setPersonalWechat}
         onPersonalEmailChange={setPersonalEmail}
+        customerAddress={customerAddress}
+        onCustomerAddressChange={setCustomerAddress}
         businessId={businessId}
         businessOptions={businessOptions}
         onBusinessChange={setBusinessId}

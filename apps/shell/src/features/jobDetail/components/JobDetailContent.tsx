@@ -29,6 +29,7 @@ type JobDetailContentProps = {
   onCreateWofRecord?: (
     payload: WofRecordUpdatePayload
   ) => Promise<{ success: boolean; message?: string }>;
+  onRefreshVehicle?: () => Promise<{ success: boolean; message?: string }>;
   onDeleteJob?: () => void;
   isDeletingJob?: boolean;
   tagOptions?: TagOption[];
@@ -52,6 +53,7 @@ export function JobDetailContent({
   onDeleteWofServer,
   onUpdateWofRecord,
   onCreateWofRecord,
+  onRefreshVehicle,
   onDeleteJob,
   isDeletingJob,
   tagOptions,
@@ -77,6 +79,7 @@ export function JobDetailContent({
           onDeleteWofServer={onDeleteWofServer}
           onUpdateWofRecord={onUpdateWofRecord}
           onCreateWofRecord={onCreateWofRecord}
+          onRefreshVehicle={onRefreshVehicle}
           onDeleteJob={onDeleteJob}
           isDeletingJob={isDeletingJob}
           tagOptions={tagOptions}

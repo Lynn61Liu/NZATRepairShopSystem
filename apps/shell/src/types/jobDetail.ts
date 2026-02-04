@@ -34,6 +34,7 @@ export type CustomerInfo = {
   phone: string;
   email: string;
   address: string;
+  businessCode?: string;
   accountTerms: string;
   discount: string;
   notes: string;
