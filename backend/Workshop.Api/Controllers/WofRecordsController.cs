@@ -28,6 +28,16 @@ public class WofRecordsController : ControllerBase
         return ToActionResult(result);
     }
 
+    [HttpPut("wof-records/{recordId:long}")]
+    public async Task<IActionResult> UpdateWofRecord(long id, long recordId, [FromBody] WofRecordUpdateRequest? request, CancellationToken ct)
+    {
+        if (request is null)
+            return BadRequest(new { error = "Missing payload." });
+
+        var result = await _wofService.UpdateWofRecord(id, recordId, request, ct);
+        return ToActionResult(result);
+    }
+
     [HttpPost("wof-server")]
     public async Task<IActionResult> CreateWofRecord(long id, CancellationToken ct)
     {

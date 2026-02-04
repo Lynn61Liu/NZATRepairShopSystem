@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { JobDetailLayout, MainColumn, useJobDetailState } from "@/features/jobDetail";
 import { RightSidebar } from "@/components/jobDetail/RightSidebar";
 import { Alert, EmptyState } from "@/components/ui";
-import type { JobDetailData, WofCheckItem, WofFailReason, WofRecord } from "@/types";
+import type { JobDetailData, WofCheckItem, WofFailReason, WofRecord, WofRecordUpdatePayload } from "@/types";
 import type { TagOption } from "@/components/MultiTagSelect";
 
 export function JobDetailPage() {
@@ -132,6 +132,28 @@ export function JobDetailPage() {
 
     await refreshWofServer(id);
     return { success: true, message: "删除成功" };
+  };
+
+  const updateWofRecord = async (recordId: string, payload: WofRecordUpdatePayload) => {
+    if (!id) {
+      return { success: false, message: "缺少工单 ID" };
+    }
+
+    const res = await fetch(
+      `/api/jobs/${encodeURIComponent(id)}/wof-records/${encodeURIComponent(recordId)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }
+    );
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      return { success: false, message: data?.error || "保存失败" };
+    }
+
+    await refreshWofServer(id);
+    return { success: true, message: "保存成功" };
   };
 
   const importWofRecords = async () => {
@@ -310,6 +332,7 @@ export function JobDetailPage() {
             onRefreshWof={importWofRecords}
             onSaveWofResult={saveWofResult}
             onDeleteWofServer={deleteWofServer}
+            onUpdateWofRecord={updateWofRecord}
             onDeleteJob={deleteJob}
             isDeletingJob={deletingJob}
             tagOptions={tagOptions}

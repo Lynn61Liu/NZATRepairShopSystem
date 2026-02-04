@@ -294,6 +294,86 @@ public class WofRecordsService
         });
     }
 
+    public async Task<WofServiceResult> UpdateWofRecord(long jobId, long recordId, WofRecordUpdateRequest request, CancellationToken ct)
+    {
+        if (request is null)
+            return WofServiceResult.BadRequest("Missing payload.");
+
+        var record = await _db.JobWofRecords
+            .FirstOrDefaultAsync(x => x.JobId == jobId && x.Id == recordId, ct);
+
+        if (record is null)
+            return WofServiceResult.NotFound("WOF record not found.");
+
+        if (string.IsNullOrWhiteSpace(request.Rego))
+            return WofServiceResult.BadRequest("Rego is required.");
+
+        if (string.IsNullOrWhiteSpace(request.OccurredAt))
+            return WofServiceResult.BadRequest("OccurredAt is required.");
+
+        var occurredAt = ParseDateTime(request.OccurredAt);
+        if (occurredAt is null)
+            return WofServiceResult.BadRequest("Invalid occurredAt.");
+
+        if (string.IsNullOrWhiteSpace(request.RecordState))
+            return WofServiceResult.BadRequest("RecordState is required.");
+
+        var recordState = ParseRecordState(request.RecordState);
+        if (recordState is null)
+            return WofServiceResult.BadRequest("RecordState must be Pass, Fail or Recheck.");
+
+        DateOnly? previousExpiry = null;
+        if (!string.IsNullOrWhiteSpace(request.PreviousExpiryDate))
+        {
+            if (!DateOnly.TryParse(request.PreviousExpiryDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed) &&
+                !DateOnly.TryParse(request.PreviousExpiryDate, CultureInfo.CurrentCulture, DateTimeStyles.None, out parsed))
+                return WofServiceResult.BadRequest("Invalid previous expiry date.");
+            previousExpiry = parsed;
+        }
+
+        DateTime? importedAt = null;
+        if (!string.IsNullOrWhiteSpace(request.ImportedAt))
+        {
+            var parsedImported = ParseDateTime(request.ImportedAt);
+            if (parsedImported is null)
+                return WofServiceResult.BadRequest("Invalid importedAt.");
+            importedAt = EnsureUtc(parsedImported.Value);
+        }
+
+        var parsedUiState = ParseUiState(request.WofUiState);
+        if (!string.IsNullOrWhiteSpace(request.WofUiState) && parsedUiState is null)
+            return WofServiceResult.BadRequest("WofUiState must be Pass, Fail, Recheck or Printed.");
+        var uiState = parsedUiState ?? MapUiState(recordState.Value);
+
+        record.OccurredAt = EnsureUtc(occurredAt.Value);
+        record.Rego = request.Rego.Trim();
+        record.MakeModel = NormalizeOptional(request.MakeModel);
+        record.Odo = NormalizeOptional(request.Odo);
+        record.RecordState = recordState.Value;
+        record.IsNewWof = request.IsNewWof;
+        record.AuthCode = NormalizeOptional(request.AuthCode);
+        record.CheckSheet = NormalizeOptional(request.CheckSheet);
+        record.CsNo = NormalizeOptional(request.CsNo);
+        record.WofLabel = NormalizeOptional(request.WofLabel);
+        record.LabelNo = NormalizeOptional(request.LabelNo);
+        record.FailReasons = NormalizeOptional(request.FailReasons);
+        record.PreviousExpiryDate = previousExpiry;
+        if (!string.IsNullOrWhiteSpace(request.OrganisationName))
+            record.OrganisationName = request.OrganisationName.Trim();
+        if (request.ExcelRowNo.HasValue)
+            record.ExcelRowNo = request.ExcelRowNo.Value;
+        record.SourceFile = NormalizeOptional(request.SourceFile);
+        record.Note = NormalizeOptional(request.Note);
+        record.WofUiState = uiState;
+        if (importedAt.HasValue)
+            record.ImportedAt = importedAt.Value;
+        record.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+
+        return WofServiceResult.Ok(new { success = true });
+    }
+
     public async Task<WofServiceResult> DeleteWofServer(long id, CancellationToken ct)
     {
         var deleted = await _db.JobWofRecords
@@ -531,6 +611,21 @@ public class WofRecordsService
         return value.Kind == DateTimeKind.Utc ? value : DateTime.SpecifyKind(value, DateTimeKind.Utc);
     }
 
+    private static DateTime? ParseDateTime(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var parsed))
+            return parsed;
+        if (DateTime.TryParse(value, CultureInfo.CurrentCulture, DateTimeStyles.AssumeLocal, out parsed))
+            return parsed;
+        return null;
+    }
+
+    private static string? NormalizeOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
     private static string FormatDate(DateOnly? date)
         => date.HasValue ? date.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "";
 
@@ -544,3 +639,24 @@ public record WofServiceResult(int StatusCode, object? Payload, string? Error)
     public static WofServiceResult BadRequest(string error) => new(400, null, error);
     public static WofServiceResult NotFound(string error) => new(404, null, error);
 }
+
+public record WofRecordUpdateRequest(
+    string? OccurredAt,
+    string? Rego,
+    string? MakeModel,
+    string? Odo,
+    string? RecordState,
+    bool? IsNewWof,
+    string? AuthCode,
+    string? CheckSheet,
+    string? CsNo,
+    string? WofLabel,
+    string? LabelNo,
+    string? FailReasons,
+    string? PreviousExpiryDate,
+    string? OrganisationName,
+    int? ExcelRowNo,
+    string? SourceFile,
+    string? Note,
+    string? WofUiState,
+    string? ImportedAt);

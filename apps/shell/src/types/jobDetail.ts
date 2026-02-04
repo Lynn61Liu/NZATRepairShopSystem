@@ -92,6 +92,28 @@ export type WofCheckItem = {
   updatedAt?: string;
 };
 
+export type WofRecordUpdatePayload = {
+  occurredAt?: string | null;
+  rego?: string | null;
+  makeModel?: string | null;
+  odo?: string | null;
+  recordState?: WofRecordStatus | null;
+  isNewWof?: boolean | null;
+  authCode?: string | null;
+  checkSheet?: string | null;
+  csNo?: string | null;
+  wofLabel?: string | null;
+  labelNo?: string | null;
+  failReasons?: string | null;
+  previousExpiryDate?: string | null;
+  organisationName?: string | null;
+  excelRowNo?: number | null;
+  sourceFile?: string | null;
+  note?: string | null;
+  wofUiState?: "Pass" | "Fail" | "Recheck" | "Printed" | null;
+  importedAt?: string | null;
+};
+
 export type WofFailReason = {
   id: string;
   label: string;

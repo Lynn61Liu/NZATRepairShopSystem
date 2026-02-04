@@ -1,4 +1,4 @@
-import type { JobDetailData, JobDetailTabKey, WofCheckItem, WofFailReason, WofRecord } from "@/types";
+import type { JobDetailData, JobDetailTabKey, WofCheckItem, WofFailReason, WofRecord, WofRecordUpdatePayload } from "@/types";
 import { Card } from "@/components/ui";
 import { JobHeader } from "@/components/jobDetail/JobHeader";
 import { SummaryCard } from "@/components/jobDetail/SummaryCard";
@@ -27,6 +27,10 @@ type MainColumnProps = {
     note?: string;
   }) => Promise<{ success: boolean; message?: string }>;
   onDeleteWofServer?: () => Promise<{ success: boolean; message?: string }>;
+  onUpdateWofRecord?: (
+    id: string,
+    payload: WofRecordUpdatePayload
+  ) => Promise<{ success: boolean; message?: string }>;
   onDeleteJob?: () => void;
   isDeletingJob?: boolean;
   tagOptions?: { id: string; label: string }[];
@@ -46,6 +50,7 @@ export function MainColumn({
   onRefreshWof,
   onSaveWofResult,
   onDeleteWofServer,
+  onUpdateWofRecord,
   onDeleteJob,
   isDeletingJob,
   tagOptions,
@@ -81,6 +86,7 @@ export function MainColumn({
             onRefresh={onRefreshWof}
             onSaveResult={onSaveWofResult}
             onDeleteWofServer={onDeleteWofServer}
+            onUpdateRecord={onUpdateWofRecord}
           />
         ) : null}
         {activeTab === "Mechanical" ? <RepairPanel /> : null}

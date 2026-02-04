@@ -4,7 +4,7 @@ import { JOB_DETAIL_TEXT } from "@/features/jobDetail/jobDetail.constants";
 import { EmptyPanel } from "./EmptyPanel";
 import { WofResultsCard } from "./WofResultsCard";
 import { ExternalLink, RefreshCw, Trash2 } from 'lucide-react';
-import type { WofCheckItem, WofFailReason, WofRecord } from "@/types";
+import type { WofCheckItem, WofFailReason, WofRecord, WofRecordUpdatePayload } from "@/types";
 
 export type WofPanelProps = {
   hasRecord: boolean;
@@ -21,6 +21,10 @@ export type WofPanelProps = {
     note?: string;
   }) => Promise<{ success: boolean; message?: string }>;
   onDeleteWofServer?: () => Promise<{ success: boolean; message?: string }>;
+  onUpdateRecord?: (
+    id: string,
+    payload: WofRecordUpdatePayload
+  ) => Promise<{ success: boolean; message?: string }>;
 };
 
 export function WofPanel({
@@ -32,6 +36,7 @@ export function WofPanel({
   onRefresh,
   onSaveResult,
   onDeleteWofServer,
+  onUpdateRecord,
 }: WofPanelProps) {
   const [result, setResult] = useState<"Pass" | "Fail">("Pass");
   const [expiryDate, setExpiryDate] = useState("");
@@ -135,6 +140,7 @@ export function WofPanel({
         {checkItems.length ? (
           <WofResultsCard
             wofResults={checkItems}
+            onUpdate={onUpdateRecord}
           />
         ) : null}
       </SectionCard>

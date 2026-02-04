@@ -1,33 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
-import type { WofCheckItem } from "@/types";
+import { useEffect, useState } from "react";
+import type { WofCheckItem, WofRecordUpdatePayload } from "@/types";
 import { Button } from "../ui";
 import { JOB_DETAIL_TEXT } from "@/features/jobDetail/jobDetail.constants";
 
-type UpdatePayload = {
-  occurredAt?: string | null;
-  rego?: string | null;
-  makeModel?: string | null;
-  odo?: string | null;
-  recordState?: "Pass" | "Fail" | "Recheck" | null;
-  isNewWof?: boolean | null;
-  authCode?: string | null;
-  checkSheet?: string | null;
-  csNo?: string | null;
-  wofLabel?: string | null;
-  labelNo?: string | null;
-  failReasons?: string | null;
-  previousExpiryDate?: string | null;
-  organisationName?: string | null;
-  excelRowNo?: number | null;
-  sourceFile?: string | null;
-  note?: string | null;
-  wofUiState?: "Pass" | "Fail" | "Recheck" | "Printed" | null;
-  importedAt?: string | null;
-};
-
 interface WofResultsCardProps {
   wofResults: WofCheckItem[];
-  onUpdate?: (id: string, payload: UpdatePayload) => Promise<{ success: boolean; message?: string }>;
+  onUpdate?: (id: string, payload: WofRecordUpdatePayload) => Promise<{ success: boolean; message?: string }>;
 }
 
 type FormState = {
@@ -83,7 +61,7 @@ function toFormState(record: WofCheckItem): FormState {
   };
 }
 
-function buildPayload(form: FormState): UpdatePayload {
+function buildPayload(form: FormState): WofRecordUpdatePayload {
   return {
     occurredAt: form.occurredAt || null,
     rego: form.rego || null,
@@ -112,7 +90,7 @@ function WofResultItem({
   onUpdate,
 }: {
   record: WofCheckItem;
-  onUpdate?: (id: string, payload: UpdatePayload) => Promise<{ success: boolean; message?: string }>;
+  onUpdate?: (id: string, payload: WofRecordUpdatePayload) => Promise<{ success: boolean; message?: string }>;
 }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<FormState>(() => toFormState(record));
@@ -123,12 +101,6 @@ function WofResultItem({
   useEffect(() => {
     setForm(toFormState(record));
   }, [record.id, record.updatedAt]);
-
-  const title = useMemo(() => {
-    const date = form.occurredAt || record.occurredAt || "—";
-    const rego = form.rego || record.rego || "—";
-    return `${rego} · ${date}`;
-  }, [form.occurredAt, form.rego, record.occurredAt, record.rego]);
 
   const handleChange = (key: keyof FormState, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -158,7 +130,15 @@ function WofResultItem({
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-2">
-            <span className="text-sm font-medium text-gray-900">{editing ? form.occurredAt : record.occurredAt ?? "—"}</span>
+            {editing ? (
+              <input
+                className="h-7 rounded border px-2 text-xs"
+                value={form.occurredAt}
+                onChange={(e) => handleChange("occurredAt", e.target.value)}
+              />
+            ) : (
+              <span className="text-sm font-medium text-gray-900">{record.occurredAt ?? "—"}</span>
+            )}
             {editing ? (
               <select
                 className="h-7 rounded border px-2 text-xs"
@@ -187,7 +167,7 @@ function WofResultItem({
             <Button className="ml-auto" variant="primary" onClick={handlePrint}>
               {JOB_DETAIL_TEXT.buttons.print}
             </Button>
-            <Button variant="secondary" onClick={() => setEditing((v) => !v)}>
+            <Button variant="ghost" onClick={() => setEditing((v) => !v)}>
               {editing ? "取消" : "修改"}
             </Button>
             {editing ? (
@@ -201,22 +181,8 @@ function WofResultItem({
           {error ? <div className="text-xs text-red-600 mb-2">{error}</div> : null}
 
           <div className="grid grid-cols-1 gap-2 text-sm md:grid-cols-2">
-            <div className="text-gray-600">
-              Rego:{" "}
-              {editing ? (
-                <input className="ml-2 rounded border px-2 py-1" value={form.rego} onChange={(e) => handleChange("rego", e.target.value)} />
-              ) : (
-                record.rego ?? "—"
-              )}
-            </div>
-            <div className="text-gray-600">
-              Make & Model:{" "}
-              {editing ? (
-                <input className="ml-2 rounded border px-2 py-1" value={form.makeModel} onChange={(e) => handleChange("makeModel", e.target.value)} />
-              ) : (
-                record.makeModel ?? "—"
-              )}
-            </div>
+            
+           
             <div className="text-gray-600">
               Odometer:{" "}
               {editing ? (
@@ -225,6 +191,7 @@ function WofResultItem({
                 record.odo ?? "—"
               )}
             </div>
+         
             <div className="text-gray-600">
               Auth Code:{" "}
               {editing ? (
@@ -265,14 +232,8 @@ function WofResultItem({
                 record.labelNo ?? "—"
               )}
             </div>
-            <div className="text-gray-600">
-              Organisation:{" "}
-              {editing ? (
-                <input className="ml-2 rounded border px-2 py-1" value={form.organisationName} onChange={(e) => handleChange("organisationName", e.target.value)} />
-              ) : (
-                record.organisationName ?? "—"
-              )}
-            </div>
+            
+          
             <div className="text-gray-600">
               Source File:{" "}
               {editing ? (
@@ -289,20 +250,7 @@ function WofResultItem({
                 record.sourceRow ?? "—"
               )}
             </div>
-            <div className="text-gray-600">
-              UI State:{" "}
-              {editing ? (
-                <select className="ml-2 rounded border px-2 py-1" value={form.wofUiState} onChange={(e) => handleChange("wofUiState", e.target.value)}>
-                  <option value="">—</option>
-                  <option value="Pass">Pass</option>
-                  <option value="Fail">Fail</option>
-                  <option value="Recheck">Recheck</option>
-                  <option value="Printed">Printed</option>
-                </select>
-              ) : (
-                record.wofUiState ?? "—"
-              )}
-            </div>
+         
             <div className="text-gray-600">
               Imported At:{" "}
               {editing ? (
