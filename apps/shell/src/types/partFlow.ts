@@ -3,7 +3,7 @@ export type Status = "pending_order" | "needs_pt" | "parts_trader" | "pickup_or_
 export interface Note {
   id: string;
   text: string;
-  timestamp: Date;
+  timestamp: string;
 }
 
 export interface CarDetails {
@@ -16,11 +16,11 @@ export interface CarDetails {
 
 export interface WorkCard {
   id: string;
+  jobId: string;
   carInfo: string;
   parts: string[];
   status: Status;
   notes: Note[];
-  isArchived: boolean;
-  createdAt: Date;
+  createdAt: string;
   details: CarDetails;
 }

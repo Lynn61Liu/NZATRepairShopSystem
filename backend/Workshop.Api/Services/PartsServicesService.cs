@@ -203,6 +203,81 @@ public class PartsServicesService
         return WofServiceResult.Ok(new { success = true });
     }
 
+    public async Task<WofServiceResult> GetPartFlow(CancellationToken ct)
+    {
+        var services = await _db.JobPartsServices.AsNoTracking()
+            .OrderByDescending(x => x.UpdatedAt)
+            .ThenByDescending(x => x.Id)
+            .ToListAsync(ct);
+
+        if (services.Count == 0)
+            return WofServiceResult.Ok(new List<object>());
+
+        var serviceIds = services.Select(x => x.Id).ToList();
+        var notes = await _db.JobPartsNotes.AsNoTracking()
+            .Where(x => serviceIds.Contains(x.PartsServiceId))
+            .OrderBy(x => x.CreatedAt)
+            .ThenBy(x => x.Id)
+            .ToListAsync(ct);
+
+        var notesByService = notes
+            .GroupBy(x => x.PartsServiceId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var jobIds = services.Select(x => x.JobId).Distinct().ToList();
+        var jobInfo = await (
+            from j in _db.Jobs.AsNoTracking()
+            join v in _db.Vehicles.AsNoTracking() on j.VehicleId equals v.Id into vj
+            from v in vj.DefaultIfEmpty()
+            join c in _db.Customers.AsNoTracking() on j.CustomerId equals c.Id into cj
+            from c in cj.DefaultIfEmpty()
+            where jobIds.Contains(j.Id)
+            select new { j.Id, Vehicle = v, Customer = c }
+        ).ToListAsync(ct);
+
+        var jobMap = jobInfo.ToDictionary(x => x.Id, x => x);
+
+        var payload = services.Select(service =>
+        {
+            jobMap.TryGetValue(service.JobId, out var info);
+            var vehicle = info?.Vehicle;
+            var customer = info?.Customer;
+
+            var parts = ParseParts(service.Description);
+            var notesPayload = notesByService.TryGetValue(service.Id, out var list)
+                ? list.Select(n => new
+                    {
+                        id = n.Id.ToString(CultureInfo.InvariantCulture),
+                        text = n.Note,
+                        timestamp = FormatDateTime(n.CreatedAt)
+                    })
+                    .Cast<object>()
+                    .ToList()
+                : new List<object>();
+
+            return new
+            {
+                id = service.Id.ToString(CultureInfo.InvariantCulture),
+                jobId = service.JobId.ToString(CultureInfo.InvariantCulture),
+                carInfo = BuildCarInfo(vehicle),
+                parts,
+                status = ToStatusValue(service.Status),
+                notes = notesPayload,
+                createdAt = FormatDateTime(service.CreatedAt),
+                details = new
+                {
+                    owner = customer?.Name ?? "",
+                    phone = customer?.Phone ?? "",
+                    vin = vehicle?.Vin ?? "",
+                    mileage = vehicle?.Odometer?.ToString(CultureInfo.InvariantCulture) ?? "",
+                    issue = service.Description ?? ""
+                }
+            };
+        }).ToList();
+
+        return WofServiceResult.Ok(payload);
+    }
+
     private static PartsServiceStatus? ParseStatus(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
@@ -227,6 +302,39 @@ public class PartsServicesService
 
     private static string FormatDateTime(DateTime dateTime)
         => dateTime.ToString("O", CultureInfo.InvariantCulture);
+
+    private static string BuildCarInfo(Vehicle? vehicle)
+    {
+        if (vehicle is null)
+            return "Unknown";
+
+        var makeModel = string.Join(" ", new[] { vehicle.Make, vehicle.Model }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        if (!string.IsNullOrWhiteSpace(vehicle.Plate))
+        {
+            return string.IsNullOrWhiteSpace(makeModel)
+                ? vehicle.Plate
+                : $"{makeModel} - {vehicle.Plate}";
+        }
+
+        return string.IsNullOrWhiteSpace(makeModel) ? "Unknown" : makeModel;
+    }
+
+    private static List<string> ParseParts(string? description)
+    {
+        if (string.IsNullOrWhiteSpace(description))
+            return new List<string>();
+
+        var split = description.Split(new[] { ',', '，', ';', '；', '\n', '\r', '/', '、' }, StringSplitOptions.RemoveEmptyEntries);
+        var parts = split
+            .Select(x => x.Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToList();
+
+        if (parts.Count == 0)
+            parts.Add(description.Trim());
+
+        return parts;
+    }
 }
 
 public record CreatePartsServiceRequest(string Description, string? Status);

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useDrag } from 'react-dnd';
 import { Trash2, Archive, Car, Wrench, MessageSquare, Send, Clock, Info, X } from 'lucide-react';
 import type { WorkCard } from '@/types';
@@ -16,6 +16,7 @@ export function CardItem({ card, onDelete, onArchive, onAddNote, onDeleteNote }:
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [showDetails, setShowDetails] = useState(false);
+  const dragRef = useRef<HTMLDivElement | null>(null);
 
   const [{ isDragging }, drag] = useDrag(() => ({
     type: 'CARD',
@@ -24,6 +25,7 @@ export function CardItem({ card, onDelete, onArchive, onAddNote, onDeleteNote }:
       isDragging: !!monitor.isDragging()
     })
   }));
+  drag(dragRef);
 
   const handleAddNote = () => {
     if (noteText.trim()) {
@@ -33,8 +35,9 @@ export function CardItem({ card, onDelete, onArchive, onAddNote, onDeleteNote }:
     }
   };
 
-  const formatTime = (date: Date) => {
-    const d = new Date(date);
+  const formatTime = (value: string | Date) => {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "";
     return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
 
@@ -55,6 +58,7 @@ export function CardItem({ card, onDelete, onArchive, onAddNote, onDeleteNote }:
 
   const cardContent = (
     <div
+      ref={dragRef}
       className={`bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-all cursor-move ${
         isDragging ? 'opacity-50' : 'opacity-100'
       }`}
@@ -189,7 +193,7 @@ export function CardItem({ card, onDelete, onArchive, onAddNote, onDeleteNote }:
 
   return (
     <>
-      {drag(cardContent)}
+      {cardContent}
 
       {showDetails && (
         <CarDetailsModal

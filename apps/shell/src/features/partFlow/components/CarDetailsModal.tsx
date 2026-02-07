@@ -1,5 +1,5 @@
 import { X, User, Phone, Hash, Gauge, FileText, Calendar, Clock } from 'lucide-react';
-import type { WorkCard } from '@/types';
+import type { Status, WorkCard } from '@/types';
 
 interface CarDetailsModalProps {
   card: WorkCard;
@@ -7,8 +7,16 @@ interface CarDetailsModalProps {
 }
 
 export function CarDetailsModal({ card, onClose }: CarDetailsModalProps) {
-  const formatDateTime = (date: Date) => {
-    const d = new Date(date);
+  const statusLabels: Record<Status, string> = {
+    pending_order: "待下单",
+    needs_pt: "需要发PT",
+    parts_trader: "PartsTrader",
+    pickup_or_transit: "待取/在途",
+  };
+
+  const formatDateTime = (value: string | Date) => {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "";
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
 
@@ -134,7 +142,7 @@ export function CarDetailsModal({ card, onClose }: CarDetailsModalProps) {
           <div className="border border-gray-200 rounded-lg p-4">
             <h3 className="text-lg font-semibold text-gray-900 mb-3">当前状态</h3>
             <div className="inline-block bg-gradient-to-r from-purple-500 to-purple-600 text-white px-4 py-2 rounded-lg font-semibold text-lg">
-              {card.status}
+              {statusLabels[card.status] ?? card.status}
             </div>
           </div>
 

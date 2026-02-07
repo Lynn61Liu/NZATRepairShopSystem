@@ -21,6 +21,13 @@ public class PartsServicesController : ControllerBase
         return ToActionResult(result);
     }
 
+    [HttpGet("~/api/parts-flow")]
+    public async Task<IActionResult> GetPartFlow(CancellationToken ct)
+    {
+        var result = await _partsService.GetPartFlow(ct);
+        return ToActionResult(result);
+    }
+
     [HttpPost]
     public async Task<IActionResult> CreateService(long id, [FromBody] CreatePartsServiceRequest? request, CancellationToken ct)
     {

@@ -3,7 +3,7 @@ import { NavLink } from "react-router-dom";
 const linkBase =
   "block  px-3 py-2 transition border border-transparent";
 const linkActive =
-  "bg-[var(--ds-primary)] border-[var(--ds-border)] text-white";
+  "bg-[var(--ds-primary)]  rounded border-[var(--ds-border)] text-white";
 const linkIdle =
   "text-[var(--ds-muted)] hover:text-[var(--ds-text)] hover:bg-[rgba(255,255,255,0.04)]";
 

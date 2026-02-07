@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useDrop } from 'react-dnd';
 import type { WorkCard, Status } from '@/types';
 // import { CardItem } from './CardItem';
@@ -43,6 +44,7 @@ export function PartFlowColumn({
   onAddNote,
   onDeleteNote
 }: PartFlowColumnProps) {
+  const dropRef = useRef<HTMLDivElement | null>(null);
   const [{ isOver }, drop] = useDrop(() => ({
     accept: 'CARD',
     drop: (item: { id: string }) => {
@@ -52,9 +54,11 @@ export function PartFlowColumn({
       isOver: !!monitor.isOver()
     })
   }));
+  drop(dropRef);
 
   const column = (
     <div
+      ref={dropRef}
       className={`rounded-lg border-2 transition-colors ${
         isOver ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'
       }`}
@@ -80,5 +84,5 @@ export function PartFlowColumn({
     </div>
   );
 
-  return drop(column);
+  return column;
 }
