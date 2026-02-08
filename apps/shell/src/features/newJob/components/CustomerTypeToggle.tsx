@@ -1,4 +1,3 @@
-import type React from "react";
 import type { CustomerType } from "@/features/newJob/newJob.types";
 
 const options: Array<{ id: CustomerType; label: string }> = [

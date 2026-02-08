@@ -3,7 +3,6 @@ import { SectionCard } from "@/components/ui";
 import { JOB_DETAIL_TEXT } from "@/features/jobDetail/jobDetail.constants";
 import type { WofCheckItem, WofFailReason, WofRecord, WofRecordUpdatePayload } from "@/types";
 import { WofResultsList } from "./WofResultsList";
-import { WofResultForm } from "./WofResultForm";
 import { WofToolbar } from "./WofToolbar";
 
 export type WofPanelProps = {
@@ -14,12 +13,6 @@ export type WofPanelProps = {
   failReasons?: WofFailReason[];
   isLoading?: boolean;
   onRefresh?: () => Promise<{ success: boolean; message?: string }>;
-  onSaveResult?: (payload: {
-    result: "Pass" | "Fail";
-    expiryDate?: string;
-    failReasonId?: string;
-    note?: string;
-  }) => Promise<{ success: boolean; message?: string }>;
   onDeleteWofServer?: () => Promise<{ success: boolean; message?: string }>;
   onUpdateRecord?: (
     id: string,
@@ -38,7 +31,6 @@ export function WofPanel(props: WofPanelProps) {
     failReasons = [],
     isLoading,
     onRefresh,
-    onSaveResult,
     onDeleteWofServer,
     onUpdateRecord,
     onCreateRecord,

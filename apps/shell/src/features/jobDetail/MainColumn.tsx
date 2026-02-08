@@ -31,12 +31,6 @@ type MainColumnProps = {
   partsLoading?: boolean;
   onAddWof: () => void;
   onRefreshWof?: () => Promise<{ success: boolean; message?: string }>;
-  onSaveWofResult?: (payload: {
-    result: "Pass" | "Fail";
-    expiryDate?: string;
-    failReasonId?: string;
-    note?: string;
-  }) => Promise<{ success: boolean; message?: string }>;
   onDeleteWofServer?: () => Promise<{ success: boolean; message?: string }>;
   onUpdateWofRecord?: (
     id: string,
@@ -83,7 +77,6 @@ export function MainColumn({
   partsLoading,
   onAddWof,
   onRefreshWof,
-  onSaveWofResult,
   onDeleteWofServer,
   onUpdateWofRecord,
   onCreateWofRecord,
@@ -131,7 +124,6 @@ export function MainColumn({
             failReasons={failReasons}
             isLoading={wofLoading}
             onRefresh={onRefreshWof}
-            onSaveResult={onSaveWofResult}
             onDeleteWofServer={onDeleteWofServer}
             onUpdateRecord={onUpdateWofRecord}
             onCreateRecord={onCreateWofRecord}
