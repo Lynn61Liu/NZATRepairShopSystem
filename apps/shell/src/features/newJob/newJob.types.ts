@@ -1,3 +1,5 @@
+import type { LucideIcon } from "lucide-react";
+
 export type ServiceType = "wof" | "mech" | "paint";
 export type CustomerType = "personal" | "business";
 
@@ -8,15 +10,10 @@ export type VehicleInfo = {
   year: string;
 };
 
-type IconProps = {
-  size?: number;
-  className?: string;
-};
-
 export type ServiceOption = {
   id: ServiceType;
   label: string;
-  icon: (props: IconProps) => JSX.Element;
+  icon: LucideIcon;
 };
 
 export type BusinessOption = {

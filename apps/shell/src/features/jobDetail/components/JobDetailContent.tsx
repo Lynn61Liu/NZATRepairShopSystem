@@ -26,12 +26,6 @@ type JobDetailContentProps = {
   partsLoading?: boolean;
   onAddWof: () => void;
   onRefreshWof?: () => Promise<{ success: boolean; message?: string }>;
-  onSaveWofResult?: (payload: {
-    result: "Pass" | "Fail";
-    expiryDate?: string;
-    failReasonId?: string;
-    note?: string;
-  }) => Promise<{ success: boolean; message?: string }>;
   onDeleteWofServer?: () => Promise<{ success: boolean; message?: string }>;
   onUpdateWofRecord?: (
     id: string,
@@ -80,7 +74,6 @@ export function JobDetailContent({
   partsLoading,
   onAddWof,
   onRefreshWof,
-  onSaveWofResult,
   onDeleteWofServer,
   onUpdateWofRecord,
   onCreateWofRecord,
@@ -114,7 +107,6 @@ export function JobDetailContent({
           partsLoading={partsLoading}
           onAddWof={onAddWof}
           onRefreshWof={onRefreshWof}
-          onSaveWofResult={onSaveWofResult}
           onDeleteWofServer={onDeleteWofServer}
           onUpdateWofRecord={onUpdateWofRecord}
           onCreateWofRecord={onCreateWofRecord}

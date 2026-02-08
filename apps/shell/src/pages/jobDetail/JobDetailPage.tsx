@@ -25,7 +25,6 @@ export function JobDetailPage() {
     setLoadError,
     setDeleteError,
     createWofServer,
-    saveWofResult,
     deleteWofServer,
     createWofRecordRow,
     updateWofRecord,
@@ -76,7 +75,6 @@ export function JobDetailPage() {
         partsLoading={partsLoading}
         onAddWof={createWofServer}
         onRefreshWof={importWofRecords}
-        onSaveWofResult={saveWofResult}
         onDeleteWofServer={deleteWofServer}
         onUpdateWofRecord={updateWofRecord}
         onCreateWofRecord={createWofRecordRow}
