@@ -10,6 +10,7 @@ public sealed class CarjamBrowser
     public async Task<string> FetchHtmlAsync(string plate, CancellationToken ct)
     {
         var url = $"https://www.carjam.co.nz/car/?plate={Uri.EscapeDataString(plate)}";
+        const float timeoutMs = 120_000;
 
         using var playwright = await Microsoft.Playwright.Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
@@ -26,16 +27,19 @@ public sealed class CarjamBrowser
 
         var page = await context.NewPageAsync();
 
+        page.SetDefaultTimeout(timeoutMs);
+        page.SetDefaultNavigationTimeout(timeoutMs);
+
         await page.GotoAsync(url, new PageGotoOptions
         {
-            WaitUntil = WaitUntilState.NetworkIdle,
-            Timeout = 60000
+            WaitUntil = WaitUntilState.DOMContentLoaded,
+            Timeout = timeoutMs
         });
 
         await page.WaitForFunctionAsync(
             "() => window.report && window.report.idh && window.report.idh.vehicle && window.report.idh.vehicle.plate",
             null,
-            new PageWaitForFunctionOptions { Timeout = 60000 }
+            new PageWaitForFunctionOptions { Timeout = timeoutMs }
         );
 
         return await page.ContentAsync();

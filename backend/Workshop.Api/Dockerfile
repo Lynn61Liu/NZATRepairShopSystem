@@ -1,23 +1,26 @@
+# ================= build =================
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-# Build context is backend/Workshop.Api. Copy local sources.
-COPY . .
+# copy csproj for cache
+COPY Workshop.Api/Workshop.Api.csproj Workshop.Api/
+COPY CarjamImporter/CarjamImporter.csproj CarjamImporter/
+RUN dotnet restore Workshop.Api/Workshop.Api.csproj
 
-# Fetch CarjamImporter into /CarjamImporter so ProjectReference resolves.
-# If your repo is private, replace the URL with one that includes a token.
-RUN if [ ! -f /CarjamImporter/CarjamImporter.csproj ]; then \
-      apt-get update && apt-get install -y --no-install-recommends git ca-certificates && \
-      git clone --depth 1 https://github.com/6186127/nzat-Jan2026.git /tmp/repo && \
-      cp -R /tmp/repo/backend/CarjamImporter /CarjamImporter && \
-      rm -rf /var/lib/apt/lists/* /tmp/repo ; \
-    fi
+# copy full source
+COPY . ./
 
-RUN dotnet restore Workshop.Api.csproj
-RUN dotnet publish Workshop.Api.csproj -c Release -o /app/publish /p:UseAppHost=false
+# publish API (includes referenced CarjamImporter)
+RUN dotnet publish Workshop.Api/Workshop.Api.csproj -c Release -o /app/publish /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0
+
+# ================= runtime (Playwright 官方镜像) =================
+FROM mcr.microsoft.com/playwright/dotnet:v1.57.0-jammy AS final
 WORKDIR /app
+
+# 官方镜像已内置 Chromium + 所有依赖
 COPY --from=build /app/publish ./
-ENV ASPNETCORE_URLS=http://0.0.0.0:$PORT
+
+ENV ASPNETCORE_URLS=http://+:8080
+EXPOSE 8080
 ENTRYPOINT ["dotnet", "Workshop.Api.dll"]

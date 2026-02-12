@@ -2,6 +2,8 @@ services:
   db:
     image: postgres:15
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -10,14 +12,17 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
-      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - /www/wwwroot/NZAT.NET/db/init:/docker-entrypoint-initdb.d:ro
 
   api:
     build:
-      context: .
-      dockerfile: backend/Workshop.Api/Dockerfile
+      context: /www/wwwroot/NZAT.NET/backend
+      dockerfile: Workshop.Api/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ConnectionStrings__Default: ${DB_CONN_STRING}
       ConnectionStrings__Carjam: ${DB_CONN_STRING}
     depends_on:
@@ -27,8 +32,9 @@ services:
 
   web:
     build:
-      context: .
-      dockerfile: apps/shell/Dockerfile
+      context: /www/wwwroot/NZAT.NET/apps/shell
+      dockerfile: Dockerfile
+    restart: unless-stopped
     depends_on:
       - api
     ports:

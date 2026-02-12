@@ -1,5 +1,3 @@
-using System;
-using CarjamImporter;
 using Microsoft.AspNetCore.Mvc;
 using Workshop.Api.DTOs;
 
@@ -9,41 +7,16 @@ namespace Workshop.Api.Controllers;
 [Route("api/carjam")]
 public class CarjamController : ControllerBase
 {
-    private readonly CarjamImportService _importService;
-
-    public CarjamController(CarjamImportService importService)
-    {
-        _importService = importService;
-    }
-
     [HttpPost("import")]
-    public async Task<IActionResult> Import([FromBody] CarjamImportRequest req, CancellationToken ct)
-
+    public IActionResult Import([FromBody] CarjamImportRequest req)
     {
-        Console.WriteLine("-------API Import Vehicle by Plate:", req?.Plate);
         if (req == null || string.IsNullOrWhiteSpace(req.Plate))
             return BadRequest(new { success = false, error = "Plate is required." });
 
-        var result = await _importService.ImportByPlateAsync(req.Plate, ct);
-        if (!result.Success || result.Vehicle is null)
-            return BadRequest(new { success = false, error = result.Error ?? "Import failed." });
-
-        var v = result.Vehicle;
-        return Ok(new
+        return StatusCode(410, new
         {
-            success = true,
-            affectedRows = result.AffectedRows,
-            vehicle = new
-            {
-                plate = v.Plate,
-                make = v.Make,
-                model = v.Model,
-                year = v.Year,
-                vin = v.Vin,
-                fuelType = v.FuelType,
-                nzFirstRegistration = v.NzFirstRegistration,
-                odometer = v.Odometer
-            }
+            success = false,
+            error = "Import is disabled on server. Run the local importer to fetch data."
         });
     }
 }
