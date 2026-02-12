@@ -25,6 +25,7 @@ export function NewJobPage() {
   const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null);
   const [importState, setImportState] = useState<ImportState>("idle");
   const [importError, setImportError] = useState("");
+  const [lastRequestedPlate, setLastRequestedPlate] = useState("");
   const [selectedServices, setSelectedServices] = useState<ServiceType[]>([]);
   const [customerType, setCustomerType] = useState<CustomerType>("personal");
   const [personalName, setPersonalName] = useState("");
@@ -94,6 +95,43 @@ export function NewJobPage() {
     throw new Error(data?.error || "读取数据库失败");
   };
 
+  const importVehicle = async (plate: string) => {
+
+    //  console.log('in importVehicle:', plate, lastRequestedPlate, importState);
+    if (plate === lastRequestedPlate || importState === "loading") return;
+    setLastRequestedPlate(plate);
+    setImportState("loading");
+    setImportError("");
+    setVehicleInfo(null);
+
+    try {
+     
+      const res = await fetch(withApiBase("/api/carjam/import"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plate }),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(data?.error || "导入失败，请稍后重试 or Link");
+      }
+
+      const dbData = await fetchVehicleFromDb(plate);
+      if (!dbData) {
+        throw new Error("已导入，但未在数据库中找到车辆");
+      }
+
+      console.log("vehicle from db", dbData?.vehicle ?? dbData);
+      setVehicleInfo(extractVehicleInfo(dbData));
+      setImportState("success");
+    } catch (err) {
+      setImportState("error");
+      setImportError(err instanceof Error ? err.message : "导入失败，请稍后重试");
+    }
+  };
+
   const handleImportClick = async () => {
     const normalized = normalizePlateInput(rego);
     if (!normalized) return;
@@ -111,8 +149,8 @@ export function NewJobPage() {
         return;
       }
 
-      setImportState("error");
-      setImportError("数据库没有该车牌数据，请在本地运行导入工具后再试。");
+      setImportState("idle");
+      await importVehicle(normalized);
     } catch (err) {
       setImportState("error");
       setImportError(err instanceof Error ? err.message : "导入失败，请稍后重试");

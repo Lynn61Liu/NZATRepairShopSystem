@@ -1,5 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using CarjamImporter;
+using CarjamImporter.Infrastructure;
+using CarjamImporter.Persistence;
+using CarjamImporter.Playwright;
 using QuestPDF.Infrastructure;
 using Workshop.Api.Data;
 using Workshop.Api.Models;
@@ -67,6 +71,27 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
 builder.Services.AddScoped<WofRecordsService>();
 builder.Services.AddScoped<WofPrintService>();
 builder.Services.AddScoped<PartsServicesService>();
+
+// ========= Carjam Importer DI =========
+
+// 1) Connection string (prefer "Carjam", fallback to "Default")
+var carjamConnStr =
+    builder.Configuration.GetConnectionString("Carjam")
+    ?? connString;
+
+if (string.IsNullOrWhiteSpace(carjamConnStr))
+    throw new InvalidOperationException("Missing connection string. Set ConnectionStrings:Carjam (or Default) in appsettings.json.");
+
+// 2) Register infrastructure/repo dependencies
+builder.Services.AddSingleton(new DbConnectionFactory(carjamConnStr));
+builder.Services.AddScoped<VehicleRepository>();
+
+// 3) Register browser + import service
+builder.Services.AddScoped<CarjamBrowser>();
+builder.Services.AddScoped<CarjamImportService>();
+
+// (Optional) If you still use your own scraper in Workshop.Api
+builder.Services.AddScoped<CarjamScraper>();
 
 // ========= Build pipeline =========
 var app = builder.Build();

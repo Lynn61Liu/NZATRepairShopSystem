@@ -4,6 +4,7 @@ using System.Text.Json;
 using Workshop.Api.Data;
 using Workshop.Api.DTOs;
 using Workshop.Api.Models;
+using Workshop.Api.Services;
 
 namespace Workshop.Api.Controllers;
 
@@ -12,10 +13,12 @@ namespace Workshop.Api.Controllers;
 public class VehiclesController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly CarjamScraper _scraper;
 
-    public VehiclesController(AppDbContext db)
+    public VehiclesController(AppDbContext db, CarjamScraper scraper)
     {
         _db = db;
+        _scraper = scraper;
     }
 
     // [HttpPost("import-by-plate")]
