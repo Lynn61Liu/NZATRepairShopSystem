@@ -94,11 +94,12 @@ export function filterJobs(rows: JobRow[], filters: JobsFilters): JobRow[] {
   return rows.filter((r) => {
     // 搜索过滤
     if (s) {
+      const customerText = (r.customerCode || r.customerName).toLowerCase();
       const hit =
         r.id.toLowerCase().includes(s) ||
         r.plate.toLowerCase().includes(s) ||
         r.vehicleModel.toLowerCase().includes(s) ||
-        r.customerName.toLowerCase().includes(s);
+        customerText.includes(s);
       if (!hit) return false;
     }
 
@@ -114,7 +115,8 @@ export function filterJobs(rows: JobRow[], filters: JobsFilters): JobRow[] {
 
     // 客户
     if (customer) {
-      if (!r.customerName.toLowerCase().includes(customer)) return false;
+      const customerText = (r.customerCode || r.customerName).toLowerCase();
+      if (!customerText.includes(customer)) return false;
     }
 
     // Tag：任意命中（OR）

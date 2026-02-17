@@ -171,10 +171,10 @@ export function NewJobPage() {
       setFormAlert({ variant: "error", message: "请输入车牌号" });
       return;
     }
-    if (customerType === "personal" && !personalName) {
-      setFormAlert({ variant: "error", message: "请输入客户名字" });
-      return;
-    }
+    // if (customerType === "personal" && !personalName) {
+    //   setFormAlert({ variant: "error", message: "请输入客户名字" });
+    //   return;
+    // }
     if (customerType === "business" && !businessId) {
       setFormAlert({ variant: "error", message: "请选择商户" });
       return;
@@ -189,32 +189,37 @@ export function NewJobPage() {
     // } else {
     //   console.log("Business ID:", businessId);
     // }
-    console.log("===========selectedServices============", selectedServices);
+    // console.log("===========selectedServices============", selectedServices);
 
 
     
+    const customerPayload =
+      customerType === "personal"
+        ? {
+            type: customerType,
+            name: customerName,
+            phone: personalPhone || undefined,
+            email: personalEmail || undefined,
+            address: customerAddress || undefined,
+            notes,
+          }
+        : {
+            type: customerType,
+            name: customerName,
+            businessCode: selectedBusiness?.businessCode ?? selectedBusiness?.id,
+          };
+
     try {
       const res = await fetch(withApiBase("/api/newJob"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        
         body: JSON.stringify({
           plate: rego,
           services: selectedServices,
           notes,
           partsDescription: hasMech && partsDescription.trim() ? partsDescription.trim() : undefined,
-          customer: {
-            type: customerType,
-            name: customerName,
-            phone: customerType === "personal" ? personalPhone : undefined,
-            email: customerType === "personal" ? personalEmail : undefined,
-            address: customerAddress || undefined,
-            businessCode:
-              customerType === "business"
-                ? selectedBusiness?.businessCode ?? selectedBusiness?.id
-                : undefined,
-            notes,
-          },
+          businessId: customerType === "business" ? businessId : undefined,
+          customer: customerPayload,
         }),
       });
 

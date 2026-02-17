@@ -26,8 +26,8 @@ public class NewJobController : ControllerBase
         if (string.IsNullOrWhiteSpace(req.Plate))
             return BadRequest(new { error = "Plate is required." });
 
-        if (req.Customer is null || string.IsNullOrWhiteSpace(req.Customer.Name))
-            return BadRequest(new { error = "Customer name is required." });
+        // if (req.Customer is null || string.IsNullOrWhiteSpace(req.Customer.Name))
+        //     return BadRequest(new { error = "Customer name is required." });
 
         if (string.IsNullOrWhiteSpace(req.Customer.Type))
             return BadRequest(new { error = "Customer type is required." });
@@ -37,10 +37,21 @@ public class NewJobController : ControllerBase
             return BadRequest(new { error = "Customer type must be Personal or Business." });
 
         req.Customer.Type = normalizedCustomerType;
+        var isBusiness = string.Equals(req.Customer.Type, "Business", StringComparison.Ordinal);
 
         using var tx = await _db.Database.BeginTransactionAsync(ct);
 
-        var customer = await UpsertCustomerAsync(req.Customer, ct);
+        Customer? customer = null;
+        if (!isBusiness)
+            customer = await UpsertCustomerAsync(req.Customer, ct);
+
+        long? jobCustomerId = customer?.Id;
+        if (isBusiness)
+        {
+            if (string.IsNullOrWhiteSpace(req.BusinessId) || !long.TryParse(req.BusinessId, out var businessCustomerId))
+                return BadRequest(new { error = "Business customer id is required." });
+            jobCustomerId = businessCustomerId;
+        }
         var plate = NormalizePlate(req.Plate);
         var vehicle = await _db.Vehicles.FirstOrDefaultAsync(x => x.Plate == plate, ct);
 
@@ -49,7 +60,7 @@ public class NewJobController : ControllerBase
             vehicle = new Vehicle
             {
                 Plate = plate,
-                CustomerId = customer.Id,
+                CustomerId = customer?.Id,
                 UpdatedAt = DateTime.UtcNow,
             };
             _db.Vehicles.Add(vehicle);
@@ -61,7 +72,7 @@ public class NewJobController : ControllerBase
             Status = "InProgress",
             IsUrgent = false,
             VehicleId = vehicle.Id,
-            CustomerId = customer.Id,
+            CustomerId = jobCustomerId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
         };
@@ -91,7 +102,7 @@ public class NewJobController : ControllerBase
         return Ok(new
         {
             jobId = job.Id,
-            customerId = customer.Id,
+            customerId = jobCustomerId,
             vehicleId = vehicle.Id,
             wofCreated,
         });
@@ -99,16 +110,15 @@ public class NewJobController : ControllerBase
 
     private async Task<Customer> UpsertCustomerAsync(NewJobRequest.CustomerInput input, CancellationToken ct)
     {
+        // var isBusiness = string.Equals(input.Type, "Business", StringComparison.Ordinal);
         Customer? existing = null;
         if (!string.IsNullOrWhiteSpace(input.Phone))
         {
             existing = await _db.Customers.FirstOrDefaultAsync(x => x.Phone == input.Phone, ct);
-            Console.WriteLine($"======Looking up customer by phone '{input.Phone}': {(existing is null ? "not found" : "found")}");
-            Console.WriteLine($"======Existing customer: {existing} ");
+            
         }
 
-        if (existing is null)
-        {
+     
             existing = new Customer
             {
                 Type = input.Type,
@@ -116,23 +126,12 @@ public class NewJobController : ControllerBase
                 Phone = input.Phone,
                 Email = input.Email,
                 Address = input.Address,
-                BusinessCode = input.BusinessCode,
+                BusinessCode = "WI",
                 Notes = input.Notes,
             };
-            Console.WriteLine("======Creating new customer & saving to database");
+            Console.WriteLine("======Creating new person & saving to database");
             _db.Customers.Add(existing);
-        }
-        else
-        {
-            existing.Type = input.Type;
-            existing.Name = input.Name;
-            existing.Email = input.Email;
-            existing.Address = input.Address;
-            existing.BusinessCode = input.BusinessCode;
-            existing.Notes = input.Notes;
-            existing.Id = existing.Id; // ensure id is set
-            Console.WriteLine("======Updating existing customer");
-        }
+        
 
         await _db.SaveChangesAsync(ct);
         

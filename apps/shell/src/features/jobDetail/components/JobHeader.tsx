@@ -4,6 +4,7 @@ import { Button, TagPill } from "@/components/ui";
 import { JOB_DETAIL_TEXT } from "@/features/jobDetail/jobDetail.constants";
 import type { TagOption } from "@/components/MultiTagSelect";
 import { MultiTagSelect } from "@/components/MultiTagSelect";
+import { formatJobDisplayId } from "@/utils/jobId";
 
 interface JobHeaderProps {
   jobId: string;
@@ -87,9 +88,9 @@ export function JobHeader({
       {/* <div className="flex flex-row gap-2"> */}
         <div className="flex w-full flex-wrap items-center gap-2 md:flex-nowrap">
        
-       <div className="min-w-0">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold text-[var(--ds-text)]">{JOB_DETAIL_TEXT.labels.jobDetail}</h1>
-          <p className="text-sm text-[var(--ds-muted)] mt-1">{jobId}</p>
+          <p className="text-sm text-[var(--ds-muted)] mt-1">{formatJobDisplayId(jobId)}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">

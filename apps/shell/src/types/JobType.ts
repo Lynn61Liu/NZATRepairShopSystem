@@ -17,6 +17,7 @@ export type JobRow = {
   mechPct: number | null;
   paintPct: number | null;
   customerName: string;
+  customerCode?: string;
   customerPhone: string;
   createdAt: string; // 建议后期换成 ISO
 };

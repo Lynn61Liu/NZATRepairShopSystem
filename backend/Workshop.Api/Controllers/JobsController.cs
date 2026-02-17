@@ -49,6 +49,7 @@ public class JobsController : ControllerBase
             mechPct = (int?)null,
             paintPct = (int?)null,
             customerName = r.Customer.Name,
+            customerCode = r.Customer.BusinessCode ?? "",
             customerPhone = r.Customer.Phone ?? "",
             createdAt = r.CreatedAt.ToString("yyyy/MM/dd HH:mm", CultureInfo.InvariantCulture)
         });

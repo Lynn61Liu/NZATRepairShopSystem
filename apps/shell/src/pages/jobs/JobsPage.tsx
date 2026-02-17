@@ -76,15 +76,19 @@ useEffect(() => {
         throw new Error(data?.error || "加载工单失败");
       }
       const rows = Array.isArray(data) ? data : data?.items ?? [];
+      const normalizedRows = rows.map((row: any) => ({
+        ...row,
+        customerCode: row?.customerCode ?? row?.customerName ?? "",
+      }));
       if (!cancelled) {
-        if (rows.length === 0) {
-          setAllRows(rows);
+        if (normalizedRows.length === 0) {
+          setAllRows(normalizedRows);
           return;
         }
 
-        const ids = rows.map((row: { id?: string }) => row.id).filter(Boolean).join(",");
+        const ids = normalizedRows.map((row: { id?: string }) => row.id).filter(Boolean).join(",");
         if (!ids) {
-          setAllRows(rows);
+          setAllRows(normalizedRows);
           return;
         }
 
@@ -103,7 +107,7 @@ useEffect(() => {
           });
         }
 
-        const rowsWithTags = rows.map((row: any) => {
+        const rowsWithTags = normalizedRows.map((row: any) => {
           const tags = tagMap.get(String(row.id)) ?? [];
           const mergedTags = row.urgent ? Array.from(new Set(["Urgent", ...tags])) : tags;
           return { ...row, selectedTags: mergedTags };

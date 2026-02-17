@@ -3,16 +3,16 @@ import type { TagOption } from "@/components/MultiTagSelect";
 
 // 1) GRID_COLS：表格列宽配置集中
 export const GRID_COLS =
-  // <640：超紧凑（隐藏 电话 + 创建时间 + JOB ID）
-  "grid-cols-[30px_80px_100px_70px_160px_60px_60px_60px_80px_64px] " +
-  // ≥640 (sm)：显示 JOB ID
-  "sm:grid-cols-[30px_90px_110px_120px_80px_180px_64px_64px_64px_100px_64px] " +
-  // ≥768 (md)：显示完整标签列
-  "md:grid-cols-[30px_100px_100px_130px_70px_130px_65px_65px_65px_80px_64px] " +
+  // <640：隐藏 电话 + 创建时间
+  "grid-cols-[30px_80px_90px_100px_70px_140px_80px_60px_60px_60px_80px_64px] " +
+  // ≥640 (sm)
+  "sm:grid-cols-[30px_90px_100px_120px_80px_180px_100px_64px_64px_64px_100px_64px] " +
+  // ≥768 (md)
+  "md:grid-cols-[30px_100px_100px_130px_80px_140px_110px_65px_65px_65px_90px_64px] " +
   // ≥1024 (lg)：显示客户电话
-  "lg:grid-cols-[30px_100px_100px_130px_70px_130px_65px_65px_65px_80px_80px_64px] " +
+  "lg:grid-cols-[30px_110px_110px_130px_80px_140px_110px_65px_65px_65px_90px_100px_64px] " +
   // ≥1440：完整显示所有字段（包括创建时间）
-  "1440:grid-cols-[30px_120px_120px_160px_70px_130px_65px_65px_65px_80px_100px_150px_50px]";
+  "1440:grid-cols-[30px_120px_120px_160px_80px_140px_120px_65px_65px_65px_90px_110px_150px_64px]";
 
 // 2) TAG_OPTIONS：筛选 Tag 配置集中（id=存储值，label=展示值）
 export const TAG_OPTIONS: TagOption[] = [

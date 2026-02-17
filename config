@@ -1,0 +1,5 @@
+Host nzat
+    HostName 45.114.124.101
+    User admin
+    IdentityFile ~/.ssh/naztKey
+
