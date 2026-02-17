@@ -29,15 +29,15 @@ type Options = {
 export function useJobsQuery(options: Options) {
   const pageSize = options.pageSize ?? 6;
 
-  // ✅ 数据源（MVP：本地 rows；后期你可以把它换成 props 或 RTK Query 数据）
+ 
   const [allRows, setAllRows] = useState<JobRow[]>(options.initialRows);
 
-  // ✅ 单对象 filters
+
   const [filters, setFilters] = useState<JobsFilters>(
     options.initialFilters ?? DEFAULT_JOBS_FILTERS
   );
 
-  // ✅ 分页
+
  const [currentPage, setCurrentPage] = useState<number>(
   options.initialPage ?? 1
 );
@@ -52,20 +52,20 @@ const didMountRef = useRef(false);
     setCurrentPage(1);
   }, [filters]);
 
-  // ✅ 业务动作：切换 urgent（你后续接后端时，把这里换成 API/PATCH）
+
   const toggleUrgent = (id: string) => {
     setAllRows((prev) =>
       prev.map((r) => (r.id === id ? { ...r, urgent: !r.urgent } : r))
     );
   };
 
-  // ✅ derived：过滤 + 排序
+
   const visibleRows = useMemo(() => {
     const filtered = filterJobs(allRows, filters);
     return sortJobsDefault(filtered);
   }, [allRows, filters]);
 
-  // ✅ derived：分页
+
   const page = useMemo(() => {
     return paginate(visibleRows, currentPage, pageSize);
   }, [visibleRows, currentPage, pageSize]);

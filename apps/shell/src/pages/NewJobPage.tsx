@@ -1,7 +1,7 @@
 import { useEffect, useState, type ChangeEvent } from "react";
 import { ArrowLeft } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { Alert, SectionCard, Textarea } from "@/components/ui";
+import { Alert, SectionCard, Textarea, useToast } from "@/components/ui";
 import {
   ActionsRow,
   CustomerSection,
@@ -21,6 +21,7 @@ import { withApiBase } from "@/utils/api";
 
 export function NewJobPage() {
   const navigate = useNavigate();
+  const toast = useToast();
   const [rego, setRego] = useState("");
   const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null);
   const [importState, setImportState] = useState<ImportState>("idle");
@@ -230,8 +231,10 @@ export function NewJobPage() {
 
       console.log("++++++++++++++++++++job created", data);
       setFormAlert({ variant: "success", message: "工单保存成功！" });
+      toast.success("工单保存成功！");
       navigate("/jobs");
     } catch (err) {
+      toast.error(err instanceof Error ? err.message : "工单保存失败，请稍后重试");
       setFormAlert({
         variant: "error",
         message: err instanceof Error ? err.message : "工单保存失败，请稍后重试",

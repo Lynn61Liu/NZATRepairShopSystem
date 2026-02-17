@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Card, Button, EmptyState, Alert } from "@/components/ui";
+import { Card, Button, EmptyState, Alert, useToast } from "@/components/ui";
 import { withApiBase } from "@/utils/api";
 import { Plus, Trash2, Pencil } from "lucide-react";
 
@@ -21,6 +21,7 @@ export function TagsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [saving, setSaving] = useState(false);
+  const toast = useToast();
 
   const colorClasses = [
     "border-[rgba(37,99,235,0.25)] bg-[rgba(37,99,235,0.08)] text-[rgba(37,99,235,0.95)]",
@@ -48,7 +49,9 @@ export function TagsPage() {
       setRows(Array.isArray(data) ? data : []);
     } catch (err) {
       setRows([]);
-      setLoadError(err instanceof Error ? err.message : "加载标签失败");
+      const message = err instanceof Error ? err.message : "加载标签失败";
+      setLoadError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -87,8 +90,11 @@ export function TagsPage() {
       setAdding(false);
       setDraftName("");
       await loadTags();
+      toast.success("标签已创建");
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "保存失败");
+      const message = err instanceof Error ? err.message : "保存失败";
+      setActionError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -123,8 +129,11 @@ export function TagsPage() {
       setEditingId(null);
       setEditDraft("");
       await loadTags();
+      toast.success("标签已更新");
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "保存失败");
+      const message = err instanceof Error ? err.message : "保存失败";
+      setActionError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -141,8 +150,11 @@ export function TagsPage() {
         throw new Error(data?.error || "删除失败");
       }
       await loadTags();
+      toast.success("标签已删除");
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "删除失败");
+      const message = err instanceof Error ? err.message : "删除失败";
+      setActionError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }

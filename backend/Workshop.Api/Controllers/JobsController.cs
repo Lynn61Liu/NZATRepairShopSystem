@@ -49,7 +49,7 @@ public class JobsController : ControllerBase
             mechPct = (int?)null,
             paintPct = (int?)null,
             customerName = r.Customer.Name,
-            customerCode = r.Customer.BusinessCode ?? "",
+            customerCode = r.Customer.BusinessCode,
             customerPhone = r.Customer.Phone ?? "",
             createdAt = r.CreatedAt.ToString("yyyy/MM/dd HH:mm", CultureInfo.InvariantCulture)
         });
@@ -224,16 +224,52 @@ public class JobsController : ControllerBase
         return Ok(new { success = true, vehicleDeleted, customerDeleted });
     }
 
-    public record UpdateJobTagsRequest(long[] TagIds);
+    public record UpdateJobTagsRequest(long[]? TagIds, string[]? TagNames);
+
+    public record UpdateJobStatusRequest(string? Status);
 
     [HttpPut("{id:long}/tags")]
     public async Task<IActionResult> UpdateJobTags(long id, [FromBody] UpdateJobTagsRequest req, CancellationToken ct)
     {
-        var jobExists = await _db.Jobs.AsNoTracking().AnyAsync(x => x.Id == id, ct);
-        if (!jobExists)
+        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (job is null)
             return NotFound(new { error = "Job not found." });
 
         var tagIds = req?.TagIds?.Distinct().ToArray() ?? Array.Empty<long>();
+        var tagNames = req?.TagNames?
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray() ?? Array.Empty<string>();
+
+        var tagNamesLower = tagNames.Select(name => name.ToLowerInvariant()).ToArray();
+
+        if (tagNames.Length > 0)
+        {
+            var existingByName = await _db.Tags.AsNoTracking()
+                .Where(x => tagNamesLower.Contains(x.Name.ToLower()))
+                .Select(x => x.Name)
+                .ToListAsync(ct);
+            var existingSet = new HashSet<string>(
+                existingByName.Select(name => name.ToLowerInvariant()),
+                StringComparer.OrdinalIgnoreCase
+            );
+            var missingNames = tagNames.Where(name => !existingSet.Contains(name.ToLowerInvariant())).ToArray();
+            if (missingNames.Length > 0)
+            {
+                var now = DateTime.UtcNow;
+                var newTags = missingNames.Select(name => new Tag
+                {
+                    Name = name,
+                    IsActive = true,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                });
+                _db.Tags.AddRange(newTags);
+                await _db.SaveChangesAsync(ct);
+            }
+        }
+
         if (tagIds.Length > 0)
         {
             var existingIds = await _db.Tags.AsNoTracking()
@@ -244,26 +280,62 @@ public class JobsController : ControllerBase
                 return BadRequest(new { error = "One or more tags are invalid." });
         }
 
+        var nameTagIds = Array.Empty<long>();
+        if (tagNames.Length > 0)
+        {
+            nameTagIds = await _db.Tags.AsNoTracking()
+                .Where(x => tagNamesLower.Contains(x.Name.ToLower()))
+                .Select(x => x.Id)
+                .ToArrayAsync(ct);
+        }
+
+        var finalTagIds = tagIds.Concat(nameTagIds).Distinct().ToArray();
+
         await _db.JobTags.Where(x => x.JobId == id).ExecuteDeleteAsync(ct);
 
-        if (tagIds.Length > 0)
+        if (finalTagIds.Length > 0)
         {
-            var items = tagIds.Select(tagId => new JobTag
+            var items = finalTagIds.Select(tagId => new JobTag
             {
                 JobId = id,
                 TagId = tagId,
                 CreatedAt = DateTime.UtcNow
             });
             _db.JobTags.AddRange(items);
-            await _db.SaveChangesAsync(ct);
         }
 
-        var tagNames = await _db.Tags.AsNoTracking()
-            .Where(x => tagIds.Contains(x.Id))
+        var tagNameList = await _db.Tags.AsNoTracking()
+            .Where(x => finalTagIds.Contains(x.Id))
             .Select(x => x.Name)
             .ToArrayAsync(ct);
 
-        return Ok(new { tags = tagNames });
+        job.IsUrgent = tagNameList.Any(name => string.Equals(name, "Urgent", StringComparison.OrdinalIgnoreCase));
+        job.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new { tags = tagNameList });
+    }
+
+    [HttpPut("{id:long}/status")]
+    public async Task<IActionResult> UpdateStatus(long id, [FromBody] UpdateJobStatusRequest req, CancellationToken ct)
+    {
+        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (job is null)
+            return NotFound(new { error = "Job not found." });
+
+        var status = req?.Status?.Trim();
+        if (string.IsNullOrWhiteSpace(status))
+            return BadRequest(new { error = "Status is required." });
+
+        if (!string.Equals(status, "Archived", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { error = "Status must be Archived." });
+
+        job.Status = "Archived";
+        job.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new { status = job.Status });
     }
 
     private static string MapStatus(string? status)

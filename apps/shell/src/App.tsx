@@ -9,6 +9,7 @@ import { TagsPage } from "./pages/tags/TagsPage";
 import { CustomersPage } from "./pages/customers/CustomersPage";
 import { WofFailReasonsPage } from "./pages/wofFails/WofFailReasonsPage";
 import { PartFlowPage } from "./pages/PartFlowPages/PartFlowPage";
+import { ToastProvider } from "@/components/ui";
 
 const router = createBrowserRouter([
   {
@@ -32,5 +33,9 @@ const router = createBrowserRouter([
 ]);
 
 export default function App() {
-  return <RouterProvider router={router} />;
+  return (
+    <ToastProvider>
+      <RouterProvider router={router} />
+    </ToastProvider>
+  );
 }

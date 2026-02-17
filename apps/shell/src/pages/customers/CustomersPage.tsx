@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Card, Button, EmptyState, Alert, Input } from "@/components/ui";
+import { Card, Button, EmptyState, Alert, Input, useToast } from "@/components/ui";
 import { withApiBase } from "@/utils/api";
 import { Plus, Trash2, Pencil } from "lucide-react";
 
@@ -39,6 +39,7 @@ export function CustomersPage() {
   const [search, setSearch] = useState("");
   const [previewRows, setPreviewRows] = useState<CustomerDraft[] | null>(null);
   const [importing, setImporting] = useState(false);
+  const toast = useToast();
 
   // 新增：页面视图切换（Personal / Business）
   const [viewType, setViewType] = useState<"Personal" | "Business">("Personal");
@@ -78,7 +79,9 @@ export function CustomersPage() {
       setRows(Array.isArray(data) ? data : []);
     } catch (err) {
       setRows([]);
-      setLoadError(err instanceof Error ? err.message : "加载客户失败");
+      const message = err instanceof Error ? err.message : "加载客户失败";
+      setLoadError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -222,9 +225,16 @@ export function CustomersPage() {
   };
 
   const handleCsvSelect = async (file: File) => {
-    const text = await file.text();
-    const parsed = parseCsv(text);
-    setPreviewRows(parsed);
+    try {
+      const text = await file.text();
+      const parsed = parseCsv(text);
+      setPreviewRows(parsed);
+      toast.success(`已读取 ${parsed.length} 条记录`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "读取 CSV 失败";
+      setActionError(message);
+      toast.error(message);
+    }
   };
 
   const confirmImport = async () => {
@@ -233,6 +243,7 @@ export function CustomersPage() {
     setActionError(null);
 
     try {
+      let importedCount = 0;
       for (const draftRow of previewRows) {
         if (!draftRow.name.trim()) continue;
 
@@ -243,7 +254,7 @@ export function CustomersPage() {
         );
 
         if (existing) {
-          await fetch(withApiBase(`/api/customers/${encodeURIComponent(existing.id)}`), {
+          const res = await fetch(withApiBase(`/api/customers/${encodeURIComponent(existing.id)}`), {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -251,19 +262,24 @@ export function CustomersPage() {
               ...draftRow,
             }),
           });
+          if (res.ok) importedCount += 1;
         } else {
-          await fetch(withApiBase("/api/customers"), {
+          const res = await fetch(withApiBase("/api/customers"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(draftRow),
           });
+          if (res.ok) importedCount += 1;
         }
       }
 
       setPreviewRows(null);
       await loadCustomers();
+      toast.success(`导入完成：${importedCount} 条`);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "导入失败");
+      const message = err instanceof Error ? err.message : "导入失败";
+      setActionError(message);
+      toast.error(message);
     } finally {
       setImporting(false);
     }
@@ -299,8 +315,11 @@ export function CustomersPage() {
       setAdding(false);
       setDraft(blankDraft);
       await loadCustomers();
+      toast.success("客户已创建");
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "保存失败");
+      const message = err instanceof Error ? err.message : "保存失败";
+      setActionError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -343,8 +362,11 @@ export function CustomersPage() {
       setEditingId(null);
       setEditDraft(blankDraft);
       await loadCustomers();
+      toast.success("客户已更新");
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "保存失败");
+      const message = err instanceof Error ? err.message : "保存失败";
+      setActionError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -361,8 +383,11 @@ export function CustomersPage() {
         throw new Error(data?.error || "删除失败");
       }
       await loadCustomers();
+      toast.success("客户已删除");
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "删除失败");
+      const message = err instanceof Error ? err.message : "删除失败";
+      setActionError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }

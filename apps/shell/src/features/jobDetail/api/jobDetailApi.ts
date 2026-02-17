@@ -12,10 +12,18 @@ export function fetchTags() {
   return requestJson<any>("/api/tags");
 }
 
-export function updateJobTags(jobId: string, tagIds: number[]) {
+export function updateJobTags(jobId: string, tagIds: number[], tagNames?: string[]) {
   return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}/tags`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tagIds }),
+    body: JSON.stringify({ tagIds, tagNames }),
+  });
+}
+
+export function updateJobStatus(jobId: string, status: string) {
+  return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}/status`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
   });
 }

@@ -31,6 +31,7 @@ import {
   updatePartsNote,
   updatePartsService,
 } from "@/features/parts/api/partsApi";
+import { useToast } from "@/components/ui";
 
 type UseJobDetailDataArgs = {
   jobId?: string;
@@ -39,6 +40,7 @@ type UseJobDetailDataArgs = {
 
 export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
   const isMountedRef = useRef(true);
+  const toast = useToast();
   const [jobData, setJobData] = useState<JobDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -108,10 +110,15 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
     if (!jobId || wofLoading) return;
     if (hasWofRecord || wofRecords.length > 0 || wofCheckItems.length > 0) return;
     const res = await createWofServer(jobId);
-    if (res.ok && jobId) {
-      await refreshWofServer();
+    if (!res.ok) {
+      toast.error(res.error || "创建失败");
+      return;
     }
-  }, [jobId, wofLoading, hasWofRecord, wofRecords.length, wofCheckItems.length, refreshWofServer]);
+    if (jobId) {
+      await refreshWofServer();
+      toast.success("已创建 WOF 记录");
+    }
+  }, [jobId, wofLoading, hasWofRecord, wofRecords.length, wofCheckItems.length, refreshWofServer, toast]);
 
   const saveWofResult = useCallback(
     async (payload: { result: "Pass" | "Fail"; expiryDate?: string; failReasonId?: string; note?: string }) => {
@@ -121,13 +128,15 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
 
       const res = await createWofResult(jobId, payload);
       if (!res.ok) {
+        toast.error(res.error || "保存失败");
         return { success: false, message: res.error || "保存失败" };
       }
 
       await refreshWofServer();
+      toast.success("保存成功");
       return { success: true, message: "保存成功" };
     },
-    [jobId, refreshWofServer]
+    [jobId, refreshWofServer, toast]
   );
 
   const deleteWofServerForJob = useCallback(async () => {
@@ -137,12 +146,14 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
 
     const res = await deleteWofServer(jobId);
     if (!res.ok) {
+      toast.error(res.error || "删除失败");
       return { success: false, message: res.error || "删除失败" };
     }
 
     await refreshWofServer();
+    toast.success("删除成功");
     return { success: true, message: "删除成功" };
-  }, [jobId, refreshWofServer]);
+  }, [jobId, refreshWofServer, toast]);
 
   const createWofRecordRow = useCallback(
     async (payload: WofRecordUpdatePayload) => {
@@ -152,13 +163,15 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
 
       const res = await createWofRecord(jobId, payload);
       if (!res.ok) {
+        toast.error(res.error || "保存失败");
         return { success: false, message: res.error || "保存失败" };
       }
 
       await refreshWofServer();
+      toast.success("保存成功");
       return { success: true, message: "保存成功" };
     },
-    [jobId, refreshWofServer]
+    [jobId, refreshWofServer, toast]
   );
 
   const updateWofRecordRow = useCallback(
@@ -169,13 +182,15 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
 
       const res = await updateWofRecord(jobId, recordId, payload);
       if (!res.ok) {
+        toast.error(res.error || "保存失败");
         return { success: false, message: res.error || "保存失败" };
       }
 
       await refreshWofServer();
+      toast.success("保存成功");
       return { success: true, message: "保存成功" };
     },
-    [jobId, refreshWofServer]
+    [jobId, refreshWofServer, toast]
   );
 
   const importWofRecordsForJob = useCallback(async () => {
@@ -188,6 +203,7 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
 
     const res = await importWofRecords(jobId);
     if (!res.ok) {
+      toast.error(res.error || "导入失败");
       return { success: false, message: res.error || "导入失败" };
     }
 
@@ -196,11 +212,13 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
     const updated = Number(res.data?.updated ?? 0);
     const skipped = Number(res.data?.skipped ?? 0);
     const sourceFile = res.data?.sourceFile ? `（${res.data.sourceFile}）` : "";
+    const message = `导入完成${sourceFile}：新增 ${inserted} 条，更新 ${updated} 条，跳过 ${skipped} 条`;
+    toast.success(message);
     return {
       success: true,
-      message: `导入完成${sourceFile}：新增 ${inserted} 条，更新 ${updated} 条，跳过 ${skipped} 条`,
+      message,
     };
-  }, [jobId, wofLoading, refreshWofServer]);
+  }, [jobId, wofLoading, refreshWofServer, toast]);
 
   const createPartsServiceRow = useCallback(
     async (payload: { description: string; status?: PartsServiceStatus }) => {
@@ -210,13 +228,15 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
 
       const res = await createPartsService(jobId, payload);
       if (!res.ok) {
+        toast.error(res.error || "保存失败");
         return { success: false, message: res.error || "保存失败" };
       }
 
       await refreshPartsServices();
+      toast.success("保存成功");
       return { success: true, message: "保存成功" };
     },
-    [jobId, refreshPartsServices]
+    [jobId, refreshPartsServices, toast]
   );
 
   const updatePartsServiceRow = useCallback(
@@ -227,13 +247,15 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
 
       const res = await updatePartsService(jobId, serviceId, payload);
       if (!res.ok) {
+        toast.error(res.error || "保存失败");
         return { success: false, message: res.error || "保存失败" };
       }
 
       await refreshPartsServices();
+      toast.success("保存成功");
       return { success: true, message: "保存成功" };
     },
-    [jobId, refreshPartsServices]
+    [jobId, refreshPartsServices, toast]
   );
 
   const deletePartsServiceRow = useCallback(
@@ -244,13 +266,15 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
 
       const res = await deletePartsService(jobId, serviceId);
       if (!res.ok) {
+        toast.error(res.error || "删除失败");
         return { success: false, message: res.error || "删除失败" };
       }
 
       await refreshPartsServices();
+      toast.success("删除成功");
       return { success: true, message: "删除成功" };
     },
-    [jobId, refreshPartsServices]
+    [jobId, refreshPartsServices, toast]
   );
 
   const createPartsNoteRow = useCallback(
@@ -261,13 +285,15 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
 
       const res = await createPartsNote(jobId, serviceId, note);
       if (!res.ok) {
+        toast.error(res.error || "保存失败");
         return { success: false, message: res.error || "保存失败" };
       }
 
       await refreshPartsServices();
+      toast.success("保存成功");
       return { success: true, message: "保存成功" };
     },
-    [jobId, refreshPartsServices]
+    [jobId, refreshPartsServices, toast]
   );
 
   const updatePartsNoteRow = useCallback(
@@ -278,13 +304,15 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
 
       const res = await updatePartsNote(jobId, noteId, note);
       if (!res.ok) {
+        toast.error(res.error || "保存失败");
         return { success: false, message: res.error || "保存失败" };
       }
 
       await refreshPartsServices();
+      toast.success("保存成功");
       return { success: true, message: "保存成功" };
     },
-    [jobId, refreshPartsServices]
+    [jobId, refreshPartsServices, toast]
   );
 
   const deletePartsNoteRow = useCallback(
@@ -295,13 +323,15 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
 
       const res = await deletePartsNote(jobId, noteId);
       if (!res.ok) {
+        toast.error(res.error || "删除失败");
         return { success: false, message: res.error || "删除失败" };
       }
 
       await refreshPartsServices();
+      toast.success("删除成功");
       return { success: true, message: "删除成功" };
     },
-    [jobId, refreshPartsServices]
+    [jobId, refreshPartsServices, toast]
   );
 
   const deleteJob = useCallback(async () => {
@@ -314,13 +344,16 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
       if (!res.ok) {
         throw new Error(res.error || "删除失败");
       }
+      toast.success("已删除");
       onDeleted?.();
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "删除失败");
+      const message = err instanceof Error ? err.message : "删除失败";
+      setDeleteError(message);
+      toast.error(message);
     } finally {
       setDeletingJob(false);
     }
-  }, [jobId, onDeleted]);
+  }, [jobId, onDeleted, toast]);
 
   const saveTags = useCallback(
     async (tagIds: string[]) => {
@@ -330,6 +363,7 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
         tagIds.map((t) => Number(t))
       );
       if (!res.ok) {
+        toast.error(res.error || "保存失败");
         return { success: false, message: res.error || "保存失败" };
       }
       const nameMap = new Map(tagOptions.map((t) => [t.id, t.label]));
@@ -341,9 +375,10 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
             }
           : prev
       );
+      toast.success("保存成功");
       return { success: true, message: "保存成功", tags: res.data?.tags };
     },
-    [jobId, tagOptions]
+    [jobId, tagOptions, toast]
   );
 
   const refreshVehicleInfo = useCallback(async () => {
@@ -361,11 +396,13 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
       body: JSON.stringify({ plate }),
     });
     if (!importRes.ok) {
+      toast.error(importRes.error || "抓取失败，请稍后重试");
       return { success: false, message: importRes.error || "抓取失败，请稍后重试" };
     }
 
     const jobRes = await fetchJob(jobId);
     if (!jobRes.ok) {
+      toast.error(jobRes.error || "刷新车辆信息失败");
       return { success: false, message: jobRes.error || "刷新车辆信息失败" };
     }
 
@@ -375,8 +412,9 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
 
     const vehicle = job?.vehicle;
     const label = [vehicle?.year, vehicle?.make, vehicle?.model].filter(Boolean).join(" ");
+    toast.success(label ? `抓取成功：${label}` : "抓取成功");
     return { success: true, message: label ? `抓取成功：${label}` : "抓取成功" };
-  }, [jobId, jobData?.vehicle?.plate]);
+  }, [jobId, jobData?.vehicle?.plate, toast]);
 
   useEffect(() => {
     let cancelled = false;

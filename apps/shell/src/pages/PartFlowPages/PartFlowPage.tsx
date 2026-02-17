@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useToast } from "@/components/ui";
 import type { WorkCard, Status } from "@/types";
 import { PartFlowColumn } from "./PartFlowColum";
 import { DndProvider } from "react-dnd";
@@ -24,13 +25,16 @@ export function PartFlowPage() {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [archivedIds, setArchivedIds] = useState<Set<string>>(new Set());
+  const toast = useToast();
 
   const loadCards = async () => {
     setLoading(true);
     setLoadError(null);
     const res = await fetchPartFlow();
     if (!res.ok) {
-      setLoadError(res.error || "加载失败");
+      const message = res.error || "加载失败";
+      setLoadError(message);
+      toast.error(message);
       setCards([]);
       setLoading(false);
       return;
@@ -66,20 +70,28 @@ console.log(`===star fun ===Moving card ${cardId} to status ${newStatus}=====`);
     );
     const res = await updatePartsService(card.jobId, card.id, { status: newStatus });
     if (!res.ok) {
-      setLoadError(res.error || "更新状态失败");
+      const message = res.error || "更新状态失败";
+      setLoadError(message);
+      toast.error(message);
       console.log(` fun 更新状态失败=${res.error}`);
       await loadCards();
       return;
     }
    console.log(`8888888update success 88888888888`);
     await loadCards();
+    toast.success("状态已更新");
   };
 
   const deleteCard = async (cardId: string) => {
     const card = cards.find((item) => item.id === cardId);
     if (!card) return;
-    await deletePartsService(card.jobId, card.id);
+    const res = await deletePartsService(card.jobId, card.id);
+    if (!res.ok) {
+      toast.error(res.error || "删除失败");
+      return;
+    }
     await loadCards();
+    toast.success("已删除");
   };
 
   const archiveCard = (cardId: string) => {
@@ -93,15 +105,25 @@ console.log(`===star fun ===Moving card ${cardId} to status ${newStatus}=====`);
   const addNote = async (cardId: string, noteText: string) => {
     const card = cards.find((item) => item.id === cardId);
     if (!card) return;
-    await createPartsNote(card.jobId, card.id, noteText);
+    const res = await createPartsNote(card.jobId, card.id, noteText);
+    if (!res.ok) {
+      toast.error(res.error || "新增备注失败");
+      return;
+    }
     await loadCards();
+    toast.success("备注已添加");
   };
 
   const deleteNote = async (_cardId: string, noteId: string) => {
     const card = cards.find((item) => item.notes.some((note) => note.id === noteId));
     if (!card) return;
-    await deletePartsNote(card.jobId, noteId);
+    const res = await deletePartsNote(card.jobId, noteId);
+    if (!res.ok) {
+      toast.error(res.error || "删除备注失败");
+      return;
+    }
     await loadCards();
+    toast.success("备注已删除");
   };
 
   const activeCards = cards.filter((card) => !archivedIds.has(card.id));

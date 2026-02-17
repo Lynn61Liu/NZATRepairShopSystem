@@ -7,9 +7,11 @@ import type { JobRow } from "@/types/JobType";
 import { formatJobDisplayId } from "@/utils/jobId";
 
 
-type Props = {
+export type JobsTableProps = {
   rows: JobRow[];
-  onToggleUrgent: (id: string) => void;
+  onToggleUrgent: (id: string) => void | Promise<void>;
+  onArchive: (id: string) => void | Promise<void>;
+  onDelete: (id: string) => void | Promise<void>;
 };
 
 const MS_PER_HOUR = 60 * 60 * 1000;
@@ -59,7 +61,7 @@ function getTimeInShop(createdAt?: string) {
   return { label, level };
 }
 
-export function JobsTable({ rows, onToggleUrgent}: Props) {
+export function JobsTable({ rows, onToggleUrgent, onArchive, onDelete }: JobsTableProps) {
   const [colWidths, setColWidths] = useState(() => JOB_TABLE_COLUMNS.map((col) => col.width));
   const dragRef = useRef<{ index: number; startX: number; startWidth: number } | null>(null);
 
@@ -186,10 +188,18 @@ export function JobsTable({ rows, onToggleUrgent}: Props) {
                 <div>{r.createdAt}</div>
 
                 <div className="flex justify-center gap-3">
-                  <button className="text-[rgba(0,0,0,0.45)] hover:text-[rgba(0,0,0,0.70)]" title="Archive">
+                  <button
+                    className="text-[rgba(0,0,0,0.45)] hover:text-[rgba(0,0,0,0.70)]"
+                    title="Archive"
+                    onClick={() => onArchive(r.id)}
+                  >
                     <Archive size={16} />
                   </button>
-                  <button className="text-[rgba(239,68,68,1)] hover:opacity-80" title="Delete">
+                  <button
+                    className="text-[rgba(239,68,68,1)] hover:opacity-80"
+                    title="Delete"
+                    onClick={() => onDelete(r.id)}
+                  >
                     <Trash2 size={16} />
                   </button>
                 </div>

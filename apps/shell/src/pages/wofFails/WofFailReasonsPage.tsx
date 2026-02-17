@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Card, Button, EmptyState, Alert, Input } from "@/components/ui";
+import { Card, Button, EmptyState, Alert, Input, useToast } from "@/components/ui";
 import { withApiBase } from "@/utils/api";
 import { Plus, Trash2, Pencil } from "lucide-react";
 
@@ -29,6 +29,7 @@ export function WofFailReasonsPage() {
   const [editDraft, setEditDraft] = useState<FailReasonDraft>(blankDraft);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
+  const toast = useToast();
 
   const filteredRows = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -48,7 +49,9 @@ export function WofFailReasonsPage() {
       setRows(Array.isArray(data) ? data : []);
     } catch (err) {
       setRows([]);
-      setLoadError(err instanceof Error ? err.message : "加载失败原因失败");
+      const message = err instanceof Error ? err.message : "加载失败原因失败";
+      setLoadError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -87,8 +90,11 @@ export function WofFailReasonsPage() {
       setAdding(false);
       setDraft(blankDraft);
       await loadReasons();
+      toast.success("失败原因已创建");
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "保存失败");
+      const message = err instanceof Error ? err.message : "保存失败";
+      setActionError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -123,8 +129,11 @@ export function WofFailReasonsPage() {
       setEditingId(null);
       setEditDraft(blankDraft);
       await loadReasons();
+      toast.success("失败原因已更新");
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "保存失败");
+      const message = err instanceof Error ? err.message : "保存失败";
+      setActionError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -143,8 +152,11 @@ export function WofFailReasonsPage() {
         throw new Error(data?.error || "删除失败");
       }
       await loadReasons();
+      toast.success("失败原因已删除");
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "删除失败");
+      const message = err instanceof Error ? err.message : "删除失败";
+      setActionError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }

@@ -1,11 +1,11 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { Plus } from "lucide-react";
-import { Card, Button, EmptyState, Alert } from "@/components/ui";
+import { Card, Button, EmptyState, Alert, useToast } from "@/components/ui";
 import { withApiBase } from "@/utils/api";
 import { JobsFiltersCard } from "./JobsFiltersCard";
 import { JobsTable } from "./JobsTable";
 import { JobsPagination } from "./JobsPagination";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   useJobsQuery, JOBS_PAGE_SIZE, filtersToSearchParams,
   searchParamsToFilters,
@@ -13,6 +13,7 @@ import {
   DEFAULT_JOBS_FILTERS,
 } from "@/features/jobs";
 import type { TagOption } from "@/components/MultiTagSelect";
+import { deleteJob, updateJobStatus, updateJobTags } from "@/features/jobDetail/api/jobDetailApi";
 
 
 
@@ -25,6 +26,7 @@ const initialPage = getPageFromSearchParams(searchParams);
 const [loading, setLoading] = useState(true);
 const [loadError, setLoadError] = useState<string | null>(null);
 const [tagOptions, setTagOptions] = useState<TagOption[]>([]);
+const toast = useToast();
 
 const {
   filters,
@@ -35,7 +37,7 @@ const {
   currentPage,
   setCurrentPage,
   pageSize,
-  toggleUrgent,
+  allRows,
   setAllRows,
 } = useJobsQuery({
   initialRows: [],
@@ -76,19 +78,16 @@ useEffect(() => {
         throw new Error(data?.error || "加载工单失败");
       }
       const rows = Array.isArray(data) ? data : data?.items ?? [];
-      const normalizedRows = rows.map((row: any) => ({
-        ...row,
-        customerCode: row?.customerCode ?? row?.customerName ?? "",
-      }));
+     
       if (!cancelled) {
-        if (normalizedRows.length === 0) {
-          setAllRows(normalizedRows);
+        if (rows.length === 0) {
+          setAllRows(rows);
           return;
         }
 
-        const ids = normalizedRows.map((row: { id?: string }) => row.id).filter(Boolean).join(",");
+        const ids = rows.map((row: { id?: string }) => row.id).filter(Boolean).join(",");
         if (!ids) {
-          setAllRows(normalizedRows);
+          setAllRows(rows);
           return;
         }
 
@@ -107,10 +106,11 @@ useEffect(() => {
           });
         }
 
-        const rowsWithTags = normalizedRows.map((row: any) => {
+        const rowsWithTags = rows.map((row: any) => {
           const tags = tagMap.get(String(row.id)) ?? [];
           const mergedTags = row.urgent ? Array.from(new Set(["Urgent", ...tags])) : tags;
-          return { ...row, selectedTags: mergedTags };
+          const hasUrgent = mergedTags.some((tag) => String(tag).toLowerCase() === "urgent");
+          return { ...row, urgent: hasUrgent, selectedTags: mergedTags };
         });
 
         setAllRows(rowsWithTags);
@@ -118,7 +118,9 @@ useEffect(() => {
     } catch (err) {
       if (!cancelled) {
         setAllRows([]);
-        setLoadError(err instanceof Error ? err.message : "加载工单失败");
+        const message = err instanceof Error ? err.message : "加载工单失败";
+        setLoadError(message);
+        toast.error(message);
       }
     } finally {
       if (!cancelled) setLoading(false);
@@ -130,7 +132,7 @@ useEffect(() => {
   return () => {
     cancelled = true;
   };
-}, [setAllRows]);
+}, [setAllRows, toast]);
 
 useEffect(() => {
   let cancelled = false;
@@ -144,11 +146,10 @@ useEffect(() => {
       }
       const tags = Array.isArray(data) ? data : [];
       if (!cancelled) {
-        setTagOptions(
-          tags
-            .filter((tag: any) => tag?.isActive !== false && typeof tag?.name === "string")
-            .map((tag: any) => ({ id: tag.name, label: tag.name }))
+        const activeTags = tags.filter(
+          (tag: any) => tag?.isActive !== false && typeof tag?.name === "string"
         );
+        setTagOptions(activeTags.map((tag: any) => ({ id: tag.name, label: tag.name })));
       }
     } catch {
       if (!cancelled) {
@@ -165,6 +166,86 @@ useEffect(() => {
 }, []);
 
 
+
+  const handleToggleUrgent = useCallback(
+    async (id: string) => {
+      const row = allRows.find((item) => item.id === id);
+      if (!row) return;
+
+      const currentTags = Array.isArray(row.selectedTags) ? row.selectedTags : [];
+      const hasUrgent = currentTags.some((tag) => String(tag).toLowerCase() === "urgent");
+      const requestedTags = hasUrgent
+        ? currentTags.filter((tag) => String(tag).toLowerCase() !== "urgent")
+        : Array.from(new Set([...currentTags, "Urgent"]));
+
+      const res = await updateJobTags(id, [], requestedTags);
+      if (!res.ok) {
+        setLoadError(res.error || "更新加急标签失败");
+        toast.error(res.error || "更新加急标签失败");
+        return;
+      }
+
+      const resolvedTags: string[] = Array.isArray(res.data?.tags)
+        ? res.data.tags.map((tag: unknown) => String(tag))
+        : hasUrgent
+          ? currentTags.filter((tag) => String(tag).toLowerCase() !== "urgent")
+          : Array.from(new Set([...currentTags, "Urgent"]));
+
+      const normalizedTags: string[] = Array.from(new Set(resolvedTags));
+      const nextUrgent = normalizedTags.some((tag) => String(tag).toLowerCase() === "urgent");
+
+      setAllRows((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                urgent: nextUrgent,
+                selectedTags: normalizedTags,
+              }
+            : item
+        )
+      );
+      toast.success(nextUrgent ? "已标记为加急" : "已取消加急");
+    },
+    [allRows, setAllRows, toast]
+  );
+
+  const handleArchive = useCallback(
+    async (id: string) => {
+      const res = await updateJobStatus(id, "Archived");
+      if (!res.ok) {
+        setLoadError(res.error || "归档失败");
+        toast.error(res.error || "归档失败");
+        return;
+      }
+      setAllRows((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                vehicleStatus: "Archived",
+              }
+            : item
+        )
+      );
+      toast.success("已归档");
+    },
+    [setAllRows, toast]
+  );
+
+  const handleDelete = useCallback(
+    async (id: string) => {
+      const res = await deleteJob(id);
+      if (!res.ok) {
+        setLoadError(res.error || "删除失败");
+        toast.error(res.error || "删除失败");
+        return;
+      }
+      setAllRows((prev) => prev.filter((item) => item.id !== id));
+      toast.success("已删除");
+    },
+    [setAllRows, toast]
+  );
 
   return (
     <div className="space-y-4 text-[14px]">
@@ -191,7 +272,12 @@ useEffect(() => {
           <EmptyState message="暂无工单" />
         ) : (
           <>
-            <JobsTable rows={paginatedRows} onToggleUrgent={toggleUrgent} />
+            <JobsTable
+              rows={paginatedRows}
+              onToggleUrgent={handleToggleUrgent}
+              onArchive={handleArchive}
+              onDelete={handleDelete}
+            />
 
             <JobsPagination
               currentPage={currentPage}

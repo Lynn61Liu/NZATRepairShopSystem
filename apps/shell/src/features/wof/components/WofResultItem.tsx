@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { WofCheckItem, WofFailReason, WofRecordUpdatePayload } from "@/types";
-import { Button } from "@/components/ui";
+import { Button, useToast } from "@/components/ui";
 import { JOB_DETAIL_TEXT } from "@/features/jobDetail/jobDetail.constants";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { formatNzDatePlusDays, formatNzDateTime, formatNzDateTimeInput } from "@/utils/date";
@@ -25,6 +25,7 @@ export function WofResultItem({
   onCreate,
   onCancel,
 }: WofResultItemProps) {
+  const toast = useToast();
   const [editing, setEditing] = useState(Boolean(isDraft));
   const [form, setForm] = useState<WofFormState>(() => (isDraft ? createEmptyWofFormState() : toWofFormState(record)));
   const [saving, setSaving] = useState(false);
@@ -91,13 +92,16 @@ export function WofResultItem({
     setSaving(false);
     if (response.success) {
       setMessage(response.message || "保存成功");
+      toast.success(response.message || "保存成功");
       if (isDraft) {
         onCancel?.();
       } else {
         setEditing(false);
       }
     } else {
-      setError(response.message || "保存失败");
+      const message = response.message || "保存失败";
+      setError(message);
+      toast.error(message);
     }
   };
 
@@ -107,8 +111,11 @@ export function WofResultItem({
       printFrameRef.current?.contentWindow?.focus();
       printFrameRef.current?.contentWindow?.print();
       setMessage("已发送打印任务");
+      toast.success("已发送打印任务");
     } catch {
-      setError("自动打印失败，请稍后重试。");
+      const message = "自动打印失败，请稍后重试。";
+      setError(message);
+      toast.error(message);
     } finally {
       setPrinting(false);
     }
@@ -118,7 +125,9 @@ export function WofResultItem({
     const jobId = record.wofId;
     const recordId = record.id;
     if (!jobId || !recordId) {
-      setError("无法打印：缺少 jobId 或 recordId。");
+      const message = "无法打印：缺少 jobId 或 recordId。";
+      setError(message);
+      toast.error(message);
       return;
     }
     const baseUrl = withApiBase(`/api/jobs/${jobId}/wof-records/${recordId}/print`);
