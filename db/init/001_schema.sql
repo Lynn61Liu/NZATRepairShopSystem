@@ -61,6 +61,7 @@ CREATE TABLE jobs (
   is_urgent BOOLEAN NOT NULL,
   vehicle_id BIGINT,
   customer_id BIGINT,
+  notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

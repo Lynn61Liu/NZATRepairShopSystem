@@ -38,6 +38,7 @@ public class NewJobController : ControllerBase
 
         req.Customer.Type = normalizedCustomerType;
         var isBusiness = string.Equals(req.Customer.Type, "Business", StringComparison.Ordinal);
+        var customerNotes = req.Customer.Notes?.Trim();
 
         using var tx = await _db.Database.BeginTransactionAsync(ct);
 
@@ -51,6 +52,17 @@ public class NewJobController : ControllerBase
             if (string.IsNullOrWhiteSpace(req.BusinessId) || !long.TryParse(req.BusinessId, out var businessCustomerId))
                 return BadRequest(new { error = "Business customer id is required." });
             jobCustomerId = businessCustomerId;
+            if (!string.IsNullOrWhiteSpace(customerNotes))
+            {
+                var businessCustomer = await _db.Customers.FirstOrDefaultAsync(
+                    x => x.Id == businessCustomerId,
+                    ct
+                );
+                if (businessCustomer is not null)
+                {
+                    businessCustomer.Notes = customerNotes;
+                }
+            }
         }
         var plate = NormalizePlate(req.Plate);
         var vehicle = await _db.Vehicles.FirstOrDefaultAsync(x => x.Plate == plate, ct);
@@ -73,6 +85,7 @@ public class NewJobController : ControllerBase
             IsUrgent = false,
             VehicleId = vehicle.Id,
             CustomerId = jobCustomerId,
+            Notes = req.Notes?.Trim(),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
         };
@@ -122,13 +135,13 @@ public class NewJobController : ControllerBase
             existing = new Customer
             {
                 Type = input.Type,
-                Name = input.Name,
-                Phone = input.Phone,
-                Email = input.Email,
-                Address = input.Address,
-                BusinessCode = "WI",
-                Notes = input.Notes,
-            };
+            Name = string.IsNullOrWhiteSpace(input.Name) ? (input.Notes ?? "") : input.Name,
+            Phone = input.Phone,
+            Email = input.Email,
+            Address = input.Address,
+            BusinessCode = "WI",
+            Notes = input.Notes?.Trim(),
+        };
             Console.WriteLine("======Creating new person & saving to database");
             _db.Customers.Add(existing);
         

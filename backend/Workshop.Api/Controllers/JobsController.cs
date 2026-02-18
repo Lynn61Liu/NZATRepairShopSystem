@@ -130,6 +130,7 @@ public class JobsController : ControllerBase
             status = MapDetailStatus(row.Job.Status),
             isUrgent = row.Job.IsUrgent,
             tags = tagNames.ToArray(),
+            notes = row.Job.Notes,
             vehicle = new
             {
                 plate = row.Vehicle.Plate,

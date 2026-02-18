@@ -101,11 +101,11 @@ type CustomerSectionProps = {
   onCustomerTypeChange: (next: CustomerType) => void;
   personalName: string;
   personalPhone: string;
-  personalWechat: string;
+  // personalWechat: string;
   personalEmail: string;
   onPersonalNameChange: (value: string) => void;
   onPersonalPhoneChange: (value: string) => void;
-  onPersonalWechatChange: (value: string) => void;
+  // onPersonalWechatChange: (value: string) => void;
   onPersonalEmailChange: (value: string) => void;
   customerAddress: string;
   onCustomerAddressChange: (value: string) => void;
@@ -119,11 +119,11 @@ export function CustomerSection({
   onCustomerTypeChange,
   personalName,
   personalPhone,
-  personalWechat,
+  // personalWechat,
   personalEmail,
   onPersonalNameChange,
   onPersonalPhoneChange,
-  onPersonalWechatChange,
+  // onPersonalWechatChange,
   onPersonalEmailChange,
   customerAddress,
   onCustomerAddressChange,
@@ -145,7 +145,7 @@ export function CustomerSection({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-[rgba(0,0,0,0.55)] mb-1 block">
-                名字 <span className="text-red-500">*</span>
+                名字
               </label>
               <Input
                 placeholder="输入客户名字"
@@ -154,21 +154,23 @@ export function CustomerSection({
               />
             </div>
             <div>
-              <label className="text-xs text-[rgba(0,0,0,0.55)] mb-1 block">电话</label>
+              <label className="text-xs text-[rgba(0,0,0,0.55)] mb-1 block">
+                电话
+              </label>
               <Input
                 placeholder="输入电话"
                 value={personalPhone}
                 onChange={(event) => onPersonalPhoneChange(event.target.value)}
               />
             </div>
-            <div>
+            {/* <div>
               <label className="text-xs text-[rgba(0,0,0,0.55)] mb-1 block">微信</label>
               <Input
                 placeholder="输入微信"
                 value={personalWechat}
                 onChange={(event) => onPersonalWechatChange(event.target.value)}
               />
-            </div>
+            </div> */}
             <div>
               <label className="text-xs text-[rgba(0,0,0,0.55)] mb-1 block">邮箱</label>
               <Input
@@ -177,7 +179,7 @@ export function CustomerSection({
                 onChange={(event) => onPersonalEmailChange(event.target.value)}
               />
             </div>
-            <div className="col-span-2">
+            <div className="">
               <label className="text-xs text-[rgba(0,0,0,0.55)] mb-1 block">地址</label>
               <Input
                 placeholder="输入地址"
@@ -212,7 +214,7 @@ type NotesSectionProps = {
 };
 
 export function NotesSection({ notes, onNotesChange }: NotesSectionProps) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(true);
   return (
     <SectionCard
       title="备注"

@@ -88,6 +88,7 @@ public class AppDbContext : DbContext
         j.Property(x => x.IsUrgent).HasColumnName("is_urgent");
         j.Property(x => x.VehicleId).HasColumnName("vehicle_id");
         j.Property(x => x.CustomerId).HasColumnName("customer_id");
+        j.Property(x => x.Notes).HasColumnName("notes");
         j.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
         j.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
 

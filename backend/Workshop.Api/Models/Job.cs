@@ -7,6 +7,7 @@ public class Job
     public bool IsUrgent { get; set; }
     public long? VehicleId { get; set; }
     public long? CustomerId { get; set; }
+    public string? Notes { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
