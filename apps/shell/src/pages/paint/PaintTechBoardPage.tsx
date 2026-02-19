@@ -124,7 +124,11 @@ export function PaintTechBoardPage() {
   }, []);
 
   const today = normalizeDate(new Date());
-  const overdueCount = countOverdue(jobs, today);
+  const overdueCount = jobs.filter((job) => {
+    const stageKey = mapStageKey(job.status, job.currentStage);
+    if (stageKey === "done") return false;
+    return getDurationDays(job.createdAt, today) >= 3;
+  }).length;
 
   const stageCounts = useMemo(() => {
     const counts: Record<StageKey, number> = {
