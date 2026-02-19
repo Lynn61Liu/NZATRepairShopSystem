@@ -326,7 +326,7 @@ public class JobsController : ControllerBase
 
     private static (string Status, int CurrentStage) NormalizePaintStage(int stageIndex)
     {
-        const int lastStageIndex = 6;
+        const int lastStageIndex = 3;
         if (stageIndex <= -1)
             return ("not_started", -1);
         if (stageIndex >= lastStageIndex + 1)
