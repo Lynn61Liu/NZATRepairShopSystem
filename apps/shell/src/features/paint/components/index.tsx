@@ -1,0 +1,1 @@
+export { PaintPanel } from "./PaintPanel";

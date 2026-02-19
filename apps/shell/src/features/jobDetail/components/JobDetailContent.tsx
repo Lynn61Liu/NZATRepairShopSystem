@@ -1,6 +1,7 @@
 import type {
   JobDetailData,
   JobDetailTabKey,
+  PaintService,
   PartsService,
   PartsServiceStatus,
   WofCheckItem,
@@ -24,6 +25,8 @@ type JobDetailContentProps = {
   wofLoading?: boolean;
   partsServices: PartsService[];
   partsLoading?: boolean;
+  paintService?: PaintService | null;
+  paintLoading?: boolean;
   onAddWof: () => void;
   onRefreshWof?: () => Promise<{ success: boolean; message?: string }>;
   onDeleteWofServer?: () => Promise<{ success: boolean; message?: string }>;
@@ -52,11 +55,17 @@ type JobDetailContentProps = {
     note: string
   ) => Promise<{ success: boolean; message?: string }>;
   onDeletePartsNote?: (noteId: string) => Promise<{ success: boolean; message?: string }>;
+  onCreatePaintService?: (status?: string, panels?: number) => Promise<{ success: boolean; message?: string }>;
+  onUpdatePaintStage?: (stageIndex: number) => Promise<{ success: boolean; message?: string }>;
+  onUpdatePaintPanels?: (panels: number) => Promise<{ success: boolean; message?: string }>;
+  onDeletePaintService?: () => Promise<{ success: boolean; message?: string }>;
+  onRefreshPaintService?: () => Promise<void>;
   onRefreshVehicle?: () => Promise<{ success: boolean; message?: string }>;
   onDeleteJob?: () => void;
   isDeletingJob?: boolean;
   tagOptions?: TagOption[];
   onSaveTags?: (tagIds: string[]) => Promise<{ success: boolean; message?: string; tags?: string[] }>;
+  onSaveNotes?: (notes: string) => Promise<{ success: boolean; message?: string }>;
   isSidebarOpen: boolean;
   onToggleSidebar: () => void;
 };
@@ -72,6 +81,8 @@ export function JobDetailContent({
   wofLoading,
   partsServices,
   partsLoading,
+  paintService,
+  paintLoading,
   onAddWof,
   onRefreshWof,
   onDeleteWofServer,
@@ -83,11 +94,17 @@ export function JobDetailContent({
   onCreatePartsNote,
   onUpdatePartsNote,
   onDeletePartsNote,
+  onCreatePaintService,
+  onUpdatePaintStage,
+  onUpdatePaintPanels,
+  onDeletePaintService,
+  onRefreshPaintService,
   onRefreshVehicle,
   onDeleteJob,
   isDeletingJob,
   tagOptions,
   onSaveTags,
+  onSaveNotes,
   isSidebarOpen,
   onToggleSidebar,
 }: JobDetailContentProps) {
@@ -105,6 +122,8 @@ export function JobDetailContent({
           wofLoading={wofLoading}
           partsServices={partsServices}
           partsLoading={partsLoading}
+          paintService={paintService}
+          paintLoading={paintLoading}
           onAddWof={onAddWof}
           onRefreshWof={onRefreshWof}
           onDeleteWofServer={onDeleteWofServer}
@@ -116,11 +135,17 @@ export function JobDetailContent({
           onCreatePartsNote={onCreatePartsNote}
           onUpdatePartsNote={onUpdatePartsNote}
           onDeletePartsNote={onDeletePartsNote}
+          onCreatePaintService={onCreatePaintService}
+          onUpdatePaintStage={onUpdatePaintStage}
+          onUpdatePaintPanels={onUpdatePaintPanels}
+          onDeletePaintService={onDeletePaintService}
+          onRefreshPaintService={onRefreshPaintService}
           onRefreshVehicle={onRefreshVehicle}
           onDeleteJob={onDeleteJob}
           isDeletingJob={isDeletingJob}
           tagOptions={tagOptions}
           onSaveTags={onSaveTags}
+          onSaveNotes={onSaveNotes}
         />
       }
       sidebar={

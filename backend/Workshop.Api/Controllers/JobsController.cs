@@ -131,6 +131,7 @@ public class JobsController : ControllerBase
             isUrgent = row.Job.IsUrgent,
             tags = tagNames.ToArray(),
             notes = row.Job.Notes,
+            createdAt = row.Job.CreatedAt.ToString("yyyy/MM/dd HH:mm", CultureInfo.InvariantCulture),
             vehicle = new
             {
                 plate = row.Vehicle.Plate,
@@ -174,6 +175,179 @@ public class JobsController : ControllerBase
         };
 
         return Ok(new { job, hasWofRecord });
+    }
+
+    public record CreatePaintServiceRequest(string? Status, int? Panels);
+    public record UpdatePaintStageRequest(int? StageIndex);
+    public record UpdatePaintPanelsRequest(int? Panels);
+
+    [HttpGet("{id:long}/paint-service")]
+    public async Task<IActionResult> GetPaintService(long id, CancellationToken ct)
+    {
+        var service = await _db.JobPaintServices.AsNoTracking().FirstOrDefaultAsync(x => x.JobId == id, ct);
+        if (service is null)
+        {
+            return Ok(new { exists = false });
+        }
+
+        return Ok(new
+        {
+            exists = true,
+            service = new
+            {
+                id = service.Id,
+                jobId = service.JobId,
+                status = service.Status,
+                currentStage = service.CurrentStage,
+                panels = service.Panels,
+                createdAt = service.CreatedAt.ToString("yyyy/MM/dd HH:mm", CultureInfo.InvariantCulture),
+                updatedAt = service.UpdatedAt.ToString("yyyy/MM/dd HH:mm", CultureInfo.InvariantCulture),
+            }
+        });
+    }
+
+    [HttpPost("{id:long}/paint-service")]
+    public async Task<IActionResult> CreatePaintService(long id, [FromBody] CreatePaintServiceRequest? req, CancellationToken ct)
+    {
+        var job = await _db.Jobs.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (job is null)
+            return NotFound(new { error = "Job not found." });
+
+        var existing = await _db.JobPaintServices.FirstOrDefaultAsync(x => x.JobId == id, ct);
+        if (existing is not null)
+        {
+            var nextStatus = string.IsNullOrWhiteSpace(req?.Status) ? existing.Status : req!.Status!.Trim();
+            var nextPanels = req?.Panels is > 0 ? req!.Panels!.Value : existing.Panels;
+            var changed = false;
+
+            if (!string.Equals(existing.Status, nextStatus, StringComparison.Ordinal))
+            {
+                existing.Status = nextStatus;
+                if (string.Equals(nextStatus, "not_started", StringComparison.Ordinal))
+                {
+                    existing.CurrentStage = -1;
+                }
+                changed = true;
+            }
+
+            if (existing.Panels != nextPanels)
+            {
+                existing.Panels = nextPanels;
+                changed = true;
+            }
+
+            if (changed)
+            {
+                existing.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync(ct);
+            }
+
+            return Ok(new
+            {
+                id = existing.Id,
+                jobId = existing.JobId,
+                status = existing.Status,
+                currentStage = existing.CurrentStage,
+                panels = existing.Panels
+            });
+        }
+
+        var status = string.IsNullOrWhiteSpace(req?.Status) ? "pending" : req!.Status!.Trim();
+        var panels = req?.Panels is > 0 ? req!.Panels!.Value : 1;
+        var service = new JobPaintService
+        {
+            JobId = id,
+            Status = status,
+            CurrentStage = -1,
+            Panels = panels,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        _db.JobPaintServices.Add(service);
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new
+        {
+            id = service.Id,
+            jobId = service.JobId,
+            status = service.Status,
+            currentStage = service.CurrentStage,
+            panels = service.Panels
+        });
+    }
+
+    [HttpPut("{id:long}/paint-service/stage")]
+    public async Task<IActionResult> UpdatePaintStage(long id, [FromBody] UpdatePaintStageRequest req, CancellationToken ct)
+    {
+        if (req?.StageIndex is null)
+            return BadRequest(new { error = "StageIndex is required." });
+
+        var service = await _db.JobPaintServices.FirstOrDefaultAsync(x => x.JobId == id, ct);
+        if (service is null)
+            return NotFound(new { error = "Paint service not found." });
+
+        var stageIndex = req.StageIndex.Value;
+        var normalized = NormalizePaintStage(stageIndex);
+        service.Status = normalized.Status;
+        service.CurrentStage = normalized.CurrentStage;
+        service.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new { success = true, status = service.Status, currentStage = service.CurrentStage });
+    }
+
+    [HttpPut("{id:long}/paint-service/panels")]
+    public async Task<IActionResult> UpdatePaintPanels(long id, [FromBody] UpdatePaintPanelsRequest req, CancellationToken ct)
+    {
+        if (req?.Panels is null || req.Panels.Value <= 0)
+            return BadRequest(new { error = "Panels is required." });
+
+        var service = await _db.JobPaintServices.FirstOrDefaultAsync(x => x.JobId == id, ct);
+        if (service is null)
+            return NotFound(new { error = "Paint service not found." });
+
+        service.Panels = req.Panels.Value;
+        service.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new { success = true, panels = service.Panels });
+    }
+
+    [HttpDelete("{id:long}/paint-service")]
+    public async Task<IActionResult> DeletePaintService(long id, CancellationToken ct)
+    {
+        var deleted = await _db.JobPaintServices.Where(x => x.JobId == id).ExecuteDeleteAsync(ct);
+        if (deleted == 0)
+            return NotFound(new { error = "Paint service not found." });
+
+        return Ok(new { success = true });
+    }
+
+    private static (string Status, int CurrentStage) NormalizePaintStage(int stageIndex)
+    {
+        const int lastStageIndex = 6;
+        if (stageIndex <= -1)
+            return ("not_started", -1);
+        if (stageIndex >= lastStageIndex + 1)
+            return ("done", lastStageIndex);
+        return ("in_progress", stageIndex);
+    }
+
+    public record UpdateJobNotesRequest(string? Notes);
+
+    [HttpPut("{id:long}/notes")]
+    public async Task<IActionResult> UpdateNotes(long id, [FromBody] UpdateJobNotesRequest req, CancellationToken ct)
+    {
+        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (job is null)
+            return NotFound(new { error = "Job not found." });
+
+        job.Notes = req.Notes?.Trim();
+        job.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new { success = true, notes = job.Notes });
     }
 
     [HttpDelete("{id:long}")]

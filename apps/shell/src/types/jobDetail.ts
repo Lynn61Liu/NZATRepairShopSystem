@@ -141,11 +141,23 @@ export type PartsService = {
   notes: PartsNote[];
 };
 
+export type PaintService = {
+  id: string;
+  jobId: string;
+  status: string;
+  currentStage: number;
+  panels: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 export type JobDetailData = {
   id: string;
   status: string;
   isUrgent: boolean;
   tags: string[];
+  notes?: string;
+  createdAt?: string;
   vehicle: VehicleInfo;
   customer: CustomerInfo;
 };

@@ -21,6 +21,8 @@ export function JobDetailPage() {
     wofLoading,
     partsServices,
     partsLoading,
+    paintService,
+    paintLoading,
     tagOptions,
     setLoadError,
     setDeleteError,
@@ -37,6 +39,12 @@ export function JobDetailPage() {
     deletePartsNote,
     deleteJob,
     saveTags,
+    saveJobNotes,
+    createPaintService,
+    updatePaintStage,
+    updatePaintPanels,
+    deletePaintService,
+    refreshPaintService,
     refreshVehicleInfo,
   } = useJobDetailData({ jobId: id, onDeleted: () => navigate("/jobs") });
 
@@ -73,6 +81,8 @@ export function JobDetailPage() {
         wofLoading={wofLoading}
         partsServices={partsServices}
         partsLoading={partsLoading}
+        paintService={paintService}
+        paintLoading={paintLoading}
         onAddWof={createWofServer}
         onRefreshWof={importWofRecords}
         onDeleteWofServer={deleteWofServer}
@@ -84,10 +94,16 @@ export function JobDetailPage() {
         onCreatePartsNote={createPartsNote}
         onUpdatePartsNote={updatePartsNote}
         onDeletePartsNote={deletePartsNote}
+        onCreatePaintService={createPaintService}
+        onUpdatePaintStage={updatePaintStage}
+        onUpdatePaintPanels={updatePaintPanels}
+        onDeletePaintService={deletePaintService}
+        onRefreshPaintService={refreshPaintService}
         onDeleteJob={deleteJob}
         isDeletingJob={deletingJob}
         tagOptions={tagOptions}
         onSaveTags={saveTags}
+        onSaveNotes={saveJobNotes}
         onRefreshVehicle={refreshVehicleInfo}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen((v) => !v)}

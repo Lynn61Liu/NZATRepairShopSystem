@@ -89,6 +89,7 @@ public class NewJobController : ControllerBase
 
         var wofCreated = req.Services?.Any(s => string.Equals(s, "wof", StringComparison.OrdinalIgnoreCase)) == true;
         var hasMech = req.Services?.Any(s => string.Equals(s, "mech", StringComparison.OrdinalIgnoreCase)) == true;
+        var hasPaint = req.Services?.Any(s => string.Equals(s, "paint", StringComparison.OrdinalIgnoreCase)) == true;
 
         if (hasMech && !string.IsNullOrWhiteSpace(req.PartsDescription))
         {
@@ -101,6 +102,24 @@ public class NewJobController : ControllerBase
                 UpdatedAt = DateTime.UtcNow,
             };
             _db.JobPartsServices.Add(partsService);
+            await _db.SaveChangesAsync(ct);
+        }
+
+        if (hasPaint)
+        {
+            var paintPanels = req.PaintPanels.HasValue && req.PaintPanels.Value > 0
+                ? req.PaintPanels.Value
+                : 1;
+            var paintService = new JobPaintService
+            {
+                JobId = job.Id,
+                Status = "pending",
+                CurrentStage = -1,
+                Panels = paintPanels,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            _db.JobPaintServices.Add(paintService);
             await _db.SaveChangesAsync(ct);
         }
 

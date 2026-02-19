@@ -35,3 +35,11 @@ export function updateJobCreatedAt(jobId: string, date: string) {
     body: JSON.stringify({ date }),
   });
 }
+
+export function updateJobNotes(jobId: string, notes: string) {
+  return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}/notes`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ notes }),
+  });
+}

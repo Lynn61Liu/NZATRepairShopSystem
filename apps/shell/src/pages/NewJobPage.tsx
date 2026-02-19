@@ -378,6 +378,7 @@ export function NewJobPage() {
           services: selectedServices,
           notes: notesPayload,
           partsDescription: hasMech && partsDescription.trim() ? partsDescription.trim() : undefined,
+          paintPanels: showPaintPanels ? Number(paintPanels) || 1 : undefined,
           businessId: customerType === "business" ? businessId : undefined,
           customer: customerPayload,
         }),

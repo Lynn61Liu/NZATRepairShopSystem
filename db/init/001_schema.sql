@@ -145,3 +145,14 @@ CREATE TABLE job_parts_notes (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Paint Services
+CREATE TABLE job_paint_services (
+  id BIGSERIAL PRIMARY KEY,
+  job_id BIGINT NOT NULL UNIQUE,
+  status TEXT NOT NULL,
+  current_stage INTEGER NOT NULL DEFAULT -1,
+  panels INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
