@@ -290,12 +290,13 @@ export function JobHeader({
 
       <div className="flex w-full flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
-          <div className=" text-[rgba(0,0,0,0.55)] mb-1">备注</div>
+          <div className=" text-[rgba(0,0,0,0.55)] mb-1">工单备注</div>
           {noteMessage ? <div className="text-xs text-green-600 mb-1">{noteMessage}</div> : null}
           {noteError ? <div className="text-xs text-red-600 mb-1">{noteError}</div> : null}
           {editingNote ? (
             <>
-              <Textarea
+              <Textarea 
+
                 rows={3}
                 value={noteDraft}
                 onChange={(event) => setNoteDraft(event.target.value)}
@@ -317,13 +318,13 @@ export function JobHeader({
               </div>
             </>
           ) : (
-            <div className="flex items-start gap-2">
+            <div className="flex items-end gap-2">
               <div className="min-h-[72px] flex-1 whitespace-pre-wrap rounded-[8px] border border-[rgba(0,0,0,0.10)] bg-white px-3 py-2 text-sm text-[var(--ds-text)]">
                 {noteDraft?.trim() ? noteDraft : "—"}
               </div>
               <button
                 type="button"
-                className="mt-1 inline-flex h-7 w-7 items-center justify-center rounded-full border border-[rgba(0,0,0,0.10)] text-[rgba(0,0,0,0.55)] hover:text-[rgba(0,0,0,0.8)] hover:bg-[rgba(0,0,0,0.04)]"
+                className=" mt-1 inline-flex h-7 w-7 items-center justify-center rounded-full border border-[rgba(0,0,0,0.10)] text-[rgba(0,0,0,0.55)] hover:text-[rgba(0,0,0,0.8)] hover:bg-[rgba(0,0,0,0.04)]"
                 title="编辑备注"
                 onClick={() => setEditingNote(true)}
               >
@@ -334,9 +335,10 @@ export function JobHeader({
         </div>
 
         <div className="flex flex-col items-center gap-2 ml-40">
-          <Button variant="primary" onClick={handlePoEmail} disabled={!needsPo}>
+         {needsPo ? ( <Button variant="primary" onClick={handlePoEmail} disabled={!needsPo}>
             PO邮件
-          </Button>
+          </Button>): null}
+        
           <Button variant="primary" onClick={handlePaintClick}>
             喷漆打印
           </Button>
