@@ -19,6 +19,7 @@ public class AppDbContext : DbContext
     public DbSet<JobWofRecord> JobWofRecords => Set<JobWofRecord>();
     public DbSet<JobPartsService> JobPartsServices => Set<JobPartsService>();
     public DbSet<JobPartsNote> JobPartsNotes => Set<JobPartsNote>();
+    public DbSet<JobMechService> JobMechServices => Set<JobMechService>();
     public DbSet<JobPaintService> JobPaintServices => Set<JobPaintService>();
     
 
@@ -197,6 +198,16 @@ public class AppDbContext : DbContext
         jpn.Property(x => x.Note).HasColumnName("note").IsRequired();
         jpn.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
         jpn.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
+
+        var jms = modelBuilder.Entity<JobMechService>();
+        jms.ToTable("job_mech_services");
+        jms.HasKey(x => x.Id);
+        jms.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        jms.Property(x => x.JobId).HasColumnName("job_id").IsRequired();
+        jms.Property(x => x.Description).HasColumnName("description").IsRequired();
+        jms.Property(x => x.Cost).HasColumnName("cost").HasColumnType("numeric");
+        jms.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
+        jms.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
 
         var jpt = modelBuilder.Entity<JobPaintService>();
         jpt.ToTable("job_paint_services");

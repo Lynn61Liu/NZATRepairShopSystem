@@ -69,7 +69,7 @@ export function Sidebar() {
           }
         >
           <span className="flex items-center justify-between gap-2">
-            <span>喷漆Board</span>
+            <span>PNP Board</span>
             {paintOverdueCount > 0 ? (
               <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-600">
                 {paintOverdueCount}

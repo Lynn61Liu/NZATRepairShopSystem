@@ -105,6 +105,27 @@ public class NewJobController : ControllerBase
             await _db.SaveChangesAsync(ct);
         }
 
+        if (hasMech && req.MechItems is { Length: > 0 })
+        {
+            var now = DateTime.UtcNow;
+            foreach (var item in req.MechItems)
+            {
+                var trimmed = item?.Trim();
+                if (string.IsNullOrWhiteSpace(trimmed))
+                    continue;
+                var mechService = new JobMechService
+                {
+                    JobId = job.Id,
+                    Description = trimmed,
+                    Cost = null,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                };
+                _db.JobMechServices.Add(mechService);
+            }
+            await _db.SaveChangesAsync(ct);
+        }
+
         if (hasPaint)
         {
             var paintPanels = req.PaintPanels.HasValue && req.PaintPanels.Value > 0

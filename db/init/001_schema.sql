@@ -146,6 +146,16 @@ CREATE TABLE job_parts_notes (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Mech Services
+CREATE TABLE job_mech_services (
+  id BIGSERIAL PRIMARY KEY,
+  job_id BIGINT NOT NULL,
+  description TEXT NOT NULL,
+  cost NUMERIC,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Paint Services
 CREATE TABLE job_paint_services (
   id BIGSERIAL PRIMARY KEY,

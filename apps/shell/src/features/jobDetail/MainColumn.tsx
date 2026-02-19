@@ -4,6 +4,7 @@ import type {
   PaintService,
   PartsService,
   PartsServiceStatus,
+  MechService,
   WofCheckItem,
   WofFailReason,
   WofRecord,
@@ -30,6 +31,8 @@ type MainColumnProps = {
   wofLoading?: boolean;
   partsServices: PartsService[];
   partsLoading?: boolean;
+  mechServices?: MechService[];
+  mechLoading?: boolean;
   paintService?: PaintService | null;
   paintLoading?: boolean;
   onAddWof: () => void;
@@ -60,6 +63,12 @@ type MainColumnProps = {
     note: string
   ) => Promise<{ success: boolean; message?: string }>;
   onDeletePartsNote?: (noteId: string) => Promise<{ success: boolean; message?: string }>;
+  onCreateMechService?: (payload: { description: string; cost?: number | null }) => Promise<{ success: boolean }>;
+  onUpdateMechService?: (
+    id: string,
+    payload: { description?: string; cost?: number | null }
+  ) => Promise<{ success: boolean }>;
+  onDeleteMechService?: (id: string) => Promise<{ success: boolean }>;
   onCreatePaintService?: (status?: string, panels?: number) => Promise<{ success: boolean; message?: string }>;
   onUpdatePaintStage?: (stageIndex: number) => Promise<{ success: boolean; message?: string }>;
   onUpdatePaintPanels?: (panels: number) => Promise<{ success: boolean; message?: string }>;
@@ -92,6 +101,8 @@ export function MainColumn({
   wofLoading,
   partsServices,
   partsLoading,
+  mechServices,
+  mechLoading,
   paintService,
   paintLoading,
   onAddWof,
@@ -105,6 +116,9 @@ export function MainColumn({
   onCreatePartsNote,
   onUpdatePartsNote,
   onDeletePartsNote,
+  onCreateMechService,
+  onUpdateMechService,
+  onDeleteMechService,
   onUpdatePaintStage,
   onUpdatePaintPanels,
   onDeletePaintService,
@@ -175,13 +189,17 @@ export function MainColumn({
         {activeTab === "Mechanical" ? (
           <RepairPanel
             services={partsServices}
-            isLoading={partsLoading}
+            mechServices={mechServices}
+            isLoading={partsLoading || mechLoading}
             onCreateService={onCreatePartsService}
             onUpdateService={onUpdatePartsService}
             onDeleteService={onDeletePartsService}
             onCreateNote={onCreatePartsNote}
             onUpdateNote={onUpdatePartsNote}
             onDeleteNote={onDeletePartsNote}
+            onCreateMechService={onCreateMechService}
+            onUpdateMechService={onUpdateMechService}
+            onDeleteMechService={onDeleteMechService}
           />
         ) : null}
         {activeTab === "Paint" ? (

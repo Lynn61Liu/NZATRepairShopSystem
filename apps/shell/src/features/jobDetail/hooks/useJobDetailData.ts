@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   JobDetailData,
+  MechService,
   PaintService,
   PartsService,
   PartsServiceStatus,
@@ -46,6 +47,12 @@ import {
   updatePartsNote,
   updatePartsService,
 } from "@/features/parts/api/partsApi";
+import {
+  createMechService,
+  deleteMechService,
+  fetchMechServices,
+  updateMechService,
+} from "@/features/mech/api/mechApi";
 import { useToast } from "@/components/ui";
 
 type UseJobDetailDataArgs = {
@@ -65,6 +72,8 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
   const [wofFailReasons, setWofFailReasons] = useState<WofFailReason[]>([]);
   const [partsServices, setPartsServices] = useState<PartsService[]>([]);
   const [partsLoading, setPartsLoading] = useState(false);
+  const [mechServices, setMechServices] = useState<MechService[]>([]);
+  const [mechLoading, setMechLoading] = useState(false);
   const [paintService, setPaintService] = useState<PaintService | null>(null);
   const [paintLoading, setPaintLoading] = useState(false);
   const [tagOptions, setTagOptions] = useState<TagOption[]>([]);
@@ -119,6 +128,29 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
     } finally {
       if (isMountedRef.current) {
         setPartsLoading(false);
+      }
+    }
+  }, [jobId]);
+
+  const refreshMechServices = useCallback(async () => {
+    if (!jobId) return;
+    setMechLoading(true);
+    try {
+      const res = await fetchMechServices(jobId);
+      if (!res.ok) {
+        throw new Error(res.error || "加载机修项目失败");
+      }
+      if (isMountedRef.current) {
+        const list = Array.isArray(res.data) ? res.data : [];
+        setMechServices(list);
+      }
+    } catch {
+      if (isMountedRef.current) {
+        setMechServices([]);
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setMechLoading(false);
       }
     }
   }, [jobId]);
@@ -408,6 +440,57 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
     [jobId, refreshPartsServices, toast]
   );
 
+  const createMechServiceRow = useCallback(
+    async (payload: { description: string; cost?: number | null }) => {
+      if (!jobId) {
+        return { success: false, message: "缺少工单 ID" };
+      }
+      const res = await createMechService(jobId, payload);
+      if (!res.ok) {
+        toast.error(res.error || "保存失败");
+        return { success: false, message: res.error || "保存失败" };
+      }
+      await refreshMechServices();
+      toast.success("保存成功");
+      return { success: true, message: "保存成功" };
+    },
+    [jobId, refreshMechServices, toast]
+  );
+
+  const updateMechServiceRow = useCallback(
+    async (serviceId: string, payload: { description?: string; cost?: number | null }) => {
+      if (!jobId) {
+        return { success: false, message: "缺少工单 ID" };
+      }
+      const res = await updateMechService(jobId, serviceId, payload);
+      if (!res.ok) {
+        toast.error(res.error || "保存失败");
+        return { success: false, message: res.error || "保存失败" };
+      }
+      await refreshMechServices();
+      toast.success("保存成功");
+      return { success: true, message: "保存成功" };
+    },
+    [jobId, refreshMechServices, toast]
+  );
+
+  const deleteMechServiceRow = useCallback(
+    async (serviceId: string) => {
+      if (!jobId) {
+        return { success: false, message: "缺少工单 ID" };
+      }
+      const res = await deleteMechService(jobId, serviceId);
+      if (!res.ok) {
+        toast.error(res.error || "删除失败");
+        return { success: false, message: res.error || "删除失败" };
+      }
+      await refreshMechServices();
+      toast.success("删除成功");
+      return { success: true, message: "删除成功" };
+    },
+    [jobId, refreshMechServices, toast]
+  );
+
   const createPartsNoteRow = useCallback(
     async (serviceId: string, note: string) => {
       if (!jobId) {
@@ -642,6 +725,7 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
 
         await refreshWofServer();
         await refreshPartsServices();
+        await refreshMechServices();
         await refreshPaintService();
       } catch (err) {
         if (!cancelled) {
@@ -661,7 +745,7 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
       cancelled = true;
       isMountedRef.current = false;
     };
-  }, [jobId, refreshWofServer, refreshPartsServices, refreshPaintService]);
+  }, [jobId, refreshWofServer, refreshPartsServices, refreshMechServices, refreshPaintService]);
 
   return {
     jobData,
@@ -676,6 +760,8 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
     wofLoading,
     partsServices,
     partsLoading,
+    mechServices,
+    mechLoading,
     paintService,
     paintLoading,
     tagOptions,
@@ -690,6 +776,10 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
     createPartsService: createPartsServiceRow,
     updatePartsService: updatePartsServiceRow,
     deletePartsService: deletePartsServiceRow,
+    createMechService: createMechServiceRow,
+    updateMechService: updateMechServiceRow,
+    deleteMechService: deleteMechServiceRow,
+    refreshMechServices,
     createPartsNote: createPartsNoteRow,
     updatePartsNote: updatePartsNoteRow,
     deletePartsNote: deletePartsNoteRow,

@@ -25,7 +25,7 @@ const STAGES: Record<
   StageKey,
   {
     label: string;
-    icon: React.ReactNode;
+    icon: JSX.Element;
     pill: string;
     card: string;
     text: string;

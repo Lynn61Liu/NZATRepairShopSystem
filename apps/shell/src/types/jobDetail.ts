@@ -141,6 +141,15 @@ export type PartsService = {
   notes: PartsNote[];
 };
 
+export type MechService = {
+  id: string;
+  jobId: string;
+  description: string;
+  cost?: number | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 export type PaintService = {
   id: string;
   jobId: string;

@@ -4,6 +4,7 @@ import type {
   PaintService,
   PartsService,
   PartsServiceStatus,
+  MechService,
   WofCheckItem,
   WofFailReason,
   WofRecord,
@@ -25,6 +26,8 @@ type JobDetailContentProps = {
   wofLoading?: boolean;
   partsServices: PartsService[];
   partsLoading?: boolean;
+  mechServices?: MechService[];
+  mechLoading?: boolean;
   paintService?: PaintService | null;
   paintLoading?: boolean;
   onAddWof: () => void;
@@ -55,6 +58,12 @@ type JobDetailContentProps = {
     note: string
   ) => Promise<{ success: boolean; message?: string }>;
   onDeletePartsNote?: (noteId: string) => Promise<{ success: boolean; message?: string }>;
+  onCreateMechService?: (payload: { description: string; cost?: number | null }) => Promise<{ success: boolean }>;
+  onUpdateMechService?: (
+    id: string,
+    payload: { description?: string; cost?: number | null }
+  ) => Promise<{ success: boolean }>;
+  onDeleteMechService?: (id: string) => Promise<{ success: boolean }>;
   onCreatePaintService?: (status?: string, panels?: number) => Promise<{ success: boolean; message?: string }>;
   onUpdatePaintStage?: (stageIndex: number) => Promise<{ success: boolean; message?: string }>;
   onUpdatePaintPanels?: (panels: number) => Promise<{ success: boolean; message?: string }>;
@@ -88,6 +97,8 @@ export function JobDetailContent({
   wofLoading,
   partsServices,
   partsLoading,
+  mechServices,
+  mechLoading,
   paintService,
   paintLoading,
   onAddWof,
@@ -101,6 +112,9 @@ export function JobDetailContent({
   onCreatePartsNote,
   onUpdatePartsNote,
   onDeletePartsNote,
+  onCreateMechService,
+  onUpdateMechService,
+  onDeleteMechService,
   onCreatePaintService,
   onUpdatePaintStage,
   onUpdatePaintPanels,
@@ -130,6 +144,8 @@ export function JobDetailContent({
           wofLoading={wofLoading}
           partsServices={partsServices}
           partsLoading={partsLoading}
+          mechServices={mechServices}
+          mechLoading={mechLoading}
           paintService={paintService}
           paintLoading={paintLoading}
           onAddWof={onAddWof}
@@ -143,6 +159,9 @@ export function JobDetailContent({
           onCreatePartsNote={onCreatePartsNote}
           onUpdatePartsNote={onUpdatePartsNote}
           onDeletePartsNote={onDeletePartsNote}
+          onCreateMechService={onCreateMechService}
+          onUpdateMechService={onUpdateMechService}
+          onDeleteMechService={onDeleteMechService}
           onCreatePaintService={onCreatePaintService}
           onUpdatePaintStage={onUpdatePaintStage}
           onUpdatePaintPanels={onUpdatePaintPanels}

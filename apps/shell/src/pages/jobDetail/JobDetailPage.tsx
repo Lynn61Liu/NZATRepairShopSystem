@@ -21,6 +21,8 @@ export function JobDetailPage() {
     wofLoading,
     partsServices,
     partsLoading,
+    mechServices,
+    mechLoading,
     paintService,
     paintLoading,
     tagOptions,
@@ -37,6 +39,9 @@ export function JobDetailPage() {
     createPartsNote,
     updatePartsNote,
     deletePartsNote,
+    createMechService,
+    updateMechService,
+    deleteMechService,
     deleteJob,
     saveTags,
     saveJobNotes,
@@ -82,6 +87,8 @@ export function JobDetailPage() {
         wofLoading={wofLoading}
         partsServices={partsServices}
         partsLoading={partsLoading}
+        mechServices={mechServices}
+        mechLoading={mechLoading}
         paintService={paintService}
         paintLoading={paintLoading}
         onAddWof={createWofServer}
@@ -95,6 +102,9 @@ export function JobDetailPage() {
         onCreatePartsNote={createPartsNote}
         onUpdatePartsNote={updatePartsNote}
         onDeletePartsNote={deletePartsNote}
+        onCreateMechService={createMechService}
+        onUpdateMechService={updateMechService}
+        onDeleteMechService={deleteMechService}
         onCreatePaintService={createPaintService}
         onUpdatePaintStage={updatePaintStage}
         onUpdatePaintPanels={updatePaintPanels}
