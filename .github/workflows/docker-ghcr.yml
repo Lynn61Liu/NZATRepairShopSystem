@@ -41,3 +41,22 @@ jobs:
           context: ./apps/shell
           push: true
           tags: ghcr.io/6186127/nzat-web:latest
+
+   
+
+
+
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - name: Deploy to server via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            /www/wwwroot/NZAT.NET/deploy.sh
