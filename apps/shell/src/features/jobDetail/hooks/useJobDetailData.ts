@@ -19,6 +19,7 @@ import {
   updateVehicleInfo,
   deleteJob as apiDeleteJob,
 } from "../api/jobDetailApi";
+import { notifyPaintBoardRefresh } from "@/utils/refreshSignals";
 import {
   fetchPaintService,
   createPaintService,
@@ -313,6 +314,7 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
 
       setJobData((prev) => (prev ? { ...prev, notes } : prev));
       toast.success("备注已更新");
+      notifyPaintBoardRefresh();
       return { success: true, message: "备注已更新" };
     },
     [jobId, toast]

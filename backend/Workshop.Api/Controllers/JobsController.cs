@@ -188,6 +188,7 @@ public class JobsController : ControllerBase
                 from p in _db.JobPaintServices.AsNoTracking()
                 join j in _db.Jobs.AsNoTracking() on p.JobId equals j.Id
                 join v in _db.Vehicles.AsNoTracking() on j.VehicleId equals v.Id
+                where !EF.Functions.ILike(j.Status, "archived")
                 orderby j.CreatedAt descending
                 select new
                 {

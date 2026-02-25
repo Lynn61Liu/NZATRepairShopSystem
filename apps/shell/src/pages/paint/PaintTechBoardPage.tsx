@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Car,
   CheckCircle2,
@@ -19,6 +19,7 @@ import {
 } from "@/features/paint/paintBoard.utils";
 import { Pagination, Select } from "@/components/ui";
 import { paginate } from "@/utils/pagination";
+import { subscribePaintBoardRefresh } from "@/utils/refreshSignals";
 
 const STAGES: Record<
   StageKey,
@@ -67,10 +68,10 @@ const STAGES: Record<
   },
   assembly: {
     label: "组装抛光",
-    icon: <ClipboardCheck className="h-4 w-4 text-teal-600" />,
-    pill: "bg-teal-50 text-teal-700",
-    card: "border-teal-100",
-    text: "text-teal-700",
+    icon: <ClipboardCheck className="h-4 w-4 text-amber-900" />,
+    pill: "bg-amber-100 text-amber-900",
+    card: "border-amber-200",
+    text: "text-amber-900",
   },
   done: {
     label: "完成喷漆",
@@ -115,26 +116,38 @@ export function PaintTechBoardPage() {
   const [selectedStage, setSelectedStage] = useState<"all" | StageKey>("all");
   const [page, setPage] = useState(1);
   const pageSize = 20;
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-      setLoadError(null);
-      const res = await fetchPaintBoard();
-      if (!res.ok) {
-        if (!cancelled) setLoadError(res.error || "加载失败");
-        setLoading(false);
-        return;
-      }
-      const list = Array.isArray(res.data?.jobs) ? res.data.jobs : [];
-      if (!cancelled) setJobs(list);
-      setLoading(false);
-    };
-    load();
     return () => {
-      cancelled = true;
+      mountedRef.current = false;
     };
+  }, []);
+
+  const load = async () => {
+    if (!mountedRef.current) return;
+    setLoading(true);
+    setLoadError(null);
+    const res = await fetchPaintBoard();
+    if (!res.ok) {
+      if (mountedRef.current) setLoadError(res.error || "加载失败");
+      if (mountedRef.current) setLoading(false);
+      return;
+    }
+    const list = Array.isArray(res.data?.jobs) ? res.data.jobs : [];
+    if (mountedRef.current) setJobs(list);
+    if (mountedRef.current) setLoading(false);
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribePaintBoardRefresh(() => {
+      void load();
+    });
+    return unsubscribe;
   }, []);
 
   const today = normalizeDate(new Date());
@@ -239,7 +252,7 @@ export function PaintTechBoardPage() {
             </div>
             <div>
               <div className="text-lg font-semibold text-slate-800">NZAT PNP Board — 喷漆看板</div>
-              <div className="text-xs text-slate-500">Vehicle Repair Tracking Dashboard</div>
+              <div className="text-xs text-slate-500">Vehicle Painting Tracking Dashboard</div>
             </div>
           </div>
           <div className="text-xs text-slate-500">
@@ -248,8 +261,8 @@ export function PaintTechBoardPage() {
         </div>
       </header>
 
-      <main className="mx-auto flex max-w-6xl flex-col gap-5 px-6 py-6">
-        <div className="grid gap-3 md:grid-cols-6">
+      <main className="mx-auto flex max-w-7xl flex-col gap-5 px-6 py-6">
+        <div className="grid gap-3 md:grid-cols-7">
           {STAGE_ORDER.map((stage) => (
             <div
               key={stage}
