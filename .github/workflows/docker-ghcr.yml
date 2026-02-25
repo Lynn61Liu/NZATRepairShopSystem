@@ -30,7 +30,8 @@ jobs:
       - name: Build & Push API
         uses: docker/build-push-action@v6
         with:
-          context: ./backend/Workshop.Api
+          context: ./backend/Workshop.Api 
+          file: ./backend/Workshop.Api/Dockerfile
           push: true
           tags: ghcr.io/6186127/nzat-api:latest
 
