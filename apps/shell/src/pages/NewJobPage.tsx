@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { AlertCircle, ArrowLeft, Boxes, FileText, Plus, ReceiptText, X } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { Alert, Button, SectionCard, Textarea, useToast } from "@/components/ui";
@@ -44,7 +44,6 @@ export function NewJobPage() {
   const [formAlert, setFormAlert] = useState<{ variant: "error" | "success"; message: string } | null>(
     null
   );
-  const autoNotesRef = useRef("");
   const regoYearModelLabel = useMemo(() => {
     const parts = [rego, vehicleInfo?.year, vehicleInfo?.model]
       .map((value) => String(value ?? "").trim())
@@ -217,31 +216,6 @@ export function NewJobPage() {
       setMechOptions([]);
     }
   }, [selectedServices]);
-
-  useEffect(() => {
-    const prevAuto = autoNotesRef.current;
-    const current = notes;
-    if (!prevAuto) {
-      if (!current.trim() && autoNotes) {
-        setNotes(autoNotes);
-      }
-      autoNotesRef.current = autoNotes;
-      return;
-    }
-    if (current.startsWith(prevAuto)) {
-      const suffix = current.slice(prevAuto.length).trimStart();
-      const next = autoNotes ? `${autoNotes}${suffix ? `\n${suffix}` : ""}` : suffix;
-      if (next !== current) {
-        setNotes(next);
-      }
-      autoNotesRef.current = autoNotes;
-      return;
-    }
-    if (!current.trim() && autoNotes) {
-      setNotes(autoNotes);
-    }
-    autoNotesRef.current = autoNotes;
-  }, [autoNotes, notes]);
 
   const toggleService = (service: ServiceType) => {
     setSelectedServices((prev) =>
