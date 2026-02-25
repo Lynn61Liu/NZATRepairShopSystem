@@ -120,7 +120,7 @@ export const buildJobSheetHtml = (type: JobSheetType, row: JobSheetRow, notes: s
     : [
         field(160, 97, 320, 24, 16, customer),
         field(479, 97, 150, 24, 16, dateStr),
-        field(944, 84, 80, 24, 22, panels),
+        field(944, 84, 80, 24, 20, panels),
         field(160, 142, 200, 24, 16, rego),
         field(563, 142, 360, 24, 16, makeModel),
         field(817, 246, 250, 520, 18, comments, true),

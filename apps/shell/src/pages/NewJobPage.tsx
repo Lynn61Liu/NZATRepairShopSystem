@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { ArrowLeft } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { Alert, SectionCard, Textarea, useToast } from "@/components/ui";
+import { Alert, Input, SectionCard, Textarea, useToast } from "@/components/ui";
 import {
   ActionsRow,
   CustomerSection,
@@ -519,20 +519,25 @@ export function NewJobPage() {
 
       {showPaintPanels ? (
         <SectionCard title="喷漆片数*">
-          <div className="mt-3 flex flex-wrap gap-3">
-            {["1", "2", "3", "4"].map((value) => (
-              <label key={value} className="flex items-center gap-2 text-sm text-[rgba(0,0,0,0.70)]">
-                <input
-                  type="radio"
-                  name="paint-panels"
-                  value={value}
-                  checked={paintPanels === value}
-                  onChange={() => setPaintPanels(value)}
-                  className="h-4 w-4 accent-[var(--ds-primary)]"
-                />
-                {value}片
-              </label>
-            ))}
+          <div className="mt-3 flex items-center gap-2">
+            <Input
+              type="number"
+              min={1}
+              max={20}
+              value={paintPanels}
+              onChange={(event) => {
+                const next = event.target.value;
+                if (next === "") {
+                  setPaintPanels("");
+                  return;
+                }
+                if (!/^\d+$/.test(next)) return;
+                const num = Math.min(20, Math.max(1, Number(next)));
+                setPaintPanels(String(num));
+              }}
+              className="h-9 w-[120px]"
+            />
+            <span className="text-sm text-[rgba(0,0,0,0.70)]">片</span>
           </div>
         </SectionCard>
       ) : null}

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { PaintService } from "@/types";
 import { Button, Select } from "@/components/ui";
 import { Trash2 } from "lucide-react";
+import { notifyPaintBoardRefresh } from "@/utils/refreshSignals";
 
 type PaintPanelProps = {
   service?: PaintService | null;
@@ -93,6 +94,7 @@ export function PaintPanel({
     setDeleting(false);
     if (res.success) {
       // no-op, refresh is handled upstream
+      notifyPaintBoardRefresh();
     } else {
       setDeleteError(res.message || "删除失败");
     }
@@ -124,7 +126,7 @@ export function PaintPanel({
             disabled={updatingPanels || isLoading || !onUpdatePanels}
             className="h-8 w-[90px]"
           >
-            {["1", "2", "3", "4"].map((value) => (
+            {Array.from({ length: 20 }, (_, i) => String(i + 1)).map((value) => (
               <option key={value} value={value}>
                 {value}片
               </option>
