@@ -2,6 +2,7 @@ export const JOB_DETAIL_TEXT = {
   tabs: {
     wof: "WOF",
     mechanical: "机修",
+    parts: "配件",
     paint: "喷漆",
     log: "Log",
     invoice: "Invoice",

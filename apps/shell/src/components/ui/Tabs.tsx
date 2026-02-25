@@ -24,7 +24,7 @@ export function Tabs({ tabs, activeKey, onChange, className = "" }: TabsProps) {
           className={[
             "rounded-[8px] px-3 py-1.5 text-sm",
             activeKey === tab.key
-              ? "bg-[rgba(78,90,255,0.12)] text-[rgba(78,90,255,0.9)]"
+              ? "bg-[var(--ds-primary)] text-white hover:opacity-95"
               : "text-[rgba(0,0,0,0.6)] hover:bg-[rgba(0,0,0,0.04)]",
           ].join(" ")}
         >

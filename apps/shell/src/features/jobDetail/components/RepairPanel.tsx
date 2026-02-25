@@ -2,6 +2,8 @@ import type { MechService, PartsService, PartsServiceStatus } from "@/types";
 import { PartsPanel } from "@/features/parts";
 
 type RepairPanelProps = {
+  mode?: "mech" | "parts";
+  openPartsCreateTrigger?: number;
   services: PartsService[];
   mechServices?: MechService[];
   isLoading?: boolean;
@@ -26,6 +28,8 @@ type RepairPanelProps = {
 };
 
 export function RepairPanel({
+  mode = "mech",
+  openPartsCreateTrigger,
   services,
   mechServices,
   isLoading,
@@ -41,18 +45,22 @@ export function RepairPanel({
 }: RepairPanelProps) {
   return (
     <PartsPanel
+      title={mode === "parts" ? "配件服务" : "机修服务"}
+      showMech={mode === "mech"}
+      showParts={mode === "parts"}
+      openCreateTrigger={mode === "parts" ? openPartsCreateTrigger : undefined}
       services={services}
       mechServices={mechServices}
       isLoading={isLoading}
-      onCreateService={onCreateService}
-      onUpdateService={onUpdateService}
-      onDeleteService={onDeleteService}
-      onCreateNote={onCreateNote}
-      onUpdateNote={onUpdateNote}
-      onDeleteNote={onDeleteNote}
-      onCreateMechService={onCreateMechService}
-      onUpdateMechService={onUpdateMechService}
-      onDeleteMechService={onDeleteMechService}
+      onCreateService={mode === "parts" ? onCreateService : undefined}
+      onUpdateService={mode === "parts" ? onUpdateService : undefined}
+      onDeleteService={mode === "parts" ? onDeleteService : undefined}
+      onCreateNote={mode === "parts" ? onCreateNote : undefined}
+      onUpdateNote={mode === "parts" ? onUpdateNote : undefined}
+      onDeleteNote={mode === "parts" ? onDeleteNote : undefined}
+      onCreateMechService={mode === "mech" ? onCreateMechService : undefined}
+      onUpdateMechService={mode === "mech" ? onUpdateMechService : undefined}
+      onDeleteMechService={mode === "mech" ? onDeleteMechService : undefined}
     />
   );
 }

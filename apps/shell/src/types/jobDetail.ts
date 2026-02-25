@@ -1,4 +1,4 @@
-export type JobDetailTabKey = "WOF" | "Mechanical" | "Paint" | "Log" | "Invoice";
+export type JobDetailTabKey = "WOF" | "Mechanical" | "Parts" | "Paint" | "Log" | "Invoice";
 
 export type VehicleInfo = {
   plate: string;

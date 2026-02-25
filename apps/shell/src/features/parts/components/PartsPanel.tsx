@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, X } from "lucide-react";
 import type { MechService, PartsService, PartsServiceStatus } from "@/types";
 import { Input, SectionCard, Textarea } from "@/components/ui";
@@ -8,6 +8,10 @@ import { PartsToolbar } from "./PartsToolbar";
 import { MechServiceCard } from "@/features/mech";
 
 type PartsPanelProps = {
+  title?: string;
+  showMech?: boolean;
+  showParts?: boolean;
+  openCreateTrigger?: number;
   services: PartsService[];
   mechServices?: MechService[];
   isLoading?: boolean;
@@ -32,6 +36,10 @@ type PartsPanelProps = {
 };
 
 export function PartsPanel({
+  title = "机修服务",
+  showMech = true,
+  showParts = true,
+  openCreateTrigger,
   services,
   mechServices = [],
   isLoading,
@@ -53,6 +61,12 @@ export function PartsPanel({
   const [mechDescription, setMechDescription] = useState("");
   const [mechCost, setMechCost] = useState("");
   const [mechSaving, setMechSaving] = useState(false);
+
+  useEffect(() => {
+    if (showParts && openCreateTrigger) {
+      setCreating(true);
+    }
+  }, [showParts, openCreateTrigger]);
 
   const handleCreate = async () => {
     if (!onCreateService || !description.trim()) return;
@@ -83,14 +97,14 @@ export function PartsPanel({
   return (
     <div className="space-y-4 mt-4">
       <SectionCard
-        title="机修服务"
+        title={title}
         // subtitle="管理配件状态与备注"
         actions={
-          onCreateService ? (
+          onCreateService || onCreateMechService ? (
             <PartsToolbar
               isLoading={isLoading}
               creating={creating}
-              onAdd={() => setCreating((prev) => !prev)}
+              onAdd={onCreateService ? () => setCreating((prev) => !prev) : undefined}
               mechCreating={creatingMech}
               onAddMech={onCreateMechService ? () => setCreatingMech((prev) => !prev) : undefined}
             />
@@ -98,7 +112,7 @@ export function PartsPanel({
         }
       >
         <div className="mt-4 space-y-4">
-          {creatingMech ? (
+          {showMech && creatingMech ? (
             <div className="border border-gray-200 rounded-lg bg-purple-50 p-3 space-y-3 mt-4">
               <div className="text-xs font-semibold text-gray-600">机修项目</div>
               <Textarea
@@ -132,7 +146,7 @@ export function PartsPanel({
             </div>
           ) : null}
 
-          {creating ? (
+          {showParts && creating ? (
             <div className="border border-gray-200 rounded-lg bg-blue-50 p-3 space-y-3 mt-4">
               <div className="flex items-center gap-3 w-max">
                 <span className=" font-medium  uppercase w-12">状态</span>
@@ -167,27 +181,35 @@ export function PartsPanel({
           {isLoading ? <div className="text-sm text-gray-500">加载中...</div> : null}
 
           <div className="space-y-3">
-            {mechServices.map((service) => (
-              <MechServiceCard
-                key={`mech-${service.id}`}
-                service={service}
-                onUpdate={onUpdateMechService}
-                onDelete={onDeleteMechService}
-              />
-            ))}
-            {services.map((service) => (
-              <PartsServiceCard
-                key={service.id}
-                service={service}
-                onUpdateService={onUpdateService}
-                onDeleteService={onDeleteService}
-                onCreateNote={onCreateNote}
-                onUpdateNote={onUpdateNote}
-                onDeleteNote={onDeleteNote}
-              />
-            ))}
-            {services.length === 0 && mechServices.length === 0 && !isLoading ? (
-              <div className="text-sm text-gray-500">暂无配件服务记录</div>
+            {showMech
+              ? mechServices.map((service) => (
+                  <MechServiceCard
+                    key={`mech-${service.id}`}
+                    service={service}
+                    onUpdate={onUpdateMechService}
+                    onDelete={onDeleteMechService}
+                  />
+                ))
+              : null}
+            {showParts
+              ? services.map((service) => (
+                  <PartsServiceCard
+                    key={service.id}
+                    service={service}
+                    onUpdateService={onUpdateService}
+                    onDeleteService={onDeleteService}
+                    onCreateNote={onCreateNote}
+                    onUpdateNote={onUpdateNote}
+                    onDeleteNote={onDeleteNote}
+                  />
+                ))
+              : null}
+            {((showParts ? services.length : 0) === 0 &&
+              (showMech ? mechServices.length : 0) === 0 &&
+              !isLoading) ? (
+              <div className="text-sm text-gray-500">
+                {showParts && !showMech ? "暂无配件服务记录" : "暂无机修服务记录"}
+              </div>
             ) : null}
           </div>
         </div>

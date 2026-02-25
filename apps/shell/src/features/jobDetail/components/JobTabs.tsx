@@ -5,13 +5,14 @@ import { jobDetailTabs } from "@/features/jobDetail";
 type JobTabsProps = {
   activeTab: JobDetailTabKey;
   onChange: (key: JobDetailTabKey) => void;
+  tabs?: { key: JobDetailTabKey; label: string }[];
 };
 
-export function JobTabs({ activeTab, onChange }: JobTabsProps) {
+export function JobTabs({ activeTab, onChange, tabs = jobDetailTabs }: JobTabsProps) {
   return (
     <div className="border-b border-[var(--ds-border)] pb-3">
       <Tabs
-        tabs={jobDetailTabs}
+        tabs={tabs}
         activeKey={activeTab}
         onChange={(key) => onChange(key as JobDetailTabKey)}
       />
