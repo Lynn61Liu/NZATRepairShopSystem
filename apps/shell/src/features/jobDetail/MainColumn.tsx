@@ -233,8 +233,14 @@ export function MainColumn({
             onDeleteWofServer={onDeleteWofServer}
             onUpdateRecord={onUpdateWofRecord}
             onCreateRecord={onCreateWofRecord}
+            jobId={jobData.id}
             vehiclePlate={jobData.vehicle.plate}
             vehicleMakeModel={vehicleMakeModel}
+            vehicleOdometer={jobData.vehicle.odometer ?? null}
+            customerName={jobData.customer.name}
+            customerPhone={jobData.customer.phone}
+            customerEmail={jobData.customer.email}
+            customerAddress={jobData.customer.address}
           />
         ) : null}
         {activeTab === "Mechanical" ? (

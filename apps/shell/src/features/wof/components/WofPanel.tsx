@@ -21,8 +21,14 @@ export type WofPanelProps = {
   onCreateRecord?: (
     payload: WofRecordUpdatePayload
   ) => Promise<{ success: boolean; message?: string }>;
+  jobId?: string;
   vehiclePlate?: string;
   vehicleMakeModel?: string;
+  vehicleOdometer?: number | null;
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  customerAddress?: string;
 };
 
 export function WofPanel(props: WofPanelProps) {
@@ -34,8 +40,14 @@ export function WofPanel(props: WofPanelProps) {
     onDeleteWofServer,
     onUpdateRecord,
     onCreateRecord,
+    jobId,
     vehiclePlate,
     vehicleMakeModel,
+    vehicleOdometer,
+    customerName,
+    customerPhone,
+    customerEmail,
+    customerAddress,
   } = props;
   const [showCreate, setShowCreate] = useState(false);
 
@@ -55,6 +67,15 @@ export function WofPanel(props: WofPanelProps) {
         <WofResultsList
           isLoading={isLoading}
           checkItems={checkItems}
+          printContext={{
+            jobId,
+            vehicleMakeModel,
+            vehicleOdometer,
+            customerName,
+            customerPhone,
+            customerEmail,
+            customerAddress,
+          }}
           onUpdate={onUpdateRecord}
           onCreate={onCreateRecord}
           onCancelCreate={() => setShowCreate(false)}

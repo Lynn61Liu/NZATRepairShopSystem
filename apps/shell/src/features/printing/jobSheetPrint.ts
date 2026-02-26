@@ -105,7 +105,7 @@ export const buildJobSheetHtml = (type: JobSheetType, row: JobSheetRow, notes: s
       : `<img src="${barcode}" style="position:absolute;left:864px;top:125px;height:60px;" />`
     : "";
 
-  // 坐标完全沿用旧系统 + 新增两格（只加在 MECH）
+
   const fieldsHtml = isMech
     ? [
         field(560, 176, 360, 26, 16, customer),

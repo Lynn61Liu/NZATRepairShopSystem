@@ -10,6 +10,7 @@ export function mapWofRecord(record: any): WofRecord {
     odo: record?.odo ?? "",
     recordState: record?.recordState ?? record?.result ?? null,
     isNewWof: record?.isNewWof ?? null,
+    newWofDate: record?.newWofDate ?? "",
     authCode: record?.authCode ?? "",
     checkSheet: record?.checkSheet ?? "",
     csNo: record?.csNo ?? "",

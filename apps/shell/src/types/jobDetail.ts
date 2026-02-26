@@ -51,6 +51,7 @@ export type WofRecord = {
   odo?: string;
   recordState?: WofRecordStatus | null;
   isNewWof?: boolean | null;
+  newWofDate?: string;
   authCode?: string;
   checkSheet?: string;
   csNo?: string;
@@ -76,6 +77,7 @@ export type WofCheckItem = {
   makeModel?: string;
   recordState?: "Pass" | "Fail" | "Recheck";
   isNewWof?: boolean | null;
+  newWofDate?: string;
   odo?: string;
   authCode?: string;
   checkSheet?: string;

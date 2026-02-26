@@ -1,15 +1,27 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { WofCheckItem, WofFailReason, WofRecordUpdatePayload } from "@/types";
 import { Button, useToast } from "@/components/ui";
 import { JOB_DETAIL_TEXT } from "@/features/jobDetail/jobDetail.constants";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { formatNzDatePlusDays, formatNzDateTime, formatNzDateTimeInput } from "@/utils/date";
-import { withApiBase } from "@/utils/api";
 import { buildWofPayload, createEmptyWofFormState, toWofFormState, type WofFormState } from "../utils/wofForm";
 import { FieldRow } from "./FieldRow";
+import { useTemplatePrinter } from "@/features/printing/useTemplatePrinter";
+import type { WofPrintData } from "@/features/printing/wofPrint";
+
+export type WofPrintContext = {
+  jobId?: string;
+  vehicleMakeModel?: string;
+  vehicleOdometer?: number | null;
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  customerAddress?: string;
+};
 
 type WofResultItemProps = {
   record: WofCheckItem;
+  printContext?: WofPrintContext;
   onUpdate?: (id: string, payload: WofRecordUpdatePayload) => Promise<{ success: boolean; message?: string }>;
   failReasons?: WofFailReason[];
   isDraft?: boolean;
@@ -17,8 +29,70 @@ type WofResultItemProps = {
   onCancel?: () => void;
 };
 
+const toYYYYMMDD = (value?: string | null) => {
+  const s = String(value ?? "").trim();
+  if (!s) return "";
+  const normalized = s.replace(/\//g, "-").replace(" ", "T");
+  const d = new Date(normalized);
+  if (!isNaN(d.getTime())) {
+    const yyyy = String(d.getFullYear());
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  const m = s.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (m) {
+    const yyyy = m[1];
+    const mm = String(m[2]).padStart(2, "0");
+    const dd = String(m[3]).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  return "";
+};
+
+const buildWofPrintData = (record: WofCheckItem, context?: WofPrintContext): WofPrintData => {
+  const makeModel = String(record.makeModel ?? "").trim() || String(context?.vehicleMakeModel ?? "").trim();
+  const odoRaw = String(record.odo ?? "").trim();
+  const odoText =
+    odoRaw ||
+    (context?.vehicleOdometer !== null && context?.vehicleOdometer !== undefined
+      ? String(context.vehicleOdometer)
+      : "");
+
+  return {
+    jobId: String(context?.jobId ?? record.wofId ?? ""),
+    recordId: String(record.id ?? ""),
+    recordStateLabel: String(record.recordState ?? record.wofUiState ?? ""),
+    rego: String(record.rego ?? ""),
+    makeModel,
+    odoText,
+    organisationName: String(record.organisationName ?? ""),
+    customerName: String(context?.customerName ?? ""),
+    customerPhone: String(context?.customerPhone ?? ""),
+    customerEmail: String(context?.customerEmail ?? ""),
+    customerAddress: String(context?.customerAddress ?? ""),
+    inspectionDate: toYYYYMMDD(record.occurredAt),
+    inspectionNumber: String(record.id ?? ""),
+    recheckDate: toYYYYMMDD(record.previousExpiryDate),
+    recheckNumber: String(record.id ?? ""),
+    isNewWof: Boolean(record.isNewWof),
+    newWofDate: toYYYYMMDD(record.newWofDate),
+    authCode: String(record.authCode ?? ""),
+    checkSheet: String(record.checkSheet ?? ""),
+    csNo: String(record.csNo ?? ""),
+    wofLabel: String(record.wofLabel ?? ""),
+    labelNo: String(record.labelNo ?? ""),
+    msNumber: "",
+    failReasons: String(record.failReasons ?? ""),
+    previousExpiryDate: toYYYYMMDD(record.previousExpiryDate),
+    failRecheckDate: toYYYYMMDD(record.previousExpiryDate),
+    note: String(record.note ?? ""),
+  };
+};
+
 export function WofResultItem({
   record,
+  printContext,
   onUpdate,
   failReasons = [],
   isDraft,
@@ -31,10 +105,10 @@ export function WofResultItem({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [printUrl, setPrintUrl] = useState<string | null>(null);
-  const [printing, setPrinting] = useState(false);
-  const printFrameRef = useRef<HTMLIFrameElement | null>(null);
   const [failReasonQuery, setFailReasonQuery] = useState("");
+  const { printTemplate } = useTemplatePrinter({
+    onPopupBlocked: () => toast.error("无法打开打印窗口，请允许弹窗"),
+  });
 
   useEffect(() => {
     if (isDraft) return;
@@ -105,24 +179,8 @@ export function WofResultItem({
     }
   };
 
-  const handlePrintFrameLoad = () => {
-    if (!printing) return;
-    try {
-      printFrameRef.current?.contentWindow?.focus();
-      printFrameRef.current?.contentWindow?.print();
-      setMessage("已发送打印任务");
-      toast.success("已发送打印任务");
-    } catch {
-      const message = "自动打印失败，请稍后重试。";
-      setError(message);
-      toast.error(message);
-    } finally {
-      setPrinting(false);
-    }
-  };
-
   const handlePrint = () => {
-    const jobId = record.wofId;
+    const jobId = printContext?.jobId ?? record.wofId;
     const recordId = record.id;
     if (!jobId || !recordId) {
       const message = "无法打印：缺少 jobId 或 recordId。";
@@ -130,23 +188,14 @@ export function WofResultItem({
       toast.error(message);
       return;
     }
-    const baseUrl = withApiBase(`/api/jobs/${jobId}/wof-records/${recordId}/print`);
-    const url = baseUrl.includes("?") ? `${baseUrl}&_ts=${Date.now()}` : `${baseUrl}?_ts=${Date.now()}`;
-    setPrintUrl(url);
-    setPrinting(true);
+    const payload: WofPrintData = buildWofPrintData(record, { ...printContext, jobId: String(jobId) });
+    printTemplate({ type: "wof", data: payload });
+    setMessage("已发送打印任务");
+    toast.success("已发送打印任务");
   };
 
   return (
     <div className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 transition-colors">
-      {printUrl ? (
-        <iframe
-          ref={printFrameRef}
-          title="WOF Print Frame"
-          src={printUrl}
-          className="hidden"
-          onLoad={handlePrintFrameLoad}
-        />
-      ) : null}
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-2">

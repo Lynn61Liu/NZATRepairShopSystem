@@ -1,10 +1,11 @@
 import type { WofCheckItem, WofFailReason, WofRecordUpdatePayload } from "@/types";
 import { WofResultsCard } from "./WofResultsCard";
-import { WofResultItem } from "./WofResultItem";
+import { WofResultItem, type WofPrintContext } from "./WofResultItem";
 
 type WofResultsListProps = {
   isLoading?: boolean;
   checkItems: WofCheckItem[];
+  printContext?: WofPrintContext;
   onUpdate?: (id: string, payload: WofRecordUpdatePayload) => Promise<{ success: boolean; message?: string }>;
   onCreate?: (payload: WofRecordUpdatePayload) => Promise<{ success: boolean; message?: string }>;
   onCancelCreate?: () => void;
@@ -17,6 +18,7 @@ type WofResultsListProps = {
 export function WofResultsList({
   isLoading,
   checkItems,
+  printContext,
   onUpdate,
   onCreate,
   onCancelCreate,
@@ -60,6 +62,7 @@ export function WofResultsList({
            updatedAt: "",
           }}
           isDraft
+          printContext={printContext}
           onCreate={onCreate}
           onCancel={onCancelCreate}
           failReasons={failReasons}
@@ -67,7 +70,12 @@ export function WofResultsList({
       ) : null}
        {/* list  results from DB */}
       {checkItems.length ? (
-        <WofResultsCard wofResults={checkItems} onUpdate={onUpdate} failReasons={failReasons} />
+        <WofResultsCard
+          wofResults={checkItems}
+          printContext={printContext}
+          onUpdate={onUpdate}
+          failReasons={failReasons}
+        />
       ) : null}
     </div>
   );
