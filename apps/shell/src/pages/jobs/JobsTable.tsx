@@ -16,6 +16,13 @@ export type JobsTableProps = {
 
 const MS_PER_HOUR = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
+const TWO_LINE_CLAMP_STYLE = {
+  display: "-webkit-box",
+  WebkitBoxOrient: "vertical",
+  WebkitLineClamp: 2,
+  wordBreak: "break-word",
+} as const;
+const MAX_MODEL_LINES = 3;
 
 const JOB_TABLE_COLUMNS: Array<{
   key: string;
@@ -23,20 +30,19 @@ const JOB_TABLE_COLUMNS: Array<{
   width: number;
   minWidth: number;
 }> = [
-  { key: "jobId", label: "ID", width: 60, minWidth: 50 },
   { key: "urgent", label: "加急", width: 40, minWidth: 30 },
   { key: "inShop", label: "在店时间", width: 90, minWidth: 70 },
   { key: "status", label: "汽车状态", width: 110, minWidth: 90 },
   { key: "tag", label: "TAG", width: 90, minWidth: 70 },
   { key: "plate", label: "车牌号", width: 100, minWidth: 80 },
-  { key: "model", label: "汽车型号", width: 140, minWidth: 110 },
-  { key: "note", label: "备注", width: 160, minWidth: 120 },
+  { key: "model", label: "汽车型号", width: 140, minWidth: 150 },
+  { key: "note", label: "备注", width: 250, minWidth: 280 },
   { key: "wof", label: "WOF", width: 70, minWidth: 60 },
   { key: "mech", label: "机修", width: 70, minWidth: 60 },
   { key: "paint", label: "喷漆", width: 70, minWidth: 60 },
-  { key: "customer", label: "客户Code", width: 110, minWidth: 90 },
+  { key: "customer", label: "客户Code", width: 70, minWidth: 90 },
   { key: "phone", label: "客户电话", width: 110, minWidth: 90 },
-  { key: "createdAt", label: "创建时间", width: 150, minWidth: 120 },
+  { key: "createdAt", label: "创建时间", width: 100, minWidth: 120 },
   { key: "actions", label: "操作", width: 80, minWidth: 60 },
 ];
 
@@ -76,6 +82,16 @@ function formatDateInput(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function getModelLines(value?: string) {
+  const text = String(value ?? "").trim();
+  if (!text) return { lines: ["—"], truncated: false };
+  const parts = text.split(/\s+/).filter(Boolean);
+  if (parts.length <= MAX_MODEL_LINES) {
+    return { lines: parts, truncated: false };
+  }
+  return { lines: parts.slice(0, MAX_MODEL_LINES), truncated: true };
 }
 
 export function JobsTable({
@@ -193,7 +209,7 @@ export function JobsTable({
         </div>
 
         {/* rows */}
-        {rows.map((r) => {
+        {rows.map((r, index) => {
         //   const isSelected = selectedIds.has(r.id);
           const timeInShop = getTimeInShop(r.createdAt);
           const timeClass =
@@ -202,16 +218,19 @@ export function JobsTable({
               : timeInShop.level === "warn"
                 ? "text-amber-600 font-semibold"
                 : "text-[rgba(0,0,0,0.60)]";
+          const rowBg = r.urgent
+            ? "bg-[rgba(244,63,94,0.08)]"
+            : index % 2 === 1
+              ? "bg-[rgba(0,0,0,0.02)]"
+              : "bg-white";
           return (
             <div key={r.id}>
               <div
                 className={`grid gap-0 px-4 py-3 items-center border-b border-[rgba(0,0,0,0.06)] text-center
-                  ${r.urgent ? "bg-[rgba(244,63,94,0.08)]" : "bg-white"}
+                  ${rowBg}
                   hover:bg-[rgba(0,0,0,0.02)]`}
                 style={gridStyle}
               >
-                <div className="text-[11px] text-[rgba(0,0,0,0.55)]">{r.id}</div>
-
                 <div className="flex justify-center">
                   <input
                     type="checkbox"
@@ -226,17 +245,36 @@ export function JobsTable({
                 <div><StatusPill status={r.vehicleStatus} /></div>
 
                 <div className="min-w-0"><TagsCell selectedTags={r.selectedTags} /></div>
-                <div className="font-medium text-[rgba(0,0,0,0.70)]">
-                  <Link to={`/jobs/${r.id}`} className="text-[rgba(37,99,235,1)] font-semibold underline">
-                    {r.plate}
-                  </Link>
+                <div className="text-left font-medium text-[rgba(0,0,0,0.70)]">
+                  <div className="h-10 overflow-hidden leading-5" style={TWO_LINE_CLAMP_STYLE}>
+                    <Link
+                      to={`/jobs/${r.id}`}
+                      className="block text-[rgba(37,99,235,1)] font-semibold underline"
+                    >
+                      {r.plate}
+                    </Link>
+                  </div>
                 </div>
-                <div className="min-w-0 font-semibold text-[rgba(0,0,0,0.60)] truncate">{r.vehicleModel}</div>
+                <div
+                  className="min-w-0 text-left font-semibold text-[rgba(0,0,0,0.60)]"
+                  title={r.vehicleModel || ""}
+                >
+                  <div className="h-[60px] overflow-hidden leading-5">
+                    {(() => {
+                      const { lines, truncated } = getModelLines(r.vehicleModel);
+                      return lines.map((line, index) => (
+                        <span key={`${line}-${index}`} className="block">
+                          {index === lines.length - 1 && truncated ? `${line}…` : line}
+                        </span>
+                      ));
+                    })()}
+                  </div>
+                </div>
                 <div className="min-w-0 text-left text-[rgba(0,0,0,0.45)]">
                   {r.notes ? (
                     <span className="relative inline-flex max-w-full align-middle group">
-                      <span className="truncate">
-                        {`${r.notes.slice(0, 10)}${r.notes.length > 10 ? "…" : ""}`}
+                      <span className="h-10 overflow-hidden leading-5" style={TWO_LINE_CLAMP_STYLE}>
+                        {r.notes}
                       </span>
                       <span className="pointer-events-none absolute left-0 top-full z-50 mt-2 w-[260px] rounded-lg border border-[rgba(0,0,0,0.12)] bg-white px-3 py-2 text-xs text-[rgba(0,0,0,0.75)] shadow-lg opacity-0 translate-y-1 transition group-hover:opacity-100 group-hover:translate-y-0">
                         {r.notes}
@@ -278,11 +316,14 @@ export function JobsTable({
                       autoFocus
                     />
                   ) : (
-                    r.createdAt
+                    (() => {
+                      const parsed = parseCreatedAt(r.createdAt);
+                      return parsed ? formatDateInput(parsed) : r.createdAt;
+                    })()
                   )}
                 </div>
 
-                <div className="flex justify-center gap-1 bg-[rgba(0,0,0,0.04)]">
+                <div className="flex justify-center gap-1 ">
                   <button
                     className="rounded border border-[rgba(0,0,0,0.12)] px-2 py-1 text-xs text-[rgba(0,0,0,0.65)] hover:bg-[rgba(0,0,0,0.04)]"
                     onClick={() => onPrintMech(r.id)}

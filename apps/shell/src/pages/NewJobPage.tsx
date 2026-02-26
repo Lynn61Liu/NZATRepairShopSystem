@@ -373,10 +373,7 @@ export function NewJobPage() {
     const trimmedNotes = notes.trim();
     const baseNotes = trimmedNotes ? trimmedNotes : autoNotes;
     const partsText = partsSummaryLine;
-    let notesPayload = regoYearModelLabel;
-    if (baseNotes) {
-      notesPayload = notesPayload ? `${notesPayload}\n${baseNotes}` : baseNotes;
-    }
+    let notesPayload = baseNotes || "";
     if (partsText) {
       const hasPartsAlready = notesPayload.includes(partsText);
       if (!hasPartsAlready) {
