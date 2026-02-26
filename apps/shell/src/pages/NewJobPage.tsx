@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { AlertCircle, ArrowLeft, Boxes, FileText, Plus, ReceiptText, X } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { Alert, Button, SectionCard, Textarea, useToast } from "@/components/ui";
@@ -44,6 +44,8 @@ export function NewJobPage() {
   const [formAlert, setFormAlert] = useState<{ variant: "error" | "success"; message: string } | null>(
     null
   );
+  const autoNotesRef = useRef("");
+  const notesRef = useRef("");
   const regoYearModelLabel = useMemo(() => {
     const parts = [rego, vehicleInfo?.year, vehicleInfo?.model]
       .map((value) => String(value ?? "").trim())
@@ -137,29 +139,15 @@ export function NewJobPage() {
   const autoNotes = useMemo(() => {
     const items: string[] = [];
     if (selectedServices.includes("wof")) items.push(serviceLabelMap.wof || "WOF");
-    if (selectedServices.includes("mech")) {
-      items.push(showNeedsPo && needsPo ? "机修(需要PO)" : "机修");
+    if (selectedServices.includes("mech") && selectedMechOptionLabels.length) {
+      items.push(selectedMechOptionLabels.join("，"));
     }
-    if (selectedServices.includes("paint")) {
-      items.push(`喷漆(${paintPanels || "1"}片)`);
-    }
-    const mechOptionText =
-      selectedServices.includes("mech") && mechOptionsLine ? mechOptionsLine : "";
-    const partsText = partsSummaryLine;
-    if (items.length === 0 && !partsText && !mechOptionText) return "";
-    const lines: string[] = [];
-    if (items.length > 0) lines.push(items.join("，"));
-    if (mechOptionText) lines.push(mechOptionText);
-    if (partsText) lines.push(partsText);
-    return lines.join("\n");
+    if (items.length === 0) return "";
+    return items.join("，");
   }, [
     selectedServices,
-    showNeedsPo,
-    needsPo,
-    paintPanels,
     serviceLabelMap,
-    partsSummaryLine,
-    mechOptionsLine,
+    selectedMechOptionLabels,
   ]);
 
   useEffect(() => {
@@ -216,6 +204,35 @@ export function NewJobPage() {
       setMechOptions([]);
     }
   }, [selectedServices]);
+
+  useEffect(() => {
+    notesRef.current = notes;
+  }, [notes]);
+
+  useEffect(() => {
+    const prevAuto = autoNotesRef.current;
+    const current = notesRef.current;
+    if (!prevAuto) {
+      if (!current.trim() && autoNotes) {
+        setNotes(autoNotes);
+      }
+      autoNotesRef.current = autoNotes;
+      return;
+    }
+    if (current.startsWith(prevAuto)) {
+      const suffix = current.slice(prevAuto.length).trimStart();
+      const next = autoNotes ? `${autoNotes}${suffix ? `\n${suffix}` : ""}` : suffix;
+      if (next !== current) {
+        setNotes(next);
+      }
+      autoNotesRef.current = autoNotes;
+      return;
+    }
+    if (!current.trim() && autoNotes) {
+      setNotes(autoNotes);
+    }
+    autoNotesRef.current = autoNotes;
+  }, [autoNotes]);
 
   const toggleService = (service: ServiceType) => {
     setSelectedServices((prev) =>
