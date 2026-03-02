@@ -3,6 +3,7 @@ import { Archive, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import { StatusPill, ProgressRing, TagsCell } from "@/features/jobs/components";
+import { formatNzDate, formatNzDateTime, parseTimestamp } from "@/utils/date";
 import type { JobRow } from "@/types/JobType";
 export type JobsTableProps = {
   rows: JobRow[];
@@ -50,19 +51,7 @@ const JOB_TABLE_COLUMNS: Array<{
 ];
 
 function parseCreatedAt(value?: string) {
-  if (!value) return null;
-  const match = value.match(/(\d{4})[/-](\d{2})[/-](\d{2})(?:\s+(\d{2}):(\d{2}))?/);
-  if (match) {
-    const year = Number(match[1]);
-    const month = Number(match[2]);
-    const day = Number(match[3]);
-    const hour = Number(match[4] ?? "0");
-    const minute = Number(match[5] ?? "0");
-    const date = new Date(year, month - 1, day, hour, minute);
-    if (!Number.isNaN(date.getTime())) return date;
-  }
-  const fallback = new Date(value);
-  return Number.isNaN(fallback.getTime()) ? null : fallback;
+  return parseTimestamp(value);
 }
 
 function getTimeInShop(createdAt?: string) {
@@ -80,22 +69,10 @@ function getTimeInShop(createdAt?: string) {
   return { label, level };
 }
 
-function formatDateInput(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 function formatCreatedAtDisplay(value?: string) {
   const parsed = parseCreatedAt(value);
   if (!parsed) return value || "—";
-  const year = parsed.getFullYear();
-  const month = String(parsed.getMonth() + 1).padStart(2, "0");
-  const day = String(parsed.getDate()).padStart(2, "0");
-  const hour = String(parsed.getHours()).padStart(2, "0");
-  const minute = String(parsed.getMinutes()).padStart(2, "0");
-  return `${year}-${month}-${day} ${hour}:${minute}`;
+  return formatNzDateTime(parsed).trim();
 }
 
 export function JobsTable({
@@ -169,7 +146,10 @@ export function JobsTable({
     const parsed = parseCreatedAt(row.createdAt);
     if (!parsed) return;
     setEditingId(row.id);
-    setEditDate(formatDateInput(parsed));
+    const nzDate = formatNzDate(parsed);
+    if (nzDate && nzDate !== "—") {
+      setEditDate(nzDate);
+    }
   };
 
   const cancelEditCreatedAt = () => {

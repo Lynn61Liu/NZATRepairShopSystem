@@ -34,6 +34,7 @@ public class NewJobController : ControllerBase
         var isBusiness = string.Equals(req.Customer.Type, "Business", StringComparison.Ordinal);
         var customerNotes = req.Customer.Notes?.Trim();
 
+        var now = DateTime.UtcNow;
         using var tx = await _db.Database.BeginTransactionAsync(ct);
 
         Customer? customer = null;
@@ -67,7 +68,7 @@ public class NewJobController : ControllerBase
             {
                 Plate = plate,
                 CustomerId = customer?.Id,
-                UpdatedAt = DateTime.UtcNow,
+                UpdatedAt = now,
             };
             _db.Vehicles.Add(vehicle);
             await _db.SaveChangesAsync(ct);
@@ -80,8 +81,8 @@ public class NewJobController : ControllerBase
             VehicleId = vehicle.Id,
             CustomerId = jobCustomerId,
             Notes = req.Notes?.Trim(),
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
+            CreatedAt = now,
+            UpdatedAt = now,
         };
 
         _db.Jobs.Add(job);
