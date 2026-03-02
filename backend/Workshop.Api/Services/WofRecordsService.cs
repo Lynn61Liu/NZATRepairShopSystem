@@ -813,7 +813,7 @@ public class WofRecordsService
         return dt.HasValue ? DateOnly.FromDateTime(dt.Value) : null;
     }
 
-    private static DateOnly? ParseDateOnly(string? value)
+    internal static DateOnly? ParseDateOnly(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
         var normalized = NormalizeDateString(value);
