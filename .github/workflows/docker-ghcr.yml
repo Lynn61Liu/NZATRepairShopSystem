@@ -33,7 +33,7 @@ jobs:
           context: ./backend
           file: ./backend/Workshop.Api/Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/nzat-api:latest
+          tags: ghcr.io/${{ toLower(github.repository_owner) }}/nzat-api:latest
 
       - name: Build & Push Web
         uses: docker/build-push-action@v6
