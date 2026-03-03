@@ -96,7 +96,6 @@ public class NewJobController : ControllerBase
 
         if (partsDescriptions.Count > 0)
         {
-            var now = DateTime.UtcNow;
             foreach (var partsDescription in partsDescriptions)
 
             {
@@ -127,7 +126,6 @@ catch (Exception ex)
 
         if (hasMech && req.MechItems is { Length: > 0 })
         {
-            var now = DateTime.UtcNow;
             foreach (var item in req.MechItems)
             {
                 var trimmed = item?.Trim();
