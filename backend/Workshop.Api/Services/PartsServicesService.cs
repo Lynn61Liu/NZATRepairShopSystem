@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Workshop.Api.Data;
 using Workshop.Api.Models;
+using Workshop.Api.Utils;
 
 namespace Workshop.Api.Services;
 
@@ -303,7 +304,7 @@ public class PartsServicesService
     };
 
     private static string FormatDateTime(DateTime dateTime)
-        => dateTime.ToString("O", CultureInfo.InvariantCulture);
+        => DateTimeHelper.FormatUtc(dateTime);
 
     private static string BuildCarInfo(Vehicle? vehicle)
     {

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Workshop.Api.Data;
 using Workshop.Api.Models;
+using Workshop.Api.Utils;
 
 namespace Workshop.Api.Controllers;
 
@@ -53,7 +54,7 @@ public class JobsController : ControllerBase
             customerCode = r.Customer.BusinessCode,
             customerPhone = r.Customer.Phone ?? "",
             notes = r.Notes ?? "",
-            createdAt = r.CreatedAt.ToString("yyyy/MM/dd HH:mm", CultureInfo.InvariantCulture)
+            createdAt = FormatDateTime(r.CreatedAt)
         });
 
         return Ok(items);
@@ -133,7 +134,7 @@ public class JobsController : ControllerBase
             isUrgent = row.Job.IsUrgent,
             tags = tagNames.ToArray(),
             notes = row.Job.Notes,
-            createdAt = row.Job.CreatedAt.ToString("yyyy/MM/dd HH:mm", CultureInfo.InvariantCulture),
+            createdAt = FormatDateTime(row.Job.CreatedAt),
             vehicle = new
             {
                 plate = row.Vehicle.Plate,
@@ -246,8 +247,8 @@ public class JobsController : ControllerBase
                 status = service.Status,
                 currentStage = service.CurrentStage,
                 panels = service.Panels,
-                createdAt = service.CreatedAt.ToString("yyyy/MM/dd HH:mm", CultureInfo.InvariantCulture),
-                updatedAt = service.UpdatedAt.ToString("yyyy/MM/dd HH:mm", CultureInfo.InvariantCulture),
+            createdAt = FormatDateTime(service.CreatedAt),
+            updatedAt = FormatDateTime(service.UpdatedAt),
             }
         });
     }
@@ -647,7 +648,7 @@ public class JobsController : ControllerBase
 
         return Ok(new
         {
-            createdAt = job.CreatedAt.ToString("yyyy/MM/dd HH:mm", CultureInfo.InvariantCulture)
+            createdAt = FormatDateTime(job.CreatedAt)
         });
     }
 
@@ -704,5 +705,5 @@ public class JobsController : ControllerBase
         => date.HasValue ? date.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "";
 
     private static string FormatDateTime(DateTime dateTime)
-        => dateTime.ToString("O", CultureInfo.InvariantCulture);
+        => DateTimeHelper.FormatUtc(dateTime);
 }

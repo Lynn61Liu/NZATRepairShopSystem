@@ -22,6 +22,7 @@ import {
   updateJobTags,
 } from "@/features/jobDetail/api/jobDetailApi";
 import { fetchPaintService } from "@/features/paint/api/paintApi";
+import { parseTimestamp } from "@/utils/date";
 
 export function JobsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -33,9 +34,15 @@ export function JobsPage() {
   const toast = useToast();
 
   const buildCreatedAtWithDate = (prevValue: string, date: string) => {
-    const datePart = date.replace(/-/g, "/");
-    const timePart = prevValue.includes(" ") ? prevValue.split(" ")[1] : "00:00";
-    return `${datePart} ${timePart}`;
+    const parsed = parseTimestamp(prevValue);
+    const [year, month, day] = date.split("-").map((x) => Number(x));
+    if (!year || !month || !day) return prevValue;
+    const hours = parsed?.getUTCHours() ?? 0;
+    const minutes = parsed?.getUTCMinutes() ?? 0;
+    const seconds = parsed?.getUTCSeconds() ?? 0;
+    const millis = parsed?.getUTCMilliseconds() ?? 0;
+    const next = new Date(Date.UTC(year, month - 1, day, hours, minutes, seconds, millis));
+    return Number.isNaN(next.getTime()) ? prevValue : next.toISOString();
   };
 
   const {

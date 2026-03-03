@@ -33,7 +33,7 @@ VALUES
   @plate, @make, @model, @year, @vin, @engine, @rego_expiry, @colour, @body_style, @engine_no, @chassis,
   @cc_rating, @fuel_type, @seats, @country_of_origin, @gross_vehicle_mass, @refrigerant,
   @fuel_tank_capacity_litres, @full_combined_range_km, @wof_expiry, @odometer, @nz_first_registration,
-  @raw_json::jsonb, now()
+  @raw_json::jsonb, date_trunc('milliseconds', now())
 )
 ON CONFLICT (plate)
 DO UPDATE SET
@@ -59,7 +59,7 @@ DO UPDATE SET
   odometer = EXCLUDED.odometer,
   nz_first_registration = EXCLUDED.nz_first_registration,
   raw_json = EXCLUDED.raw_json,
-  updated_at = now();
+  updated_at = date_trunc('milliseconds', now());
 ";
 
         using var cmd = new NpgsqlCommand(sql, conn);

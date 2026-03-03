@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Workshop.Api.Data;
 using Workshop.Api.Models;
+using Workshop.Api.Utils;
 
 namespace Workshop.Api.Controllers;
 
@@ -27,8 +28,8 @@ public class WofFailReasonsController : ControllerBase
                 id = x.Id.ToString(CultureInfo.InvariantCulture),
                 label = x.Label,
                 isActive = x.IsActive,
-                createdAt = x.CreatedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
-                updatedAt = x.UpdatedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
+                createdAt = DateTimeHelper.FormatUtc(x.CreatedAt),
+                updatedAt = DateTimeHelper.FormatUtc(x.UpdatedAt)
             })
             .ToListAsync(ct);
 
@@ -64,8 +65,8 @@ public class WofFailReasonsController : ControllerBase
             id = reason.Id.ToString(CultureInfo.InvariantCulture),
             label = reason.Label,
             isActive = reason.IsActive,
-            createdAt = reason.CreatedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
-            updatedAt = reason.UpdatedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
+            createdAt = DateTimeHelper.FormatUtc(reason.CreatedAt),
+            updatedAt = DateTimeHelper.FormatUtc(reason.UpdatedAt)
         });
     }
 
@@ -95,8 +96,8 @@ public class WofFailReasonsController : ControllerBase
             id = reason.Id.ToString(CultureInfo.InvariantCulture),
             label = reason.Label,
             isActive = reason.IsActive,
-            createdAt = reason.CreatedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
-            updatedAt = reason.UpdatedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
+            createdAt = DateTimeHelper.FormatUtc(reason.CreatedAt),
+            updatedAt = DateTimeHelper.FormatUtc(reason.UpdatedAt)
         });
     }
 

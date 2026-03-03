@@ -1,18 +1,11 @@
-import type { JobsFilters,JobRow } from "@/types/JobType";
+import type { JobsFilters, JobRow } from "@/types/JobType";
+import { parseTimestamp } from "@/utils/date";
 
 export function parseJobCreatedAt(createdAt: string): Date | null {
   if (!createdAt) return null;
-
-  // 取日期部分：'YYYY/MM/DD' 或 'YYYY/MM/DD HH:mm'
-  const datePart = createdAt.trim().split(" ")[0];
-  const parts = datePart.split("/").map((x) => Number(x));
-  if (parts.length !== 3) return null;
-
-  const [y, m, d] = parts;
-  if (!y || !m || !d) return null;
-
-  // 用 new Date(y, m-1, d) 避免浏览器对字符串日期解析差异
-  return new Date(y, m - 1, d);
+  const parsed = parseTimestamp(createdAt);
+  if (!parsed) return null;
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
 }
 
 
@@ -140,4 +133,3 @@ export function sortSelected(rows: JobRow[], selectedIds: Set<string>): JobRow[]
     return 0;
   });
 }
-

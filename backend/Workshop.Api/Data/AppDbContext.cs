@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Workshop.Api.Models;
+using Workshop.Api.Utils;
 
 namespace Workshop.Api.Data;
 
@@ -24,6 +25,18 @@ public class AppDbContext : DbContext
     
 
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+
+    public override int SaveChanges()
+    {
+        NormalizeDateTimes();
+        return base.SaveChanges();
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        NormalizeDateTimes();
+        return base.SaveChangesAsync(cancellationToken);
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -68,7 +81,7 @@ public class AppDbContext : DbContext
 
         e.Property(x => x.UpdatedAt)
             .HasColumnName("updated_at")
-            .HasDefaultValueSql("now()");
+            .HasDefaultValueSql("date_trunc('milliseconds', now())");
 
         var c = modelBuilder.Entity<Customer>();
         c.ToTable("customers");
@@ -91,8 +104,8 @@ public class AppDbContext : DbContext
         j.Property(x => x.VehicleId).HasColumnName("vehicle_id");
         j.Property(x => x.CustomerId).HasColumnName("customer_id");
         j.Property(x => x.Notes).HasColumnName("notes");
-        j.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
-        j.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
+        j.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        j.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
 
         var t = modelBuilder.Entity<Tag>();
         t.ToTable("tags");
@@ -100,23 +113,23 @@ public class AppDbContext : DbContext
         t.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
         t.Property(x => x.Name).HasColumnName("name").IsRequired();
         t.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true);
-        t.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
-        t.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
+        t.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        t.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
 
         var jt = modelBuilder.Entity<JobTag>();
         jt.ToTable("job_tags");
         jt.HasKey(x => new { x.JobId, x.TagId });
         jt.Property(x => x.JobId).HasColumnName("job_id").IsRequired();
         jt.Property(x => x.TagId).HasColumnName("tag_id").IsRequired();
-        jt.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
+        jt.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
 
         var w = modelBuilder.Entity<WofService>();
         w.ToTable("wof_service");
         w.HasKey(x => x.Id);
         w.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
         w.Property(x => x.JobId).HasColumnName("job_id").IsRequired();
-        w.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
-        w.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
+        w.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        w.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
 
         // var wci = modelBuilder.Entity<WofCheckItem>();
         // wci.ToTable("wof_check_items");
@@ -131,7 +144,7 @@ public class AppDbContext : DbContext
         // wci.Property(x => x.LabelNo).HasColumnName("label_no");
         // wci.Property(x => x.Source).HasColumnName("source");
         // wci.Property(x => x.SourceRow).HasColumnName("source_row");
-        // wci.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
+        // wci.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
 
         // var wr = modelBuilder.Entity<WofResult>();
         // wr.ToTable("wof_results");
@@ -142,7 +155,7 @@ public class AppDbContext : DbContext
         // wr.Property(x => x.RecheckExpiryDate).HasColumnName("recheck_expiry_date");
         // wr.Property(x => x.FailReasonId).HasColumnName("fail_reason_id");
         // wr.Property(x => x.Note).HasColumnName("note");
-        // wr.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
+        // wr.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
 
         var wfr = modelBuilder.Entity<WofFailReason>();
         wfr.ToTable("wof_fail_reasons");
@@ -150,8 +163,8 @@ public class AppDbContext : DbContext
         wfr.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
         wfr.Property(x => x.Label).HasColumnName("label").IsRequired();
         wfr.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true);
-        wfr.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
-        wfr.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
+        wfr.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        wfr.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
 
         var jwr = modelBuilder.Entity<JobWofRecord>();
         jwr.ToTable("job_wof_records");
@@ -177,8 +190,8 @@ public class AppDbContext : DbContext
         jwr.Property(x => x.SourceFile).HasColumnName("source_file");
         jwr.Property(x => x.Note).HasColumnName("note");
         jwr.Property(x => x.WofUiState).HasColumnName("wof_ui_state").HasColumnType("wof_ui_state").IsRequired();
-        jwr.Property(x => x.ImportedAt).HasColumnName("imported_at").HasDefaultValueSql("now()");
-        jwr.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
+        jwr.Property(x => x.ImportedAt).HasColumnName("imported_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        jwr.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
 
         var jps = modelBuilder.Entity<JobPartsService>();
         jps.ToTable("job_parts_services");
@@ -187,8 +200,8 @@ public class AppDbContext : DbContext
         jps.Property(x => x.JobId).HasColumnName("job_id").IsRequired();
         jps.Property(x => x.Description).HasColumnName("description").IsRequired();
         jps.Property(x => x.Status).HasColumnName("status").HasColumnType("parts_service_status").IsRequired();
-        jps.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
-        jps.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
+        jps.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        jps.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
 
         var jpn = modelBuilder.Entity<JobPartsNote>();
         jpn.ToTable("job_parts_notes");
@@ -196,8 +209,8 @@ public class AppDbContext : DbContext
         jpn.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
         jpn.Property(x => x.PartsServiceId).HasColumnName("parts_service_id").IsRequired();
         jpn.Property(x => x.Note).HasColumnName("note").IsRequired();
-        jpn.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
-        jpn.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
+        jpn.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        jpn.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
 
         var jms = modelBuilder.Entity<JobMechService>();
         jms.ToTable("job_mech_services");
@@ -206,8 +219,8 @@ public class AppDbContext : DbContext
         jms.Property(x => x.JobId).HasColumnName("job_id").IsRequired();
         jms.Property(x => x.Description).HasColumnName("description").IsRequired();
         jms.Property(x => x.Cost).HasColumnName("cost").HasColumnType("numeric");
-        jms.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
-        jms.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
+        jms.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        jms.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
 
         var jpt = modelBuilder.Entity<JobPaintService>();
         jpt.ToTable("job_paint_services");
@@ -217,7 +230,38 @@ public class AppDbContext : DbContext
         jpt.Property(x => x.Status).HasColumnName("status").IsRequired();
         jpt.Property(x => x.CurrentStage).HasColumnName("current_stage").HasDefaultValue(-1);
         jpt.Property(x => x.Panels).HasColumnName("panels").HasDefaultValue(1);
-        jpt.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("now()");
-        jpt.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("now()");
+        jpt.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        jpt.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+    }
+
+    private void NormalizeDateTimes()
+    {
+        foreach (var entry in ChangeTracker.Entries())
+        {
+            if (entry.State is not (EntityState.Added or EntityState.Modified))
+                continue;
+
+            foreach (var prop in entry.Properties)
+            {
+                if (prop.Metadata.ClrType == typeof(DateTime))
+                {
+                    var dt = (DateTime)prop.CurrentValue!;
+                    if (dt == default && !string.IsNullOrWhiteSpace(prop.Metadata.GetDefaultValueSql()))
+                        continue;
+
+                    prop.CurrentValue = DateTimeHelper.NormalizeUtc(dt);
+                }
+                else if (prop.Metadata.ClrType == typeof(DateTime?))
+                {
+                    if (prop.CurrentValue is not DateTime dt)
+                        continue;
+
+                    if (dt == default && !string.IsNullOrWhiteSpace(prop.Metadata.GetDefaultValueSql()))
+                        continue;
+
+                    prop.CurrentValue = DateTimeHelper.NormalizeUtc(dt);
+                }
+            }
+        }
     }
 }

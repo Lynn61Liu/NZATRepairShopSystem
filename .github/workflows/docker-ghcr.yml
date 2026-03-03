@@ -33,14 +33,14 @@ jobs:
           context: ./backend
           file: ./backend/Workshop.Api/Dockerfile
           push: true
-          tags: ghcr.io/6186127/nzat-api:latest
+          tags: ghcr.io/lynn61liu/nzat-api:latest
 
       - name: Build & Push Web
         uses: docker/build-push-action@v6
         with:
           context: ./apps/shell
           push: true
-          tags: ghcr.io/6186127/nzat-web:latest
+          tags: ghcr.io/lynn61liu/nzat-web:latest
 
    
 

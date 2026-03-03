@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Workshop.Api.Data;
 using Workshop.Api.Models;
+using Workshop.Api.Utils;
 
 namespace Workshop.Api.Controllers;
 
@@ -27,8 +28,8 @@ public class TagsController : ControllerBase
                 id = x.Id.ToString(CultureInfo.InvariantCulture),
                 name = x.Name,
                 isActive = x.IsActive,
-                createdAt = x.CreatedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
-                updatedAt = x.UpdatedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
+                createdAt = DateTimeHelper.FormatUtc(x.CreatedAt),
+                updatedAt = DateTimeHelper.FormatUtc(x.UpdatedAt)
             })
             .ToListAsync(ct);
 
@@ -64,8 +65,8 @@ public class TagsController : ControllerBase
             id = tag.Id.ToString(CultureInfo.InvariantCulture),
             name = tag.Name,
             isActive = tag.IsActive,
-            createdAt = tag.CreatedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
-            updatedAt = tag.UpdatedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
+            createdAt = DateTimeHelper.FormatUtc(tag.CreatedAt),
+            updatedAt = DateTimeHelper.FormatUtc(tag.UpdatedAt)
         });
     }
 
@@ -94,8 +95,8 @@ public class TagsController : ControllerBase
             id = tag.Id.ToString(CultureInfo.InvariantCulture),
             name = tag.Name,
             isActive = tag.IsActive,
-            createdAt = tag.CreatedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
-            updatedAt = tag.UpdatedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
+            createdAt = DateTimeHelper.FormatUtc(tag.CreatedAt),
+            updatedAt = DateTimeHelper.FormatUtc(tag.UpdatedAt)
         });
     }
 

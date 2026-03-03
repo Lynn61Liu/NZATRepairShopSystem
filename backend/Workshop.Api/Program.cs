@@ -8,6 +8,7 @@ using QuestPDF.Infrastructure;
 using Workshop.Api.Data;
 using Workshop.Api.Models;
 using Workshop.Api.Services;
+using Workshop.Api.Utils;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,7 +17,12 @@ QuestPDF.Settings.License = LicenseType.Community;
 // Add services to the container.
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new DateTimeJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new NullableDateTimeJsonConverter());
+    });
 
 var corsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>();
 var corsOriginsEnv = builder.Configuration["CORS_ORIGINS"];

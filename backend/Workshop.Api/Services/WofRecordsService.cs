@@ -9,6 +9,7 @@ using Google.Apis.Sheets.v4;
 using Microsoft.EntityFrameworkCore;
 using Workshop.Api.Data;
 using Workshop.Api.Models;
+using Workshop.Api.Utils;
 
 namespace Workshop.Api.Services;
 
@@ -813,7 +814,7 @@ public class WofRecordsService
         return dt.HasValue ? DateOnly.FromDateTime(dt.Value) : null;
     }
 
-    private static DateOnly? ParseDateOnly(string? value)
+    internal static DateOnly? ParseDateOnly(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
         var normalized = NormalizeDateString(value);
@@ -915,9 +916,7 @@ public class WofRecordsService
     }
 
     private static DateTime EnsureUtc(DateTime value)
-    {
-        return value.Kind == DateTimeKind.Utc ? value : DateTime.SpecifyKind(value, DateTimeKind.Utc);
-    }
+        => DateTimeHelper.NormalizeUtc(value);
 
     private static DateTime? ParseDateTime(string? value)
     {
@@ -955,7 +954,7 @@ public class WofRecordsService
         => date.HasValue ? date.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "";
 
     private static string FormatDateTime(DateTime dateTime)
-        => dateTime.ToString("O", CultureInfo.InvariantCulture);
+        => DateTimeHelper.FormatUtc(dateTime);
 }
 
 public record WofServiceResult(int StatusCode, object? Payload, string? Error)

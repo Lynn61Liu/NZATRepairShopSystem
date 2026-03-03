@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState ,useRef} from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import type { JobRow, JobsFilters } from "@/types/JobType";
 import { DEFAULT_JOBS_FILTERS } from "./jobs.defaults";
 import { filterJobs } from "@/features/jobs/jobs.utils";
+import { parseTimestamp } from "@/utils/date";
 
 
 function sortJobsDefault(rows: JobRow[]): JobRow[] {
@@ -9,8 +10,8 @@ function sortJobsDefault(rows: JobRow[]): JobRow[] {
     if (a.urgent !== b.urgent) return a.urgent ? -1 : 1;
 
 
-    const da = new Date(a.createdAt.replace(/\//g, "-")).getTime();
-    const db = new Date(b.createdAt.replace(/\//g, "-")).getTime();
+    const da = parseTimestamp(a.createdAt)?.getTime() ?? NaN;
+    const db = parseTimestamp(b.createdAt)?.getTime() ?? NaN;
     if (!Number.isNaN(da) && !Number.isNaN(db)) return db - da;
 
     return 0;

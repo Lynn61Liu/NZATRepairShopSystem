@@ -8,6 +8,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Workshop.Api", "backend\Wor
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CarjamImporter", "backend\CarjamImporter\CarjamImporter.csproj", "{728EB786-7BD7-4257-8576-ED815D12A045}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Workshop.Api.Tests", "backend\Workshop.Api.Tests\Workshop.Api.Tests.csproj", "{7F7C6290-6E17-4216-8ED0-1621F996E4FE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -22,6 +24,10 @@ Global
 		{728EB786-7BD7-4257-8576-ED815D12A045}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{728EB786-7BD7-4257-8576-ED815D12A045}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{728EB786-7BD7-4257-8576-ED815D12A045}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7F7C6290-6E17-4216-8ED0-1621F996E4FE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7F7C6290-6E17-4216-8ED0-1621F996E4FE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7F7C6290-6E17-4216-8ED0-1621F996E4FE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7F7C6290-6E17-4216-8ED0-1621F996E4FE}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -29,6 +35,7 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{F142DE8C-FA6B-921F-EF79-B4DF4506147C} = {1AE8ACA6-933B-BF2A-3671-3E2EAC007D16}
 		{728EB786-7BD7-4257-8576-ED815D12A045} = {1AE8ACA6-933B-BF2A-3671-3E2EAC007D16}
+		{7F7C6290-6E17-4216-8ED0-1621F996E4FE} = {1AE8ACA6-933B-BF2A-3671-3E2EAC007D16}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {6300AC5D-9CB2-4FF1-B52B-BF533073A363}

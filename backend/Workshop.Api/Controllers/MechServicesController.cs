@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Workshop.Api.Data;
 using Workshop.Api.Models;
+using Workshop.Api.Utils;
 
 namespace Workshop.Api.Controllers;
 
@@ -30,8 +31,8 @@ public class MechServicesController : ControllerBase
                 jobId = x.JobId.ToString(),
                 description = x.Description,
                 cost = x.Cost,
-                createdAt = x.CreatedAt,
-                updatedAt = x.UpdatedAt
+                createdAt = DateTimeHelper.FormatUtc(x.CreatedAt),
+                updatedAt = DateTimeHelper.FormatUtc(x.UpdatedAt)
             })
             .ToListAsync(ct);
 
@@ -67,8 +68,8 @@ public class MechServicesController : ControllerBase
             jobId = service.JobId.ToString(),
             description = service.Description,
             cost = service.Cost,
-            createdAt = service.CreatedAt,
-            updatedAt = service.UpdatedAt
+            createdAt = DateTimeHelper.FormatUtc(service.CreatedAt),
+            updatedAt = DateTimeHelper.FormatUtc(service.UpdatedAt)
         });
     }
 
@@ -98,8 +99,8 @@ public class MechServicesController : ControllerBase
             jobId = service.JobId.ToString(),
             description = service.Description,
             cost = service.Cost,
-            createdAt = service.CreatedAt,
-            updatedAt = service.UpdatedAt
+            createdAt = DateTimeHelper.FormatUtc(service.CreatedAt),
+            updatedAt = DateTimeHelper.FormatUtc(service.UpdatedAt)
         });
     }
 
