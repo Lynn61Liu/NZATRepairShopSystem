@@ -28,14 +28,14 @@ const DEFAULT_BUTTON =
   "h-8 px-3 rounded-[8px] border border-[rgba(0,0,0,0.10)] bg-white hover:bg-[rgba(0,0,0,0.03)] disabled:opacity-50";
 const DEFAULT_PAGE =
   "h-8 w-8 rounded-[8px] border border-[rgba(0,0,0,0.10)] bg-white hover:bg-[rgba(0,0,0,0.03)]";
-const DEFAULT_PAGE_ACTIVE = "bg-[rgba(15,23,42,0.85)] text-white";
+const DEFAULT_PAGE_ACTIVE = "!bg-[var(--ds-primary)] !text-white !border-[var(--ds-primary)]";
 
 const COMPACT_CONTAINER = "flex items-center justify-between text-xs text-slate-500";
 const COMPACT_BUTTON =
   "rounded-lg border border-slate-200 px-3 py-1 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
 const COMPACT_PAGE =
   "h-7 w-7 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50";
-const COMPACT_PAGE_ACTIVE = "bg-slate-600 text-white";
+const COMPACT_PAGE_ACTIVE = "!bg-[var(--ds-primary)] !text-white !border-[var(--ds-primary)]";
 
 export function Pagination({
   currentPage,

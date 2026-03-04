@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Pagination } from "@/components/ui";
 import { paginate } from "@/utils/pagination";
+import { calculateDuration } from "../worklog.utils";
 import { WorkLogAddRow } from "./WorkLogAddRow";
 import { WorkLogRow } from "./WorkLogRow";
 import type { WorklogEntry, WorklogFlag, WorklogJob, WorklogStaffProfile } from "../types";
@@ -11,6 +12,7 @@ type Props = {
   jobs: WorklogJob[];
   staffColorMap: Map<string, { pill: string; row: string }>;
   editingLogId: string | null;
+  jobTotals?: Map<string, { hours: number; cost: number }>;
   onAddLog: (log: Omit<WorklogEntry, "id" | "created_at" | "created_by" | "flags">) => void;
   onEditLog: (id: string, updates: Partial<WorklogEntry>) => void;
   onCopyLog: (log: WorklogEntry) => void;
@@ -26,6 +28,7 @@ export function WorkLogTable({
   jobs,
   staffColorMap,
   editingLogId,
+  jobTotals,
   onAddLog,
   onEditLog,
   onCopyLog,
@@ -33,6 +36,18 @@ export function WorkLogTable({
   onDeleteLog,
 }: Props) {
   const [currentPage, setCurrentPage] = useState(1);
+  const totalsByJob = useMemo(() => {
+    if (jobTotals) return jobTotals;
+    const map = new Map<string, { hours: number; cost: number }>();
+    logs.forEach((log) => {
+      const key = log.job_id || log.rego;
+      const duration = calculateDuration(log.start_time, log.end_time);
+      const cost = duration * log.cost_rate;
+      const prev = map.get(key) ?? { hours: 0, cost: 0 };
+      map.set(key, { hours: prev.hours + duration, cost: prev.cost + cost });
+    });
+    return map;
+  }, [jobTotals, logs]);
 
   const groupedLogs = useMemo(() => {
     const staffOrder = new Map(staffProfiles.map((staff, index) => [staff.name, index]));
@@ -79,22 +94,26 @@ export function WorkLogTable({
         <table className="w-full min-w-[1560px] border-collapse">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50">
-              <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">ID</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">员工姓名</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">团队/角色</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">车牌号</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">工作备注</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">工作日期</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">开始时间</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">结束时间</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">时薪</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">工资</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">任务类型</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">管理备注</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">来源</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">操作</th>
+              <th className="px-4 py-3 text-left text-[12px] font-semibold text-[rgba(0,0,0,0.55)]">日期</th>
+              <th className="w-[120px] max-w-[140px] px-4 py-3 text-left text-[12px] font-semibold text-[rgba(0,0,0,0.55)]">员工</th>
+              <th className="px-4 py-3 text-left text-[12px] font-semibold text-[rgba(0,0,0,0.55)]">服务类型</th>
+              <th className="px-4 py-3 text-left text-[12px] font-semibold text-[rgba(0,0,0,0.55)]">开始-结束时间</th>
+              <th className="px-4 py-3 text-left text-[12px] font-semibold text-[rgba(0,0,0,0.55)]">工时</th>
+              <th className="px-4 py-3 text-left text-[12px] font-semibold text-[rgba(0,0,0,0.55)]">Cost</th>
+              <th className="px-4 py-3 text-left text-[12px] font-semibold text-[rgba(0,0,0,0.55)]">Rego</th>
+              <th className="px-4 py-3 text-left text-[12px] font-semibold text-[rgba(0,0,0,0.55)]">片数</th>
+              <th className="px-4 py-3 text-left text-[12px] font-semibold text-[rgba(0,0,0,0.55)]">工单备注</th>
+              <th className="px-4 py-3 text-left text-[12px] font-semibold text-[rgba(0,0,0,0.55)]">工时备注</th>
+              <th className="px-4 py-3 text-left text-[12px] font-semibold text-[rgba(0,0,0,0.55)]">总工时</th>
+              <th className="px-4 py-3 text-left text-[12px] font-semibold text-[rgba(0,0,0,0.55)]">总Cost</th>
+              <th className="px-4 py-3 text-left text-[12px] font-semibold text-[rgba(0,0,0,0.55)]">操作</th>
             </tr>
-            <WorkLogAddRow staffProfiles={staffProfiles} jobs={jobs} onAdd={onAddLog} />
+            <WorkLogAddRow
+              staffProfiles={staffProfiles}
+              jobs={jobs}
+              onAdd={onAddLog}
+              totalsByJob={totalsByJob}
+            />
           </thead>
           <tbody>
             {pagination.pageRows.map((log) => (
@@ -105,6 +124,7 @@ export function WorkLogTable({
                 jobs={jobs}
                 staffColorMap={staffColorMap}
                 forceEditing={editingLogId === log.id}
+                totalsByJob={totalsByJob}
                 onEdit={(updates) => onEditLog(log.id, updates)}
                 onCopy={() => onCopyLog(log)}
                 onDismissFlag={(flag) => onDismissFlag(log.id, flag)}

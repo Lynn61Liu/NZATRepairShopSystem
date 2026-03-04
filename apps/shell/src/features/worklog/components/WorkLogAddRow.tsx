@@ -1,129 +1,175 @@
 import { useMemo, useState } from "react";
 import { Save } from "lucide-react";
-import { Button, Input, Select, useToast } from "@/components/ui";
-import { calculateWage, formatDate, isValidTimeValue, parseTimeRange } from "../worklog.utils";
-import type {
-  WorklogEntry,
-  WorklogJob,
-  WorklogSource,
-  WorklogStaffProfile,
-  WorklogTaskType,
-} from "../types";
+import { Button, Input, useToast } from "@/components/ui";
+import { formatDate, parseTimeRange } from "../worklog.utils";
+import type { WorklogEntry, WorklogJob, WorklogStaffProfile } from "../types";
 
 type Props = {
   staffProfiles: WorklogStaffProfile[];
   jobs: WorklogJob[];
+  totalsByJob?: Map<string, { hours: number; cost: number }>;
   onAdd: (log: Omit<WorklogEntry, "id" | "created_at" | "created_by" | "flags">) => void;
 };
 
-const TASK_OPTIONS: WorklogTaskType[] = ["喷漆", "抛光", "拆装", "打磨", "检查", "清洁"];
-
-export function WorkLogAddRow({ staffProfiles, jobs, onAdd }: Props) {
+export function WorkLogAddRow({ staffProfiles, jobs, totalsByJob, onAdd }: Props) {
   const toast = useToast();
   const [staffName, setStaffName] = useState("");
+  const [showStaffSuggestions, setShowStaffSuggestions] = useState(false);
+  const [serviceType, setServiceType] = useState<"PNP" | "MECH">("PNP");
   const [rego, setRego] = useState("");
   const [regoInput, setRegoInput] = useState("");
   const [showRegoSuggestions, setShowRegoSuggestions] = useState(false);
-  const [taskTypes, setTaskTypes] = useState<WorklogTaskType[]>([]);
   const [workDate, setWorkDate] = useState(formatDate(new Date()));
   const [timeRange, setTimeRange] = useState("");
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
   const [adminNote, setAdminNote] = useState("");
-  const [source, setSource] = useState<WorklogSource>("admin");
 
   const selectedStaff = useMemo(
     () => staffProfiles.find((item) => item.name === staffName),
     [staffProfiles, staffName]
   );
   const selectedJob = useMemo(() => jobs.find((item) => item.rego === rego), [jobs, rego]);
+  const filteredStaff = useMemo(() => {
+    if (!staffName.trim()) return staffProfiles.slice(0, 8);
+    const query = staffName.toLowerCase();
+    return staffProfiles.filter((staff) => staff.name.toLowerCase().includes(query)).slice(0, 8);
+  }, [staffName, staffProfiles]);
   const filteredJobs = useMemo(() => {
     if (!regoInput) return [];
     return jobs.filter((job) => job.rego.toLowerCase().includes(regoInput.toLowerCase())).slice(0, 8);
   }, [jobs, regoInput]);
-  const wage = useMemo(
-    () => calculateWage(startTime, endTime, selectedStaff?.cost_rate || 0).toFixed(2),
-    [endTime, selectedStaff?.cost_rate, startTime]
-  );
-
-  const handleTaskTypeToggle = (taskType: WorklogTaskType) => {
-    setTaskTypes((prev) =>
-      prev.includes(taskType) ? prev.filter((item) => item !== taskType) : [...prev, taskType]
-    );
-  };
+  const parsedRange = useMemo(() => parseTimeRange(timeRange), [timeRange]);
+  const durationHours = parsedRange?.hours ?? 0;
+  const wage = useMemo(() => {
+    const rate = selectedStaff?.cost_rate || 0;
+    return ((parsedRange?.hours ?? 0) * rate).toFixed(2);
+  }, [parsedRange?.hours, selectedStaff?.cost_rate]);
+  const totalKey = selectedJob?.id ?? rego;
+  const totals = totalKey ? totalsByJob?.get(totalKey) : undefined;
 
   const handleSave = () => {
-    if (!staffName || !rego || !startTime || !endTime) {
-      toast.error("请填写必填项：员工姓名、车牌号、开始时间、结束时间");
+    if (!staffName.trim() || !rego.trim() || !timeRange.trim()) {
+      toast.error("请填写必填项：员工姓名、车牌号、开始-结束时间");
       return;
     }
-    if (!isValidTimeValue(startTime) || !isValidTimeValue(endTime)) {
-      toast.error("开始时间和结束时间格式必须为 HH:MM");
-      return;
-    }
-    if (endTime <= startTime) {
-      toast.error("结束时间必须晚于开始时间");
+    const parsed = parseTimeRange(timeRange);
+    if (!parsed) {
+      toast.error("开始-结束时间格式必须为 9.30-13.45 或 9:30-13:45");
       return;
     }
 
     onAdd({
-      staff_name: staffName,
+      staff_name: staffName.trim(),
       team: "",
       role: selectedStaff?.role || "Technician",
-      rego,
+      service_type: serviceType,
+      rego: rego.trim(),
       job_id: selectedJob?.id,
       job_note: selectedJob?.note || "",
-      task_types: taskTypes,
+      task_types: [],
       work_date: workDate,
-      start_time: startTime,
-      end_time: endTime,
+      start_time: parsed.start,
+      end_time: parsed.end,
       cost_rate: selectedStaff?.cost_rate || 0,
       admin_note: adminNote,
-      source,
+      source: "admin",
       flagDismissed: false,
     });
 
     setStaffName("");
+    setShowStaffSuggestions(false);
+    setServiceType("PNP");
     setRego("");
     setRegoInput("");
-    setTaskTypes([]);
+    setShowRegoSuggestions(false);
     setWorkDate(formatDate(new Date()));
     setTimeRange("");
-    setStartTime("");
-    setEndTime("");
     setAdminNote("");
-    setSource("admin");
-    setShowRegoSuggestions(false);
     toast.success("工时记录已保存");
   };
 
   return (
     <tr className="border-b-2 border-blue-200 bg-blue-50">
-      <td className="px-4 py-3 text-sm text-slate-600">新增</td>
       <td className="px-4 py-3">
-        <Select value={staffName} onChange={(event) => setStaffName(event.target.value)} className="bg-white text-sm">
-          <option value="">选择员工</option>
-          {staffProfiles.map((staff) => (
-            <option key={staff.id} value={staff.name}>
-              {staff.name}
-            </option>
-          ))}
-        </Select>
+        <Input
+          type="date"
+          value={workDate}
+          onChange={(event) => setWorkDate(event.target.value)}
+          className="text-sm"
+        />
       </td>
-      <td className="px-4 py-3 text-sm text-slate-600">
-        {selectedStaff ? selectedStaff.role : "-"}
+      <td className="relative w-[120px] max-w-[140px] overflow-visible px-4 py-3">
+        <Input
+          value={staffName}
+          onChange={(event) => {
+            setStaffName(event.target.value);
+            setShowStaffSuggestions(true);
+          }}
+          onFocus={() => setShowStaffSuggestions(true)}
+          placeholder="输入姓名"
+          className="bg-white text-sm"
+        />
+        {showStaffSuggestions && filteredStaff.length > 0 ? (
+          <div className="absolute left-4 right-4 top-[calc(100%-4px)] z-[60] max-h-40 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-lg">
+            {filteredStaff.map((staff) => (
+              <button
+                type="button"
+                key={staff.id}
+                onClick={() => {
+                  setStaffName(staff.name);
+                  setShowStaffSuggestions(false);
+                }}
+                className="block w-full px-3 py-2 text-left text-sm hover:bg-blue-50"
+              >
+                {staff.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </td>
+      <td className="px-4 py-3">
+        <select
+          value={serviceType}
+          onChange={(event) => setServiceType(event.target.value as "PNP" | "MECH")}
+          className="h-9 w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-white px-2 text-sm text-[rgba(0,0,0,0.70)]"
+        >
+          <option value="PNP">PNP</option>
+          <option value="MECH">MECH</option>
+        </select>
+      </td>
+      <td className="px-4 py-3">
+        <Input
+          value={timeRange}
+          onChange={(event) => {
+            const value = event.target.value;
+            setTimeRange(value);
+            parseTimeRange(value);
+          }}
+          placeholder="如: 9.30-13.45"
+          className="text-sm"
+        />
+      </td>
+      <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]">
+        {durationHours ? `${durationHours.toFixed(2)}小时` : "—"}
+      </td>
+      <td className="px-4 py-3 text-sm font-medium text-[rgba(0,0,0,0.70)]">
+        ${wage}
       </td>
       <td className="relative overflow-visible px-4 py-3">
         <Input
           value={regoInput}
           onChange={(event) => {
-            setRegoInput(event.target.value);
+            const value = event.target.value.toUpperCase();
+            setRegoInput(value);
+            setRego(value);
             setShowRegoSuggestions(true);
           }}
           onFocus={() => setShowRegoSuggestions(true)}
           placeholder="输入车牌号"
           className="bg-white text-sm"
         />
+        {selectedJob?.makeModel ? (
+          <div className="mt-1 text-xs text-[rgba(0,0,0,0.45)]">{selectedJob.makeModel}</div>
+        ) : null}
         {showRegoSuggestions && filteredJobs.length > 0 ? (
           <div className="absolute left-4 right-4 top-[calc(100%-4px)] z-[60] max-h-40 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-lg">
             {filteredJobs.map((job) => (
@@ -143,51 +189,10 @@ export function WorkLogAddRow({ staffProfiles, jobs, onAdd }: Props) {
           </div>
         ) : null}
       </td>
-      <td className="px-4 py-3 text-sm text-slate-600">{selectedJob?.note || "-"}</td>
-      <td className="px-4 py-3">
-        <Input type="date" value={workDate} onChange={(event) => setWorkDate(event.target.value)} className="text-sm" />
+      <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)] text-center">
+        {selectedJob?.panels ?? "—"}
       </td>
-      <td className="px-4 py-3" colSpan={2}>
-        <Input
-          value={timeRange}
-          onChange={(event) => {
-            const value = event.target.value;
-            setTimeRange(value);
-            const parsed = parseTimeRange(value);
-            if (parsed) {
-              setStartTime(parsed.start);
-              setEndTime(parsed.end);
-            }
-          }}
-          placeholder="如: 9.30-10.40"
-          className="text-sm"
-        />
-        {startTime && endTime ? (
-          <div className="mt-1 text-xs text-slate-500">
-            {startTime} - {endTime}
-          </div>
-        ) : null}
-      </td>
-      <td className="px-4 py-3 text-sm text-slate-600">${selectedStaff?.cost_rate || 0}</td>
-      <td className="px-4 py-3 text-sm font-medium text-slate-700">${wage}</td>
-      <td className="px-4 py-3">
-        <div className="flex flex-wrap gap-1">
-          {TASK_OPTIONS.map((type) => (
-            <button
-              type="button"
-              key={type}
-              onClick={() => handleTaskTypeToggle(type)}
-              className={`rounded-md px-2 py-1 text-xs transition-colors ${
-                taskTypes.includes(type)
-                  ? "bg-blue-500 text-white"
-                  : "bg-slate-200 text-slate-700 hover:bg-slate-300"
-              }`}
-            >
-              {type}
-            </button>
-          ))}
-        </div>
-      </td>
+      <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]">{selectedJob?.note || "-"}</td>
       <td className="px-4 py-3">
         <Input
           value={adminNote}
@@ -196,11 +201,11 @@ export function WorkLogAddRow({ staffProfiles, jobs, onAdd }: Props) {
           className="text-sm"
         />
       </td>
-      <td className="px-4 py-3">
-        <Select value={source} onChange={(event) => setSource(event.target.value as WorklogSource)} className="bg-white text-sm">
-          <option value="admin">Admin</option>
-          <option value="tech">Tech</option>
-        </Select>
+      <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]">
+        {totals ? `${totals.hours.toFixed(2)}小时` : "—"}
+      </td>
+      <td className={`px-4 py-3 text-sm ${totals && totals.cost > 300 ? "text-red-600 font-semibold" : "text-[rgba(0,0,0,0.60)]"}`}>
+        {totals ? `${totals.cost > 300 ? "!" : ""}$${totals.cost.toFixed(2)}` : "—"}
       </td>
       <td className="px-4 py-3">
         <Button onClick={handleSave} variant="primary" className="h-9" leftIcon={<Save className="size-4" />}>

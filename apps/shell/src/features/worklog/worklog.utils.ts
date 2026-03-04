@@ -20,18 +20,23 @@ const TECH_ROW_COLOR_CLASSES = [
   "bg-emerald-50/80",
 ];
 
-export function parseTimeRange(input: string): { start: string; end: string } | null {
-  const match = input.trim().match(/(\d+)\.?(\d*)\s*-\s*(\d+)\.?(\d*)/);
-  if (!match) return null;
+export function parseTimeRange(input: string): { start: string; end: string; hours: number } | null {
+  const normalized = input.replace(/[–—~～]/g, "-");
+  const parts = normalized.split(/\s*-\s*/);
+  if (parts.length !== 2) return null;
+  const startRaw = parts[0].trim();
+  const endRaw = parts[1].trim();
+  if (!startRaw || !endRaw) return null;
 
-  const startHour = match[1].padStart(2, "0");
-  const startMin = (match[2] || "00").padStart(2, "0");
-  const endHour = match[3].padStart(2, "0");
-  const endMin = (match[4] || "00").padStart(2, "0");
+  const startMinutes = parseTimeValue(startRaw);
+  const endMinutes = parseTimeValue(endRaw);
+  if (startMinutes === null || endMinutes === null) return null;
+  if (endMinutes <= startMinutes) return null;
 
   return {
-    start: `${startHour}:${startMin}`,
-    end: `${endHour}:${endMin}`,
+    start: startRaw,
+    end: endRaw,
+    hours: (endMinutes - startMinutes) / 60,
   };
 }
 
@@ -51,20 +56,28 @@ export function formatDateTime(date: Date) {
 }
 
 export function isValidTimeValue(value: string) {
-  const match = value.match(/^(\d{2}):(\d{2})$/);
-  if (!match) return false;
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
+  return parseTimeValue(value) !== null;
 }
 
-function timeToMinutes(value: string) {
-  const [hours, minutes] = value.split(":").map(Number);
+function parseTimeValue(value: string): number | null {
+  const match = value.trim().match(/^(\d{1,2})(?:[.:](\d{2}))?$/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2] ?? "00");
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
   return hours * 60 + minutes;
 }
 
+function timeToMinutes(value: string) {
+  return parseTimeValue(value) ?? Number.NaN;
+}
+
 export function calculateDuration(start: string, end: string) {
-  return (timeToMinutes(end) - timeToMinutes(start)) / 60;
+  const startMinutes = parseTimeValue(start);
+  const endMinutes = parseTimeValue(end);
+  if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) return 0;
+  return (endMinutes - startMinutes) / 60;
 }
 
 export function calculateWage(start: string, end: string, costRate: number) {
@@ -78,6 +91,7 @@ function timesOverlap(start1: string, end1: string, start2: string, end2: string
   const e1 = timeToMinutes(end1);
   const s2 = timeToMinutes(start2);
   const e2 = timeToMinutes(end2);
+  if (![s1, e1, s2, e2].every((value) => Number.isFinite(value))) return false;
   return s1 < e2 && s2 < e1;
 }
 
@@ -104,8 +118,10 @@ export function detectFlags(log: WorklogEntry, allLogs: WorklogEntry[]): Worklog
 
     const startDiff = Math.abs(timeToMinutes(log.start_time) - timeToMinutes(other.start_time));
     const endDiff = Math.abs(timeToMinutes(log.end_time) - timeToMinutes(other.end_time));
-    if (startDiff <= 30 && endDiff <= 30 && !flags.includes("duplicate")) {
-      flags.push("duplicate");
+    if (Number.isFinite(startDiff) && Number.isFinite(endDiff)) {
+      if (startDiff <= 30 && endDiff <= 30 && !flags.includes("duplicate")) {
+        flags.push("duplicate");
+      }
     }
   }
 

@@ -5,20 +5,18 @@ export const worklogStaffProfiles: WorklogStaffProfile[] = [
   { id: "2", name: "李四", role: "Technician", cost_rate: 50 },
   { id: "3", name: "王五", role: "Supervisor", cost_rate: 65 },
   { id: "4", name: "赵六", role: "Admin", cost_rate: 35 },
-  { id: "5", name: "孙七", role: "Technician", cost_rate: 48 },
-  { id: "6", name: "周八", role: "Manager", cost_rate: 80 },
-  { id: "7", name: "吴九", role: "Technician", cost_rate: 42 },
+ 
 ];
 
 export const worklogJobs: WorklogJob[] = [
-  { id: "1", rego: "ABC123", note: "前保险杠喷漆", created_date: "2026-02-15" },
-  { id: "2", rego: "XYZ789", note: "全车抛光处理", created_date: "2026-02-18" },
-  { id: "3", rego: "DEF456", note: "后门拆装修复", created_date: "2026-02-20" },
-  { id: "4", rego: "GHI321", note: "左侧翼子板打磨喷漆", created_date: "2026-02-22" },
-  { id: "5", rego: "JKL654", note: "引擎盖修复", created_date: "2026-02-25" },
-  { id: "6", rego: "MNO987", note: "全车检查保养", created_date: "2026-02-28" },
-  { id: "7", rego: "ABC456", note: "车门钣金修复", created_date: "2026-03-01" },
-  { id: "8", rego: "PQR111", note: "后视镜更换", created_date: "2026-03-02" },
+  { id: "1", rego: "ABC123", note: "前保险杠喷漆", created_date: "2026-02-15", makeModel: "Toyota Corolla", panels: 2, customerCode: "C001" },
+  { id: "2", rego: "XYZ789", note: "全车抛光处理", created_date: "2026-02-18", makeModel: "Honda Civic", panels: 3, customerCode: "C014" },
+  { id: "3", rego: "DEF456", note: "后门拆装修复", created_date: "2026-02-20", makeModel: "Mazda 3", panels: 1, customerCode: "C020" },
+  { id: "4", rego: "GHI321", note: "左侧翼子板打磨喷漆", created_date: "2026-02-22", makeModel: "Nissan X-Trail", panels: 2, customerCode: "C032" },
+  { id: "5", rego: "JKL654", note: "引擎盖修复", created_date: "2026-02-25", makeModel: "Ford Ranger", panels: 1, customerCode: "C041" },
+  { id: "6", rego: "MNO987", note: "全车检查保养", created_date: "2026-02-28", makeModel: "Hyundai i30", customerCode: "C055" },
+  { id: "7", rego: "ABC456", note: "车门钣金修复", created_date: "2026-03-01", makeModel: "Kia Sportage", panels: 2, customerCode: "C063" },
+  { id: "8", rego: "PQR111", note: "后视镜更换", created_date: "2026-03-02", makeModel: "Subaru Forester", customerCode: "C077" },
 ];
 
 export const initialWorklogEntries: WorklogEntry[] = [

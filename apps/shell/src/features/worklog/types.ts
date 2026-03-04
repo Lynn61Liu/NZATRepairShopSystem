@@ -15,6 +15,9 @@ export type WorklogJob = {
   rego: string;
   note: string;
   created_date: string;
+  makeModel?: string;
+  panels?: number | null;
+  customerCode?: string;
 };
 
 export type WorklogEntry = {
@@ -22,6 +25,7 @@ export type WorklogEntry = {
   staff_name: string;
   team: string;
   role: WorklogRole;
+  service_type?: "PNP" | "MECH";
   rego: string;
   job_id?: string;
   job_note: string;

@@ -4,7 +4,7 @@ import { Sidebar } from "./Sidebar";
 export function AppFrame() {
   return (
     <div className="flex h-full min-h-0 w-full">
-      <aside className="w-64 shrink-0 border-r border-[var(--ds-border)] bg-[var(--ds-panel)]">
+      <aside className="h-full w-64 shrink-0 border-r border-[var(--ds-border)] bg-[var(--ds-panel)]">
         <Sidebar />
       </aside>
 

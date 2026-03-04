@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Check, ChevronDown, ChevronRight, Edit, Plus, Trash2, X } from "lucide-react";
-import { Button, Card, Input, Select, useToast } from "@/components/ui";
+import { Card, Input, useToast } from "@/components/ui";
 import { getStaffPillColor } from "../worklog.utils";
 import type { WorklogRole, WorklogStaffProfile } from "../types";
 
@@ -11,8 +11,6 @@ type Props = {
   onEditStaff: (id: string, updates: Partial<WorklogStaffProfile>) => void;
   onDeleteStaff: (id: string) => void;
 };
-
-const ROLE_OPTIONS: WorklogRole[] = ["Technician", "Admin", "Supervisor", "Manager"];
 
 export function StaffManagement({
   staffProfiles,
@@ -70,100 +68,30 @@ export function StaffManagement({
         onClick={() => setIsExpanded((prev) => !prev)}
       >
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+          <div className="flex items-center gap-2 text-lg font-semibold text-[rgba(0,0,0,0.80)]">
             {isExpanded ? <ChevronDown className="size-5" /> : <ChevronRight className="size-5" />}
             员工管理
           </div>
-          <span className="text-sm text-slate-500">{staffProfiles.length} 名员工</span>
+          <span className="text-sm text-[rgba(0,0,0,0.55)]">{staffProfiles.length} 名员工</span>
         </div>
       </div>
 
       {isExpanded ? (
         <div className="space-y-4 px-6 py-5">
-          {isAdding ? (
-            <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
-              <Input
-                value={newStaff.name}
-                onChange={(event) => setNewStaff({ ...newStaff, name: event.target.value })}
-                placeholder="姓名"
-                className="w-40"
-              />
-              <Select
-                value={newStaff.role}
-                onChange={(event) =>
-                  setNewStaff({ ...newStaff, role: event.target.value as WorklogRole })
-                }
-                className="w-40"
+          <div className="flex flex-wrap gap-2">
+            {staffProfiles.map((staff) => (
+              <div
+                key={staff.id}
+                className="flex items-center gap-3 rounded-lg border border-[rgba(0,0,0,0.08)] bg-white p-3 hover:bg-slate-50"
               >
-                {ROLE_OPTIONS.map((role) => (
-                  <option key={role} value={role}>
-                    {role}
-                  </option>
-                ))}
-              </Select>
-              <div className="flex items-center gap-1">
-                <span className="text-sm">$</span>
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  step="0.01"
-                  min="0"
-                  value={newStaff.cost_rate || ""}
-                  onChange={(event) =>
-                    setNewStaff({ ...newStaff, cost_rate: Number(event.target.value || 0) })
-                  }
-                  className="w-28"
-                />
-              </div>
-              <div className="ml-auto flex gap-1">
-                <button type="button" onClick={handleAdd} className="rounded-md p-2 hover:bg-white">
-                  <Check className="size-4 text-green-600" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAdding(false);
-                    setNewStaff({ name: "", role: "Technician", cost_rate: 0 });
-                  }}
-                  className="rounded-md p-2 hover:bg-white"
-                >
-                  <X className="size-4 text-red-600" />
-                </button>
-              </div>
-            </div>
-          ) : (
-            <Button onClick={() => setIsAdding(true)} className="w-full" leftIcon={<Plus className="size-4" />}>
-              添加员工
-            </Button>
-          )}
-
-          <div className="grid gap-2 md:grid-cols-2">
-          {staffProfiles.map((staff) => (
-            <div
-              key={staff.id}
-              className="flex items-center gap-3 rounded-lg border border-[rgba(0,0,0,0.08)] bg-white p-3 hover:bg-slate-50"
-            >
               {editingId === staff.id && editData ? (
                 <>
                   <Input
                     value={editData.name}
                     onChange={(event) => setEditData({ ...editData, name: event.target.value })}
                     placeholder="姓名"
-                    className="w-32"
+                    className="min-w-[120px]"
                   />
-                  <Select
-                    value={editData.role}
-                    onChange={(event) =>
-                      setEditData({ ...editData, role: event.target.value as WorklogRole })
-                    }
-                    className="w-32"
-                  >
-                    {ROLE_OPTIONS.map((role) => (
-                      <option key={role} value={role}>
-                        {role}
-                      </option>
-                    ))}
-                  </Select>
                   <div className="flex items-center gap-1">
                     <span className="text-sm">$</span>
                     <Input
@@ -178,7 +106,7 @@ export function StaffManagement({
                           cost_rate: Number(event.target.value || 0),
                         })
                       }
-                      className="w-24"
+                      className="min-w-[96px]"
                     />
                   </div>
                   <div className="ml-auto flex gap-1">
@@ -199,7 +127,7 @@ export function StaffManagement({
                 </>
               ) : (
                 <>
-                  <div className="flex-1">
+                  <div>
                     <div className="flex items-center gap-2">
                       <span
                         className={`inline-flex rounded-full px-3 py-1 text-sm font-medium ${getStaffPillColor(staff.name, staffColorMap)}`}
@@ -208,10 +136,7 @@ export function StaffManagement({
                       </span>
                     </div>
                   </div>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-700">
-                    {staff.role}
-                  </span>
-                  <span className="text-sm font-medium text-slate-700">${staff.cost_rate}/小时</span>
+                  <span className="text-sm font-medium text-[rgba(0,0,0,0.70)]">${staff.cost_rate}/小时</span>
                   <div className="flex gap-1">
                     <button
                       type="button"
@@ -233,8 +158,57 @@ export function StaffManagement({
                   </div>
                 </>
               )}
-            </div>
-          ))}
+              </div>
+            ))}
+
+            {isAdding ? (
+              <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
+                <Input
+                  value={newStaff.name}
+                  onChange={(event) => setNewStaff({ ...newStaff, name: event.target.value })}
+                  placeholder="姓名"
+                  className="min-w-[120px]"
+                />
+                <div className="flex items-center gap-1">
+                  <span className="text-sm">$</span>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0"
+                    value={newStaff.cost_rate || ""}
+                    onChange={(event) =>
+                      setNewStaff({ ...newStaff, cost_rate: Number(event.target.value || 0) })
+                    }
+                    className="min-w-[96px]"
+                  />
+                </div>
+                <div className="ml-auto flex gap-1">
+                  <button type="button" onClick={handleAdd} className="rounded-md p-2 hover:bg-white">
+                    <Check className="size-4 text-green-600" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAdding(false);
+                      setNewStaff({ name: "", role: "Technician", cost_rate: 0 });
+                    }}
+                    className="rounded-md p-2 hover:bg-white"
+                  >
+                    <X className="size-4 text-red-600" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsAdding(true)}
+                className="flex items-center gap-2 rounded-lg border border-dashed border-[rgba(0,0,0,0.20)] bg-white p-3 text-sm text-[rgba(0,0,0,0.65)] hover:bg-slate-50"
+              >
+                <Plus className="size-4" />
+                添加员工
+              </button>
+            )}
           </div>
         </div>
       ) : null}

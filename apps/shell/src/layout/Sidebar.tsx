@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { fetchPaintBoard } from "@/features/paint/api/paintApi";
 import { countOverdue, type PaintBoardJob } from "@/features/paint/paintBoard.utils";
+import { subscribeWorklogCostAlert } from "@/utils/refreshSignals";
 import { Plus } from "lucide-react";
 
 const linkBase =
@@ -13,6 +14,7 @@ const linkIdle =
 
 export function Sidebar() {
   const [paintOverdueCount, setPaintOverdueCount] = useState(0);
+  const [worklogAlertCount, setWorklogAlertCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -27,8 +29,14 @@ export function Sidebar() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("worklog:cost-alert");
+    if (stored) setWorklogAlertCount(Number(stored) || 0);
+    return subscribeWorklogCostAlert((count) => setWorklogAlertCount(count));
+  }, []);
   return (
-    <div className="h-full p-4 flex flex-col gap-6">
+    <div className="h-full p-4 flex flex-col gap-6 flex-1 min-h-0">
       <div>
         <div className="text-base font-semibold">NZAT</div>
         <div className="text-xs text-[var(--ds-muted)]"></div>
@@ -42,41 +50,42 @@ export function Sidebar() {
         快速新建工单
       </NavLink>
 
-      <nav className="flex flex-col gap-2">
-        <NavLink
-          to="/"
-          end
-          className={({ isActive }) =>
-            `${linkBase} ${isActive ? linkActive : linkIdle}`
-          }
-        >
-          Dashboard
-        </NavLink>
+      <nav className="flex flex-1 flex-col justify-between gap-6 min-h-0">
+        <div className="flex flex-col gap-2">
+          <NavLink
+            to="/"
+            end
+            className={({ isActive }) =>
+              `${linkBase} ${isActive ? linkActive : linkIdle}`
+            }
+          >
+            Dashboard
+          </NavLink>
 
-        <NavLink
-          to="/jobs"
-          className={({ isActive }) =>
-            `${linkBase} ${isActive ? linkActive : linkIdle}`
-          }
-        >
-          Jobs
-        </NavLink>
+          <NavLink
+            to="/jobs"
+            className={({ isActive }) =>
+              `${linkBase} ${isActive ? linkActive : linkIdle}`
+            }
+          >
+            Jobs
+          </NavLink>
 
-        <NavLink
-          to="/paint-board"
-          className={({ isActive }) =>
-            `${linkBase} ${isActive ? linkActive : linkIdle}`
-          }
-        >
-          <span className="flex items-center justify-between gap-2">
-            <span>PNP Board</span>
-            {paintOverdueCount > 0 ? (
-              <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-600">
-                {paintOverdueCount}
-              </span>
-            ) : null}
-          </span>
-        </NavLink>
+          <NavLink
+            to="/paint-board"
+            className={({ isActive }) =>
+              `${linkBase} ${isActive ? linkActive : linkIdle}`
+            }
+          >
+            <span className="flex items-center justify-between gap-2">
+              <span>PNP Board</span>
+              {paintOverdueCount > 0 ? (
+                <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-600">
+                  {paintOverdueCount}
+                </span>
+              ) : null}
+            </span>
+          </NavLink>
 
         <NavLink
           to="/worklog"
@@ -84,28 +93,36 @@ export function Sidebar() {
             `${linkBase} ${isActive ? linkActive : linkIdle}`
           }
         >
-          Worklog
+          <span className="flex items-center justify-between gap-2">
+            <span>Worklog</span>
+            {worklogAlertCount > 0 ? (
+              <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-600">
+                {worklogAlertCount}
+              </span>
+            ) : null}
+          </span>
         </NavLink>
 
-        <NavLink
-          to="/parts-flow"
-          className={({ isActive }) =>
-            `${linkBase} ${isActive ? linkActive : linkIdle}`
-          }
-        >
-          Part Flow
-        </NavLink>
+          <NavLink
+            to="/parts-flow"
+            className={({ isActive }) =>
+              `${linkBase} ${isActive ? linkActive : linkIdle}`
+            }
+          >
+            Part Flow
+          </NavLink>
 
-        <NavLink
-          to="/invoice"
-          className={({ isActive }) =>
-            `${linkBase} ${isActive ? linkActive : linkIdle}`
-          }
-        >
-          Invoice
-        </NavLink>
+          <NavLink
+            to="/invoice"
+            className={({ isActive }) =>
+              `${linkBase} ${isActive ? linkActive : linkIdle}`
+            }
+          >
+            Invoice
+          </NavLink>
+        </div>
 
-        <div className="pt-20">
+        <div>
           <div className="px-3 text-[11px] uppercase tracking-[0.08em] text-[var(--ds-muted)] font-bold border-b border-[var(--ds-border)] pt-2">
             Settings
           </div>
