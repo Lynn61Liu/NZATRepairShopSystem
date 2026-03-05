@@ -305,7 +305,7 @@ export function WorkLogRow({
       <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)] text-center">
         {selectedJob?.panels ?? "—"}
       </td>
-      <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]">{log.job_note}</td>
+      <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]">{selectedJob?.note || log.job_note}</td>
       <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]">{log.admin_note || "—"}</td>
       <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]">
         {totals ? `${totals.hours.toFixed(2)}小时` : "—"}
