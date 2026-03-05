@@ -19,6 +19,7 @@ type Props = {
   staffColorMap: Map<string, { pill: string; row: string }>;
   totalsByJob?: Map<string, { hours: number; cost: number }>;
   forceEditing?: boolean;
+  lockJobSelection?: boolean;
   onEdit: (updates: Partial<WorklogEntry>) => void;
   onCopy: () => void;
   onDismissFlag: (flag: WorklogFlag) => void;
@@ -32,6 +33,7 @@ export function WorkLogRow({
   staffColorMap,
   totalsByJob,
   forceEditing = false,
+  lockJobSelection = false,
   onEdit,
   onCopy,
   onDismissFlag,
@@ -185,27 +187,31 @@ export function WorkLogRow({
           ${editWage.toFixed(2)}
         </td>
         <td className="relative overflow-visible px-4 py-3">
-          <Input
-            value={editRegoInput}
-            onChange={(event) => {
-              const value = event.target.value.toUpperCase();
-              setEditRegoInput(value);
-              setShowRegoSuggestions(true);
-              const job = jobs.find((item) => item.rego === value);
-              setEditData((prev) => ({
-                ...prev,
-                rego: value,
-                job_id: job?.id,
-                job_note: job?.note || prev.job_note,
-              }));
-            }}
-            onFocus={() => setShowRegoSuggestions(true)}
-            className="text-sm"
-          />
+          {lockJobSelection ? (
+            <div className="text-sm text-[rgba(0,0,0,0.70)]">{editData.rego || "—"}</div>
+          ) : (
+            <Input
+              value={editRegoInput}
+              onChange={(event) => {
+                const value = event.target.value.toUpperCase();
+                setEditRegoInput(value);
+                setShowRegoSuggestions(true);
+                const job = jobs.find((item) => item.rego === value);
+                setEditData((prev) => ({
+                  ...prev,
+                  rego: value,
+                  job_id: job?.id,
+                  job_note: job?.note || prev.job_note,
+                }));
+              }}
+              onFocus={() => setShowRegoSuggestions(true)}
+              className="text-sm"
+            />
+          )}
           {makeModel ? (
             <div className="mt-1 text-xs text-[rgba(0,0,0,0.45)]">{makeModel}</div>
           ) : null}
-          {showRegoSuggestions && filteredJobs.length > 0 ? (
+          {!lockJobSelection && showRegoSuggestions && filteredJobs.length > 0 ? (
             <div className="absolute left-4 right-4 top-[calc(100%-4px)] z-[60] max-h-40 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-lg">
               {filteredJobs.map((job) => (
                 <button

@@ -101,6 +101,7 @@ export function WorklogPanel({ jobData, paintPanels }: WorklogPanelProps) {
         jobs={jobs}
         staffColorMap={staffColorMap}
         editingLogId={editingLogId}
+        lockJobSelection
         onAddLog={handleAdd}
         onEditLog={handleEdit}
         onCopyLog={handleCopy}

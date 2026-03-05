@@ -8,10 +8,11 @@ type Props = {
   staffProfiles: WorklogStaffProfile[];
   jobs: WorklogJob[];
   totalsByJob?: Map<string, { hours: number; cost: number }>;
+  lockJobSelection?: boolean;
   onAdd: (log: Omit<WorklogEntry, "id" | "created_at" | "created_by" | "flags">) => void;
 };
 
-export function WorkLogAddRow({ staffProfiles, jobs, totalsByJob, onAdd }: Props) {
+export function WorkLogAddRow({ staffProfiles, jobs, totalsByJob, lockJobSelection = false, onAdd }: Props) {
   const toast = useToast();
   const [staffName, setStaffName] = useState("");
   const [showStaffSuggestions, setShowStaffSuggestions] = useState(false);
@@ -163,22 +164,26 @@ export function WorkLogAddRow({ staffProfiles, jobs, totalsByJob, onAdd }: Props
         ${wage}
       </td>
       <td className="relative overflow-visible px-4 py-3">
-        <Input
-          value={regoInput}
-          onChange={(event) => {
-            const value = event.target.value.toUpperCase();
-            setRegoInput(value);
-            setRego(value);
-            setShowRegoSuggestions(true);
-          }}
-          onFocus={() => setShowRegoSuggestions(true)}
-          placeholder="输入车牌号"
-          className="bg-white text-sm"
-        />
+        {lockJobSelection ? (
+          <div className="text-sm text-[rgba(0,0,0,0.70)]">{rego || "—"}</div>
+        ) : (
+          <Input
+            value={regoInput}
+            onChange={(event) => {
+              const value = event.target.value.toUpperCase();
+              setRegoInput(value);
+              setRego(value);
+              setShowRegoSuggestions(true);
+            }}
+            onFocus={() => setShowRegoSuggestions(true)}
+            placeholder="输入车牌号"
+            className="bg-white text-sm"
+          />
+        )}
         {selectedJob?.makeModel ? (
           <div className="mt-1 text-xs text-[rgba(0,0,0,0.45)]">{selectedJob.makeModel}</div>
         ) : null}
-        {showRegoSuggestions && filteredJobs.length > 0 ? (
+        {!lockJobSelection && showRegoSuggestions && filteredJobs.length > 0 ? (
           <div className="absolute left-4 right-4 top-[calc(100%-4px)] z-[60] max-h-40 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-lg">
             {filteredJobs.map((job) => (
               <button

@@ -13,6 +13,7 @@ type Props = {
   staffColorMap: Map<string, { pill: string; row: string }>;
   editingLogId: string | null;
   jobTotals?: Map<string, { hours: number; cost: number }>;
+  lockJobSelection?: boolean;
   onAddLog: (log: Omit<WorklogEntry, "id" | "created_at" | "created_by" | "flags">) => void;
   onEditLog: (id: string, updates: Partial<WorklogEntry>) => void;
   onCopyLog: (log: WorklogEntry) => void;
@@ -29,6 +30,7 @@ export function WorkLogTable({
   staffColorMap,
   editingLogId,
   jobTotals,
+  lockJobSelection = false,
   onAddLog,
   onEditLog,
   onCopyLog,
@@ -113,6 +115,7 @@ export function WorkLogTable({
               jobs={jobs}
               onAdd={onAddLog}
               totalsByJob={totalsByJob}
+              lockJobSelection={lockJobSelection}
             />
           </thead>
           <tbody>
@@ -125,6 +128,7 @@ export function WorkLogTable({
                 staffColorMap={staffColorMap}
                 forceEditing={editingLogId === log.id}
                 totalsByJob={totalsByJob}
+                lockJobSelection={lockJobSelection}
                 onEdit={(updates) => onEditLog(log.id, updates)}
                 onCopy={() => onCopyLog(log)}
                 onDismissFlag={(flag) => onDismissFlag(log.id, flag)}
