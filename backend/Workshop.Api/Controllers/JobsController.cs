@@ -25,6 +25,8 @@ public class JobsController : ControllerBase
                 from j in _db.Jobs.AsNoTracking()
                 join v in _db.Vehicles.AsNoTracking() on j.VehicleId equals v.Id
                 join c in _db.Customers.AsNoTracking() on j.CustomerId equals c.Id
+                join p in _db.JobPaintServices.AsNoTracking() on j.Id equals p.JobId into paintGroup
+                from p in paintGroup.DefaultIfEmpty()
                 orderby j.CreatedAt descending
                 select new
                 {
@@ -33,6 +35,7 @@ public class JobsController : ControllerBase
                     j.IsUrgent,
                     j.CreatedAt,
                     j.Notes,
+                    PaintPanels = (int?)p.Panels,
                     Vehicle = v,
                     Customer = c
                 }
@@ -54,7 +57,8 @@ public class JobsController : ControllerBase
             customerCode = r.Customer.BusinessCode,
             customerPhone = r.Customer.Phone ?? "",
             notes = r.Notes ?? "",
-            createdAt = FormatDateTime(r.CreatedAt)
+            createdAt = FormatDateTime(r.CreatedAt),
+            panels = r.PaintPanels
         });
 
         return Ok(items);

@@ -221,6 +221,10 @@ export function WorklogPage() {
       return;
     }
     await refreshWorklogs();
+    const newId = res.data && typeof res.data === "object" ? String((res.data as any).id ?? "") : "";
+    if (newId) {
+      setEditingLogId(newId);
+    }
   };
 
   const handleDismissFlag = (id: string, flag: WorklogFlag) => {
