@@ -1,13 +1,17 @@
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useJobDetailState } from "@/features/jobDetail";
 import { Alert, EmptyState } from "@/components/ui";
 import { JobDetailContent } from "@/features/jobDetail/components/JobDetailContent";
 import { useJobDetailData } from "@/features/jobDetail/hooks/useJobDetailData";
+import type { JobDetailTabKey } from "@/types";
 
 export function JobDetailPage() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { activeTab, setActiveTab, isSidebarOpen, setIsSidebarOpen } = useJobDetailState({ initialTab: "WOF" });
+  const tabParam = searchParams.get("tab");
+  const initialTab: JobDetailTabKey = isJobDetailTab(tabParam) ? tabParam : "WOF";
+  const { activeTab, setActiveTab, isSidebarOpen, setIsSidebarOpen } = useJobDetailState({ initialTab });
   const {
     jobData,
     loading,
@@ -121,5 +125,17 @@ export function JobDetailPage() {
         onToggleSidebar={() => setIsSidebarOpen((v) => !v)}
       />
     </div>
+  );
+}
+
+function isJobDetailTab(value: string | null): value is JobDetailTabKey {
+  return (
+    value === "WOF" ||
+    value === "Mechanical" ||
+    value === "Parts" ||
+    value === "Paint" ||
+    value === "Worklog" ||
+    value === "Log" ||
+    value === "Invoice"
   );
 }

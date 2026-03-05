@@ -6,6 +6,7 @@ export const jobDetailTabs: { key: JobDetailTabKey; label: string }[] = [
   { key: "Mechanical", label: JOB_DETAIL_TEXT.tabs.mechanical },
   { key: "Parts", label: JOB_DETAIL_TEXT.tabs.parts },
   { key: "Paint", label: JOB_DETAIL_TEXT.tabs.paint },
+  { key: "Worklog", label: JOB_DETAIL_TEXT.tabs.worklog },
   { key: "Log", label: JOB_DETAIL_TEXT.tabs.log },
   { key: "Invoice", label: JOB_DETAIL_TEXT.tabs.invoice },
 ];

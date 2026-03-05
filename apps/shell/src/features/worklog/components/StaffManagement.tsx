@@ -17,18 +17,21 @@ export function StaffManagement({
   staffColorMap,
   onAddStaff,
   onEditStaff,
-  onDeleteStaff,
+  onDeleteStaff: _onDeleteStaff,
 }: Props) {
   const toast = useToast();
   const [isExpanded, setIsExpanded] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [hiddenStaffIds, setHiddenStaffIds] = useState<Set<string>>(() => new Set());
   const [newStaff, setNewStaff] = useState({
     name: "",
     role: "Technician" as WorklogRole,
     cost_rate: 0,
   });
   const [editData, setEditData] = useState<WorklogStaffProfile | null>(null);
+
+  const visibleStaff = staffProfiles.filter((staff) => !hiddenStaffIds.has(staff.id));
 
   const handleAdd = () => {
     if (!newStaff.name.trim()) {
@@ -72,14 +75,14 @@ export function StaffManagement({
             {isExpanded ? <ChevronDown className="size-5" /> : <ChevronRight className="size-5" />}
             员工管理
           </div>
-          <span className="text-sm text-[rgba(0,0,0,0.55)]">{staffProfiles.length} 名员工</span>
+          <span className="text-sm text-[rgba(0,0,0,0.55)]">{visibleStaff.length} 名员工</span>
         </div>
       </div>
 
       {isExpanded ? (
         <div className="space-y-4 px-6 py-5">
           <div className="flex flex-wrap gap-2">
-            {staffProfiles.map((staff) => (
+            {visibleStaff.map((staff) => (
               <div
                 key={staff.id}
                 className="flex items-center gap-3 rounded-lg border border-[rgba(0,0,0,0.08)] bg-white p-3 hover:bg-slate-50"
@@ -150,7 +153,16 @@ export function StaffManagement({
                     </button>
                     <button
                       type="button"
-                      onClick={() => onDeleteStaff(staff.id)}
+                      onClick={() => {
+                        setHiddenStaffIds((prev) => {
+                          const next = new Set(prev);
+                          next.add(staff.id);
+                          return next;
+                        });
+                        setEditingId((prev) => (prev === staff.id ? null : prev));
+                        setEditData((prev) => (prev?.id === staff.id ? null : prev));
+                        toast.success("员工已隐藏");
+                      }}
                       className="rounded-md p-2 hover:bg-slate-100"
                     >
                       <Trash2 className="size-4 text-red-600" />

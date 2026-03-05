@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Save } from "lucide-react";
 import { Button, Input, useToast } from "@/components/ui";
 import { formatDate, parseTimeRange } from "../worklog.utils";
@@ -22,6 +22,13 @@ export function WorkLogAddRow({ staffProfiles, jobs, totalsByJob, onAdd }: Props
   const [workDate, setWorkDate] = useState(formatDate(new Date()));
   const [timeRange, setTimeRange] = useState("");
   const [adminNote, setAdminNote] = useState("");
+
+  useEffect(() => {
+    if (jobs.length === 1 && !regoInput.trim() && !rego.trim()) {
+      setRego(jobs[0].rego);
+      setRegoInput(jobs[0].rego);
+    }
+  }, [jobs, rego, regoInput]);
 
   const selectedStaff = useMemo(
     () => staffProfiles.find((item) => item.name === staffName),

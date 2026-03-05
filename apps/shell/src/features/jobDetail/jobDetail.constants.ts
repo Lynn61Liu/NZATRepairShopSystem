@@ -4,6 +4,7 @@ export const JOB_DETAIL_TEXT = {
     mechanical: "机修",
     parts: "配件",
     paint: "喷漆",
+    worklog: "工时",
     log: "Log",
     invoice: "Invoice",
   },

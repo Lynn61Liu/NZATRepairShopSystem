@@ -290,7 +290,7 @@ export function WorkLogRow({
       <td className="px-4 py-3">
         {log.job_id ? (
           <div className="flex flex-col">
-            <Link to={`/jobs/${log.job_id}`} className="text-sm text-blue-600 hover:underline">
+            <Link to={`/jobs/${log.job_id}?tab=Worklog`} className="text-sm text-blue-600 hover:underline">
               {regoDisplay}
             </Link>
             {makeModel ? (

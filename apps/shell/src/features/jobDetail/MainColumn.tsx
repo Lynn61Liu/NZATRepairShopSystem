@@ -21,6 +21,7 @@ import { RepairPanel } from "@/features/jobDetail/components/RepairPanel";
 import { PaintPanel } from "@/features/paint";
 import { LogPanel } from "@/features/jobDetail/components/LogPanel";
 import { InvoicePanel } from "@/features/jobDetail/components/InvoicePanel";
+import { WorklogPanel } from "@/features/jobDetail/components/WorklogPanel";
 import { JOB_DETAIL_TEXT } from "@/features/jobDetail/jobDetail.constants";
 
 type MainColumnProps = {
@@ -148,6 +149,7 @@ export function MainColumn({
     }
     base.push(
       { key: "Paint", label: JOB_DETAIL_TEXT.tabs.paint },
+      { key: "Worklog", label: JOB_DETAIL_TEXT.tabs.worklog },
       { key: "Log", label: JOB_DETAIL_TEXT.tabs.log },
       { key: "Invoice", label: JOB_DETAIL_TEXT.tabs.invoice }
     );
@@ -281,6 +283,9 @@ export function MainColumn({
             onDeleteService={onDeletePaintService}
             onRefresh={onRefreshPaintService}
           />
+        ) : null}
+        {activeTab === "Worklog" ? (
+          <WorklogPanel jobData={jobData} paintPanels={paintService?.panels ?? null} />
         ) : null}
         {activeTab === "Log" ? <LogPanel /> : null}
         {activeTab === "Invoice" ? <InvoicePanel /> : null}
