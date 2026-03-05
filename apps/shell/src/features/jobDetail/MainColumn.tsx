@@ -86,6 +86,14 @@ type MainColumnProps = {
     vin?: string | null;
     nzFirstRegistration?: string | null;
   }) => Promise<{ success: boolean; message?: string }>;
+  onSaveCustomer?: (payload: {
+    type: "Personal" | "Business";
+    customerId?: string;
+    name?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+  }) => Promise<{ success: boolean; message?: string }>;
   onDeleteJob?: () => void;
   isDeletingJob?: boolean;
   tagOptions?: { id: string; label: string }[];
@@ -129,6 +137,7 @@ export function MainColumn({
   onRefreshPaintService,
   onRefreshVehicle,
   onSaveVehicle,
+  onSaveCustomer,
   onDeleteJob,
   isDeletingJob,
   tagOptions,
@@ -204,6 +213,7 @@ export function MainColumn({
         customer={jobData.customer}
         onRefreshVehicle={onRefreshVehicle}
         onSaveVehicle={onSaveVehicle}
+        onSaveCustomer={onSaveCustomer}
       />
 
       <Card className="p-4">

@@ -54,3 +54,21 @@ export function updateVehicleInfo(
     body: JSON.stringify(payload),
   });
 }
+
+export function updateJobCustomer(
+  jobId: string,
+  payload: {
+    type: "Personal" | "Business";
+    customerId?: string;
+    name?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+  }
+) {
+  return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}/customer`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}

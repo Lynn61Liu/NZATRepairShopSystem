@@ -18,6 +18,7 @@ import {
   updateJobTags,
   updateVehicleInfo,
   deleteJob as apiDeleteJob,
+  updateJobCustomer,
 } from "../api/jobDetailApi";
 import { notifyPaintBoardRefresh } from "@/utils/refreshSignals";
 import {
@@ -671,6 +672,44 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
     [jobId, toast]
   );
 
+  const saveCustomerInfo = useCallback(
+    async (payload: {
+      type: "Personal" | "Business";
+      customerId?: string;
+      name?: string;
+      phone?: string;
+      email?: string;
+      address?: string;
+    }) => {
+      if (!jobId) return { success: false, message: "缺少工单 ID" };
+
+      const res = await updateJobCustomer(jobId, payload);
+      if (!res.ok) {
+        const message = res.error || "保存客户失败";
+        toast.error(message);
+        return { success: false, message };
+      }
+
+      const nextCustomer = res.data?.customer;
+      if (nextCustomer) {
+        setJobData((prev) =>
+          prev
+            ? {
+                ...prev,
+                customer: {
+                  ...prev.customer,
+                  ...nextCustomer,
+                },
+              }
+            : prev
+        );
+      }
+      toast.success("客户信息已更新");
+      return { success: true, message: "客户信息已更新", customer: nextCustomer };
+    },
+    [jobId, toast]
+  );
+
   useEffect(() => {
     let cancelled = false;
     isMountedRef.current = true;
@@ -801,5 +840,6 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
     refreshPaintService,
     refreshVehicleInfo,
     saveVehicleInfo,
+    saveCustomerInfo,
   };
 }

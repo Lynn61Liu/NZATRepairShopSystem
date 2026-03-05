@@ -169,6 +169,7 @@ public class JobsController : ControllerBase
             },
             customer = new
             {
+                id = row.Customer.Id.ToString(CultureInfo.InvariantCulture),
                 type = row.Customer.Type,
                 name = row.Customer.Name,
                 phone = row.Customer.Phone,
@@ -182,6 +183,113 @@ public class JobsController : ControllerBase
         };
 
         return Ok(new { job, hasWofRecord });
+    }
+
+    public record UpdateJobCustomerRequest(
+        string? Type,
+        string? CustomerId,
+        string? Name,
+        string? Phone,
+        string? Email,
+        string? Address
+    );
+
+    [HttpPut("{id:long}/customer")]
+    public async Task<IActionResult> UpdateCustomer(long id, [FromBody] UpdateJobCustomerRequest req, CancellationToken ct)
+    {
+        if (req is null)
+            return BadRequest(new { error = "Request body is required." });
+
+        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (job is null)
+            return NotFound(new { error = "Job not found." });
+
+        var normalizedType = NormalizeCustomerType(req.Type);
+        if (!IsValidCustomerType(normalizedType))
+            return BadRequest(new { error = "Customer type must be Personal or Business." });
+
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
+
+        Customer customer;
+        if (string.Equals(normalizedType, "Business", StringComparison.Ordinal))
+        {
+            if (string.IsNullOrWhiteSpace(req.CustomerId) || !long.TryParse(req.CustomerId, out var customerId))
+                return BadRequest(new { error = "Business customer id is required." });
+
+            customer = await _db.Customers.FirstOrDefaultAsync(x => x.Id == customerId, ct);
+            if (customer is null)
+                return NotFound(new { error = "Customer not found." });
+            if (!string.Equals(customer.Type, "Business", StringComparison.Ordinal))
+                return BadRequest(new { error = "Customer type must be Business." });
+
+            job.CustomerId = customer.Id;
+            job.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+
+            return Ok(new
+            {
+                success = true,
+                customer = new
+                {
+                    id = customer.Id.ToString(CultureInfo.InvariantCulture),
+                    type = customer.Type,
+                    name = customer.Name,
+                    phone = customer.Phone ?? "",
+                    email = customer.Email ?? "",
+                    address = customer.Address ?? "",
+                    businessCode = customer.BusinessCode ?? "",
+                    notes = customer.Notes ?? ""
+                }
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(req.Name))
+            return BadRequest(new { error = "Name is required." });
+
+        Customer? existingCustomer = null;
+        if (job.CustomerId.HasValue)
+            existingCustomer = await _db.Customers.FirstOrDefaultAsync(x => x.Id == job.CustomerId.Value, ct);
+
+        if (existingCustomer is not null && string.Equals(existingCustomer.Type, "Personal", StringComparison.Ordinal))
+        {
+            customer = existingCustomer;
+        }
+        else
+        {
+            customer = new Customer();
+            _db.Customers.Add(customer);
+        }
+
+        customer.Type = "Personal";
+        customer.Name = req.Name.Trim();
+        customer.Phone = req.Phone?.Trim();
+        customer.Email = req.Email?.Trim();
+        customer.Address = req.Address?.Trim();
+        customer.BusinessCode = null;
+
+        await _db.SaveChangesAsync(ct);
+
+        job.CustomerId = customer.Id;
+        job.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+
+        return Ok(new
+        {
+            success = true,
+            customer = new
+            {
+                id = customer.Id.ToString(CultureInfo.InvariantCulture),
+                type = customer.Type,
+                name = customer.Name,
+                phone = customer.Phone ?? "",
+                email = customer.Email ?? "",
+                address = customer.Address ?? "",
+                businessCode = customer.BusinessCode ?? "",
+                notes = customer.Notes ?? ""
+            }
+        });
     }
 
     public record CreatePaintServiceRequest(string? Status, int? Panels);
@@ -704,6 +812,20 @@ public class JobsController : ControllerBase
 
         return parts.Count > 0 ? string.Join(" ", parts) : "Unknown";
     }
+
+    private static string NormalizeCustomerType(string? type)
+    {
+        var trimmed = type?.Trim() ?? "";
+        if (string.Equals(trimmed, "personal", StringComparison.OrdinalIgnoreCase))
+            return "Personal";
+        if (string.Equals(trimmed, "business", StringComparison.OrdinalIgnoreCase))
+            return "Business";
+        return trimmed;
+    }
+
+    private static bool IsValidCustomerType(string type)
+        => string.Equals(type, "Personal", StringComparison.Ordinal) ||
+           string.Equals(type, "Business", StringComparison.Ordinal);
 
     private static string FormatDate(DateOnly? date)
         => date.HasValue ? date.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "";

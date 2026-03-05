@@ -77,6 +77,14 @@ type JobDetailContentProps = {
     vin?: string | null;
     nzFirstRegistration?: string | null;
   }) => Promise<{ success: boolean; message?: string }>;
+  onSaveCustomer?: (payload: {
+    type: "Personal" | "Business";
+    customerId?: string;
+    name?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+  }) => Promise<{ success: boolean; message?: string }>;
   onDeleteJob?: () => void;
   isDeletingJob?: boolean;
   tagOptions?: TagOption[];
@@ -122,6 +130,7 @@ export function JobDetailContent({
   onRefreshPaintService,
   onRefreshVehicle,
   onSaveVehicle,
+  onSaveCustomer,
   onDeleteJob,
   isDeletingJob,
   tagOptions,
@@ -169,6 +178,7 @@ export function JobDetailContent({
           onRefreshPaintService={onRefreshPaintService}
           onRefreshVehicle={onRefreshVehicle}
           onSaveVehicle={onSaveVehicle}
+          onSaveCustomer={onSaveCustomer}
           onDeleteJob={onDeleteJob}
           isDeletingJob={isDeletingJob}
           tagOptions={tagOptions}
