@@ -8,7 +8,8 @@ COPY package.json ./
 RUN pnpm install
 
 COPY . .
-RUN pnpm build
+ARG GIT_SHA=dev
+RUN pnpm build && echo "$GIT_SHA" > /app/dist/version.txt
 
 FROM nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf

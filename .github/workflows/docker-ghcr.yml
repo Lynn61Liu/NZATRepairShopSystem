@@ -41,6 +41,9 @@ jobs:
           context: ./apps/shell
           push: true
           tags: ghcr.io/lynn61liu/nzat-web:latest
+          no-cache: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
 
    
 
