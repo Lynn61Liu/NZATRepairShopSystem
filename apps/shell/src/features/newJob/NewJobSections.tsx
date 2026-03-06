@@ -1,6 +1,7 @@
 import { type ChangeEvent, useState } from "react";
 import { CarFront, ClipboardList, UserRound, NotebookText } from "lucide-react";
 import { Link } from "react-router-dom";
+import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { Button, Input, SectionCard, Select } from "@/components/ui";
 import { CustomerTypeToggle, VehicleInfoBanner } from "@/features/newJob/components";
 import type { BusinessOption, CustomerType, ImportState, ServiceOption, ServiceType, VehicleInfo } from "./newJob.types";
@@ -274,10 +275,10 @@ export function CustomerSection({
             </div>
             <div className="">
               <label className="text-base text-[rgba(0,0,0,0.55)] mb-1 block">地址</label>
-              <Input
-                placeholder="输入地址"
+              <AddressAutocomplete
                 value={customerAddress}
-                onChange={(event) => onCustomerAddressChange(event.target.value)}
+                onChange={onCustomerAddressChange}
+                placeholder="输入地址"
               />
             </div>
           </div>
