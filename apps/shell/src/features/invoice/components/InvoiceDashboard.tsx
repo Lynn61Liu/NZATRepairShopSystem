@@ -11,69 +11,121 @@ import {
   initialEmailTimeline,
   initialInvoiceItems,
   initialInvoiceState,
+  initialItemCatalog,
   initialPoDetections,
   invoiceWorkflowSteps,
 } from "../mockData";
-import type { InvoiceItem } from "../types";
+import type { InvoiceItem, TaxRateOption } from "../types";
+
+const TAX_RATE_PERCENTAGE: Record<TaxRateOption, number> = {
+  "15% GST on Expenses": 15,
+  "15% GST on Income": 15,
+  "GST on Imports": 15,
+  "No GST": 0,
+  "Zero Rated": 0,
+  "Zero Rated - Exp": 0,
+};
 
 function createNewItem(nextId: number): InvoiceItem {
   return {
     id: `line-${nextId}`,
+    itemCode: "",
     description: "New invoice line item",
     quantity: 1,
     unitPrice: 0,
-    tax: 0,
+    discount: 0,
+    account: "",
+    taxRate: "15% GST on Income",
   };
+}
+
+function getBaseAmount(item: InvoiceItem) {
+  return item.quantity * item.unitPrice * (1 - item.discount / 100);
+}
+
+function getTaxAmount(item: InvoiceItem) {
+  return getBaseAmount(item) * (TAX_RATE_PERCENTAGE[item.taxRate] / 100);
 }
 
 export function InvoiceDashboard() {
   const toast = useToast();
   const [invoice, setInvoice] = useState(initialInvoiceState);
   const [items, setItems] = useState(initialInvoiceItems);
+  const [itemCatalog, setItemCatalog] = useState(initialItemCatalog);
   const [timeline, setTimeline] = useState(initialEmailTimeline);
   const [detections, setDetections] = useState(initialPoDetections);
   const [selectedDetectionId, setSelectedDetectionId] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [nextItemId, setNextItemId] = useState(initialInvoiceItems.length + 1);
+  const [itemCatalogSyncState, setItemCatalogSyncState] = useState<"idle" | "syncing" | "success" | "error">("idle");
+  const [itemCatalogFeedback, setItemCatalogFeedback] = useState<string | null>(null);
+  const [itemCatalogLastUpdated, setItemCatalogLastUpdated] = useState<string | null>(null);
+  const [itemsDirty, setItemsDirty] = useState(!initialInvoiceState.synced);
+  const [pendingFocusRowId, setPendingFocusRowId] = useState<string | null>(null);
 
-  const subtotal = useMemo(
-    () => items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0),
-    [items]
-  );
-  const taxTotal = useMemo(() => items.reduce((sum, item) => sum + item.tax, 0), [items]);
+  const subtotal = useMemo(() => items.reduce((sum, item) => sum + getBaseAmount(item), 0), [items]);
+  const taxTotal = useMemo(() => items.reduce((sum, item) => sum + getTaxAmount(item), 0), [items]);
   const totalAmount = useMemo(() => subtotal + taxTotal, [subtotal, taxTotal]);
 
   const updateItem = (id: string, field: keyof InvoiceItem, value: string) => {
     setItems((prev) =>
       prev.map((item) => {
         if (item.id !== id) return item;
-        if (field === "description") return { ...item, description: value };
+        if (field === "itemCode") {
+          const code = value.split(" - ")[0].trim();
+          const matched = itemCatalog.find((entry) => entry.code === code);
+          if (matched) {
+            return {
+              ...item,
+              itemCode: matched.code,
+              description: matched.name,
+              unitPrice: matched.unitPrice,
+              account: matched.account,
+              taxRate: matched.taxRate,
+            };
+          }
+          return { ...item, itemCode: value };
+        }
+        if (field === "description" || field === "account") {
+          return { ...item, [field]: value };
+        }
         const parsed = Number(value || 0);
         return { ...item, [field]: Number.isFinite(parsed) ? parsed : 0 };
       })
     );
+    setInvoice((prev) => ({ ...prev, synced: false }));
+    setItemsDirty(true);
   };
 
   const addItem = () => {
+    const newId = `line-${nextItemId}`;
     setItems((prev) => [...prev, createNewItem(nextItemId)]);
     setNextItemId((prev) => prev + 1);
+    setPendingFocusRowId(newId);
+    setInvoice((prev) => ({ ...prev, synced: false }));
+    setItemsDirty(true);
     toast.info("Added a new invoice item row");
   };
 
   const deleteItem = (id: string) => {
     setItems((prev) => prev.filter((item) => item.id !== id));
+    setInvoice((prev) => ({ ...prev, synced: false }));
+    setItemsDirty(true);
     toast.info("Invoice item removed");
   };
 
   const syncInvoice = () => {
+    if (!itemsDirty) return;
     const now = new Date().toLocaleString("zh-CN", { hour12: false }).replace(/\//g, "-");
     setInvoice((prev) => ({
       ...prev,
       synced: true,
       status: prev.status === "Draft" ? "Awaiting PO" : prev.status,
       lastSyncTime: now,
+      lastSyncDirection: "System -> Xero",
       currentWorkflowStep: Math.max(prev.currentWorkflowStep, 2),
     }));
+    setItemsDirty(false);
     setTimeline((prev) => [
       {
         id: `evt-sync-${Date.now()}`,
@@ -90,8 +142,34 @@ export function InvoiceDashboard() {
     window.open("https://go.xero.com", "_blank", "noopener,noreferrer");
   };
 
-  const saveItems = () => {
-    toast.success("Invoice items saved");
+  const refreshItemCatalog = () => {
+    if (itemCatalogSyncState === "syncing") return;
+    const startedAt = new Date().toLocaleString("zh-CN", { hour12: false }).replace(/\//g, "-");
+    setItemCatalogSyncState("syncing");
+    setItemCatalogFeedback("Syncing item list from Xero. Existing invoice rows stay untouched until you choose an item.");
+    toast.info("Refreshing Xero item list...");
+
+    window.setTimeout(() => {
+      setItemCatalog((prev) => {
+        const existing = new Set(prev.map((item) => item.code));
+        return existing.has("LAB-320")
+          ? prev
+          : [
+              ...prev,
+              {
+                code: "LAB-320",
+                name: "Battery Health Check",
+                unitPrice: 72,
+                account: "200 - Sales",
+                taxRate: "15% GST on Income",
+              },
+            ];
+      });
+      setItemCatalogSyncState("success");
+      setItemCatalogLastUpdated(startedAt);
+      setItemCatalogFeedback("Xero item list updated. New item definitions are ready for manual selection in the Item column.");
+      toast.success("Xero item list updated");
+    }, 900);
   };
 
   const sendPoRequest = () => {
@@ -142,6 +220,7 @@ export function InvoiceDashboard() {
     setInvoice((prev) => ({
       ...prev,
       status: "PO Received",
+      reference: po.poNumber,
       currentWorkflowStep: Math.max(prev.currentWorkflowStep, 6),
     }));
     setTimeline((prev) => [
@@ -173,19 +252,33 @@ export function InvoiceDashboard() {
       </div>
 
       <div className="space-y-6 lg:col-span-9">
-        <InvoiceSummaryCard invoice={invoice} totalAmount={totalAmount} onSync={syncInvoice} onOpenXero={openInXero} />
-        <InvoiceItemsTable
-          items={items}
-          synced={invoice.synced}
+        <InvoiceSummaryCard
+          invoice={invoice}
           subtotal={subtotal}
           taxTotal={taxTotal}
           totalAmount={totalAmount}
-          onAddItem={addItem}
-          onChangeItem={updateItem}
-          onDeleteItem={deleteItem}
-          onSave={saveItems}
+          canSync={itemsDirty}
           onSync={syncInvoice}
-        />
+          onOpenXero={openInXero}
+        >
+          <InvoiceItemsTable
+            items={items}
+            synced={invoice.synced}
+            subtotal={subtotal}
+            taxTotal={taxTotal}
+            totalAmount={totalAmount}
+            itemCatalog={itemCatalog}
+            itemCatalogSyncState={itemCatalogSyncState}
+            itemCatalogFeedback={itemCatalogFeedback}
+            itemCatalogLastUpdated={itemCatalogLastUpdated}
+            pendingFocusRowId={pendingFocusRowId}
+            onAddItem={addItem}
+            onChangeItem={updateItem}
+            onDeleteItem={deleteItem}
+            onRefreshItemCatalog={refreshItemCatalog}
+            onPendingFocusHandled={() => setPendingFocusRowId(null)}
+          />
+        </InvoiceSummaryCard>
         <PoRequestPanel
           merchantEmail={invoice.merchantEmail}
           correlationId={invoice.correlationId}

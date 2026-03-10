@@ -4,6 +4,7 @@ import type {
   InvoiceItem,
   PoDetection,
   WorkflowStep,
+  XeroItemDefinition,
 } from "./types";
 
 export const invoiceWorkflowSteps: WorkflowStep[] = [
@@ -19,9 +20,16 @@ export const invoiceWorkflowSteps: WorkflowStep[] = [
 ];
 
 export const initialInvoiceState: InvoiceDashboardState = {
-  xeroInvoiceId: "INV-2024-0342",
+  contact: "Auto Parts Wholesale Ltd",
+  issueDate: "2026-03-05",
+  dueDate: "2026-04-04",
+  invoiceNumber: "INV-2026-0342",
+  reference: "PO-2024-8765 / Job J000342",
+  amountsAre: "Tax Exclusive",
+  xeroInvoiceId: "8d2eaa6f-98f9-4c9e-a4aa-5a2d9032bf10",
   status: "Awaiting PO",
   lastSyncTime: "2026-03-05 14:23:15",
+  lastSyncDirection: "Xero -> System",
   synced: false,
   merchantEmail: "supplier@autoparts.com",
   correlationId: "CORR-2024-0342-XYZ",
@@ -35,11 +43,56 @@ export const initialInvoiceState: InvoiceDashboardState = {
   currentWorkflowStep: 5,
 };
 
+
+export const initialItemCatalog: XeroItemDefinition[] = [
+  { code: "LAB-001", name: "Engine Oil Change - Premium Synthetic", unitPrice: 89.99, account: "200 - Sales", taxRate: "15% GST on Income" },
+  { code: "PRT-145", name: "Brake Pad Replacement - Front Axle", unitPrice: 245, account: "200 - Sales", taxRate: "15% GST on Income" },
+  { code: "LAB-210", name: "Tire Rotation & Balancing Service", unitPrice: 35, account: "200 - Sales", taxRate: "15% GST on Income" },
+  { code: "PRT-330", name: "Air Filter Replacement", unitPrice: 45, account: "200 - Sales", taxRate: "15% GST on Income" },
+  { code: "PRT-510", name: "Cabin Filter Replacement", unitPrice: 58, account: "200 - Sales", taxRate: "15% GST on Income" },
+];
+
 export const initialInvoiceItems: InvoiceItem[] = [
-  { id: "line-1", description: "Engine Oil Change - Premium Synthetic", quantity: 2, unitPrice: 89.99, tax: 18 },
-  { id: "line-2", description: "Brake Pad Replacement - Front Axle", quantity: 1, unitPrice: 245, tax: 24.5 },
-  { id: "line-3", description: "Tire Rotation & Balancing Service", quantity: 4, unitPrice: 35, tax: 14 },
-  { id: "line-4", description: "Air Filter Replacement", quantity: 1, unitPrice: 45, tax: 4.5 },
+  {
+    id: "line-1",
+    itemCode: "LAB-001",
+    description: "Engine Oil Change - Premium Synthetic",
+    quantity: 2,
+    unitPrice: 89.99,
+    discount: 0,
+    account: "200 - Sales",
+    taxRate: "15% GST on Income",
+  },
+  {
+    id: "line-2",
+    itemCode: "PRT-145",
+    description: "Brake Pad Replacement - Front Axle",
+    quantity: 1,
+    unitPrice: 245,
+    discount: 5,
+    account: "200 - Sales",
+    taxRate: "15% GST on Income",
+  },
+  {
+    id: "line-3",
+    itemCode: "LAB-210",
+    description: "Tire Rotation & Balancing Service",
+    quantity: 4,
+    unitPrice: 35,
+    discount: 0,
+    account: "200 - Sales",
+    taxRate: "15% GST on Income",
+  },
+  {
+    id: "line-4",
+    itemCode: "PRT-330",
+    description: "Air Filter Replacement",
+    quantity: 1,
+    unitPrice: 45,
+    discount: 0,
+    account: "200 - Sales",
+    taxRate: "15% GST on Income",
+  },
 ];
 
 export const initialEmailTimeline: EmailTimelineEvent[] = [

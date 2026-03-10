@@ -5,12 +5,35 @@ export type InvoiceStatus =
   | "Awaiting Payment"
   | "Authorised";
 
+export type AmountsAre = "Tax Exclusive" | "Tax Inclusive" | "No Tax";
+
+export type SyncDirection = "System -> Xero" | "Xero -> System";
+
+export type TaxRateOption =
+  | "15% GST on Expenses"
+  | "15% GST on Income"
+  | "GST on Imports"
+  | "No GST"
+  | "Zero Rated"
+  | "Zero Rated - Exp";
+
+export type XeroItemDefinition = {
+  code: string;
+  name: string;
+  unitPrice: number;
+  account: string;
+  taxRate: TaxRateOption;
+};
+
 export type InvoiceItem = {
   id: string;
+  itemCode: string;
   description: string;
   quantity: number;
   unitPrice: number;
-  tax: number;
+  discount: number;
+  account: string;
+  taxRate: TaxRateOption;
 };
 
 export type EmailState = "Email Sent" | "Waiting for Reply" | "Reminder Scheduled";
@@ -50,9 +73,16 @@ export type WorkflowStep = {
 };
 
 export type InvoiceDashboardState = {
+  contact: string;
+  issueDate: string;
+  dueDate: string;
+  invoiceNumber: string;
+  reference: string;
+  amountsAre: AmountsAre;
   xeroInvoiceId: string;
   status: InvoiceStatus;
   lastSyncTime: string;
+  lastSyncDirection: SyncDirection;
   synced: boolean;
   merchantEmail: string;
   correlationId: string;
