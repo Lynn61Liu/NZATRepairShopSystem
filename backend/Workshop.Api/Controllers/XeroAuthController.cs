@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Workshop.Api.Options;
+using Workshop.Api.Services;
 
 namespace Workshop.Api.Controllers;
 
@@ -19,15 +20,18 @@ public class XeroAuthController : ControllerBase
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IMemoryCache _cache;
     private readonly XeroOptions _options;
+    private readonly XeroTokenService _xeroTokenService;
 
     public XeroAuthController(
         IHttpClientFactory httpClientFactory,
         IMemoryCache cache,
-        IOptions<XeroOptions> options)
+        IOptions<XeroOptions> options,
+        XeroTokenService xeroTokenService)
     {
         _httpClientFactory = httpClientFactory;
         _cache = cache;
         _options = options.Value;
+        _xeroTokenService = xeroTokenService;
     }
 
     [HttpGet("connect")]
@@ -123,12 +127,17 @@ public class XeroAuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(_options.ClientId)) missing.Add("Xero:ClientId");
         if (string.IsNullOrWhiteSpace(_options.ClientSecret)) missing.Add("Xero:ClientSecret");
         if (string.IsNullOrWhiteSpace(_options.RedirectUri)) missing.Add("Xero:RedirectUri");
+        var apiMissing = new List<string>();
+        if (string.IsNullOrWhiteSpace(_options.RefreshToken)) apiMissing.Add("Xero:RefreshToken");
+        if (string.IsNullOrWhiteSpace(_options.TenantId)) apiMissing.Add("Xero:TenantId");
         var resolvedScopes = ResolveScopes(scopes);
 
         return Ok(new
         {
             configured = missing.Count == 0,
             missing,
+            apiReady = missing.Count == 0 && apiMissing.Count == 0,
+            apiMissing,
             suggestedLocalCallback = "http://localhost:5227/api/xero/callback",
             currentRedirectUri = _options.RedirectUri,
             scopes = SplitScopes(resolvedScopes),
@@ -156,6 +165,77 @@ public class XeroAuthController : ControllerBase
                     "Apps created on or after 2 March 2026 use granular scopes.",
                 },
             },
+        });
+    }
+
+    [HttpGet("invoices/test")]
+    public async Task<IActionResult> TestInvoices([FromQuery] int page = 1, CancellationToken ct = default)
+    {
+        var missing = new List<string>();
+        if (string.IsNullOrWhiteSpace(_options.ClientId)) missing.Add("Xero:ClientId");
+        if (string.IsNullOrWhiteSpace(_options.ClientSecret)) missing.Add("Xero:ClientSecret");
+        if (string.IsNullOrWhiteSpace(_options.RefreshToken)) missing.Add("Xero:RefreshToken");
+        if (string.IsNullOrWhiteSpace(_options.TenantId)) missing.Add("Xero:TenantId");
+
+        if (missing.Count > 0)
+        {
+            return BadRequest(new
+            {
+                error = "Missing Xero configuration for invoice test.",
+                missing,
+            });
+        }
+
+        var tokenResult = await _xeroTokenService.RefreshAccessTokenAsync(ct);
+        if (!tokenResult.Ok)
+        {
+            return StatusCode(tokenResult.StatusCode, new
+            {
+                error = tokenResult.Error,
+            });
+        }
+
+        var client = _httpClientFactory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"https://api.xero.com/api.xro/2.0/Invoices?page={page}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenResult.AccessToken);
+        request.Headers.Add("xero-tenant-id", _options.TenantId);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        using var response = await client.SendAsync(request, ct);
+        var payload = await response.Content.ReadAsStringAsync(ct);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return StatusCode((int)response.StatusCode, new
+            {
+                error = payload,
+                tenantId = _options.TenantId,
+                refreshTokenUpdated = !string.Equals(tokenResult.RefreshToken, _options.RefreshToken, StringComparison.Ordinal),
+                latestRefreshToken = tokenResult.RefreshToken,
+                nextAction = "Update Xero__RefreshToken in your environment if latestRefreshToken differs from the configured one.",
+            });
+        }
+
+        object invoicesPayload;
+        try
+        {
+            invoicesPayload = JsonSerializer.Deserialize<object>(payload, JsonOptions) ?? new { raw = payload };
+        }
+        catch (JsonException)
+        {
+            invoicesPayload = new { raw = payload };
+        }
+
+        return Ok(new
+        {
+            message = "Xero invoice API is reachable.",
+            tenantId = _options.TenantId,
+            scope = tokenResult.Scope,
+            accessTokenExpiresIn = tokenResult.ExpiresIn,
+            refreshTokenUpdated = !string.Equals(tokenResult.RefreshToken, _options.RefreshToken, StringComparison.Ordinal),
+            latestRefreshToken = tokenResult.RefreshToken,
+            nextAction = "Update Xero__RefreshToken in your environment if latestRefreshToken differs from the configured one.",
+            invoices = invoicesPayload,
         });
     }
 

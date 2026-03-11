@@ -83,6 +83,8 @@ builder.Services.AddScoped<WofRecordsService>();
 builder.Services.AddScoped<WofPrintService>();
 builder.Services.AddScoped<PartsServicesService>();
 builder.Services.AddScoped<XeroTokenService>();
+builder.Services.AddScoped<XeroInvoiceService>();
+builder.Services.AddScoped<JobXeroDraftInvoiceService>();
 
 // ========= Carjam Importer DI =========
 
