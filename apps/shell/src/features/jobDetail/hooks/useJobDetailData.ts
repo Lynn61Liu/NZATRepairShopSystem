@@ -605,7 +605,7 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
       status: "DRAFT",
       lineAmountTypes: "Exclusive",
       date: new Date().toISOString().slice(0, 10),
-      reference: `JOB-${jobId}`,
+      reference: `auto Create from JOB-${jobId}`,
       contact: {
         name: contactName,
       },

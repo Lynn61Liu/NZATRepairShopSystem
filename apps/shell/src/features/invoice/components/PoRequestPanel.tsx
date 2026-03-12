@@ -137,28 +137,7 @@ export function PoRequestPanel({
     <Card className="rounded-[18px] p-6">
       {/* <div className="text-[28px] font-semibold tracking-[-0.03em] text-slate-900">Request Purchase Order</div> */}
 
-      <div className="mt-6 grid gap-4 md:grid-cols-3">
-        <div>
-          <div className="mb-2 text-sm font-medium text-slate-700">Merchant Email</div>
-          <Select value={to} onChange={(event) => setTo(event.target.value)}>
-            {merchantEmails.map((email) => (
-              <option key={email} value={email}>
-                {email}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div>
-          <div className="mb-2 text-sm font-medium text-slate-700">Correlation ID</div>
-          <Input value={correlationId} readOnly />
-        </div>
-        <div>
-          <div className="mb-2 text-sm font-medium text-slate-700">Invoice Snapshot Total</div>
-          <Input value={`$${snapshotTotal.toFixed(2)}`} readOnly />
-        </div>
-      </div>
-
-      <div className="mt-5 flex flex-wrap items-center gap-2">
+      <div className="mt-6 flex flex-wrap items-center gap-2">
         {emailStates.map((state) => (
           <div key={state} className="flex items-center gap-2">
             <MailCheck className="h-4 w-4 text-slate-500" />
@@ -213,7 +192,14 @@ export function PoRequestPanel({
           {activeTab === "compose" ? (
             <div className="space-y-3 text-sm text-slate-600">
               <div>
-                <span className="font-semibold text-slate-900">To:</span> {to}
+                <div className="mb-1 font-semibold text-slate-900">To</div>
+                <Select value={to} onChange={(event) => setTo(event.target.value)}>
+                  {merchantEmails.map((email) => (
+                    <option key={email} value={email}>
+                      {email}
+                    </option>
+                  ))}
+                </Select>
               </div>
               <div>
                 <div className="mb-1 font-semibold text-slate-900">Subject</div>
