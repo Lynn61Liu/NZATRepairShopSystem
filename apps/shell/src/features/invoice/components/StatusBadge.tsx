@@ -15,8 +15,9 @@ const STYLES: Record<string, string> = {
   pdf: "bg-fuchsia-100 text-fuchsia-700 border border-fuchsia-200",
   ocr: "bg-orange-100 text-orange-700 border border-orange-200",
   "Email Sent": "bg-emerald-100 text-emerald-800 border border-emerald-200",
-  "Waiting for Reply": "bg-sky-100 text-sky-800 border border-sky-200",
+  "Get Reply": "bg-sky-100 text-sky-800 border border-sky-200",
   "Reminder Scheduled": "bg-amber-100 text-amber-800 border border-amber-200",
+  "Get PO": "bg-violet-100 text-violet-800 border border-violet-200",
 };
 
 export function StatusBadge({ value }: Props) {

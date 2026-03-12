@@ -114,12 +114,12 @@ export function InvoiceItemsTable({
 
   return (
     <div className="mt-8">
-      <div className="flex flex-col items-start gap-3">
+      {/* <div className="flex flex-col items-start gap-3">
         <div>
           <div className="text-xl font-semibold text-[var(--ds-text)]">Invoice Items</div>
           <div className="mt-1 text-sm text-[var(--ds-muted)]">Aligned to the Xero line item structure.</div>
         </div>
-      </div>
+      </div> */}
 
       {showUnsyncedNotice ? (
         <div className="mt-6 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">

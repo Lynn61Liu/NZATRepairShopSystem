@@ -1,5 +1,5 @@
-import { Check, X } from "lucide-react";
-import { Button, Card } from "@/components/ui";
+import { Check, Link2, X } from "lucide-react";
+import { Button, Card, Input } from "@/components/ui";
 import { StatusBadge } from "./StatusBadge";
 import type { PoDetection } from "../types";
 
@@ -9,6 +9,10 @@ type Props = {
   onSelect: (id: string) => void;
   onConfirm: (id: string) => void;
   onReject: (id: string) => void;
+  manualPoNumber: string;
+  currentInvoiceReference: string;
+  onManualPoNumberChange: (value: string) => void;
+  onSyncManualPoToReference: () => void;
   embedded?: boolean;
 };
 
@@ -18,6 +22,10 @@ export function PoDetectionPanel({
   onSelect,
   onConfirm,
   onReject,
+  manualPoNumber,
+  currentInvoiceReference,
+  onManualPoNumberChange,
+  onSyncManualPoToReference,
   embedded = false,
 }: Props) {
   const content = (
@@ -67,6 +75,28 @@ export function PoDetectionPanel({
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="mt-5 rounded-2xl border border-slate-200 p-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[220px] flex-1">
+            <div className="mb-2 text-sm font-medium text-slate-700">Received PO #</div>
+            <Input
+              value={manualPoNumber}
+              onChange={(event) => onManualPoNumberChange(event.target.value)}
+              placeholder="Input PO number"
+            />
+          </div>
+          <Button
+            variant="primary"
+            className="h-11 px-5"
+            leftIcon={<Link2 className="h-4 w-4" />}
+            onClick={onSyncManualPoToReference}
+          >
+            Sync to Invoice Ref
+          </Button>
+        </div>
+        <div className="mt-3 text-sm text-slate-500">Current invoice reference: {currentInvoiceReference}</div>
       </div>
 
     </>

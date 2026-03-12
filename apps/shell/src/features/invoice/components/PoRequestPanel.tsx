@@ -19,10 +19,14 @@ type Props = {
   timelineEvents: EmailTimelineEvent[];
   detections: PoDetection[];
   selectedDetectionId: string | null;
+  manualPoNumber: string;
+  currentInvoiceReference: string;
   onSendRequest: (payload: { to: string; subject: string; body: string }) => void;
   onSelectDetection: (id: string) => void;
   onConfirmDetection: (id: string) => void;
   onRejectDetection: (id: string) => void;
+  onManualPoNumberChange: (value: string) => void;
+  onSyncManualPoToReference: () => void;
 };
 
 export function PoRequestPanel({
@@ -39,10 +43,14 @@ export function PoRequestPanel({
   timelineEvents,
   detections,
   selectedDetectionId,
+  manualPoNumber,
+  currentInvoiceReference,
   onSendRequest,
   onSelectDetection,
   onConfirmDetection,
   onRejectDetection,
+  onManualPoNumberChange,
+  onSyncManualPoToReference,
 }: Props) {
   const vehicleLabel = useMemo(
     () => `${[vehicleRego, vehicleModel, vehicleMake].filter(Boolean).join(" ")} from NZAT`,
@@ -127,7 +135,7 @@ export function PoRequestPanel({
 
   return (
     <Card className="rounded-[18px] p-6">
-      <div className="text-[28px] font-semibold tracking-[-0.03em] text-slate-900">Request Purchase Order</div>
+      {/* <div className="text-[28px] font-semibold tracking-[-0.03em] text-slate-900">Request Purchase Order</div> */}
 
       <div className="mt-6 grid gap-4 md:grid-cols-3">
         <div>
@@ -329,6 +337,10 @@ export function PoRequestPanel({
               onSelect={onSelectDetection}
               onConfirm={onConfirmDetection}
               onReject={onRejectDetection}
+              manualPoNumber={manualPoNumber}
+              currentInvoiceReference={currentInvoiceReference}
+              onManualPoNumberChange={onManualPoNumberChange}
+              onSyncManualPoToReference={onSyncManualPoToReference}
             />
           ) : null}
         </div>

@@ -24,16 +24,7 @@ function SummaryField({ label, value, className = "" }: { label: string; value: 
   );
 }
 
-export function InvoiceSummaryCard({
-  invoice,
-  subtotal,
-  taxTotal,
-  totalAmount,
-  canSync,
-  onSync,
-  onOpenXero,
-  children,
-}: Props) {
+export function InvoiceSummaryCard({ invoice, canSync, onSync, onOpenXero, children }: Props) {
   return (
     <Card className="rounded-[18px] p-6">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--ds-border)] pb-5">
@@ -59,10 +50,6 @@ export function InvoiceSummaryCard({
         <SummaryField label="Due date" value={invoice.dueDate} />
         <SummaryField label="Invoice number" value={invoice.invoiceNumber} />
         <SummaryField label="Reference" value={invoice.reference} />
-        <SummaryField label="Amounts are" value={invoice.amountsAre} />
-        <SummaryField label="Subtotal" value={`$${subtotal.toFixed(2)}`} />
-        <SummaryField label="Tax total" value={`$${taxTotal.toFixed(2)}`} />
-        <SummaryField label="Invoice total" value={`$${totalAmount.toFixed(2)}`} className="text-[var(--ds-primary)]" />
         <SummaryField label="Last Sync Time" value={invoice.lastSyncTime} />
         <SummaryField label="Sync Direction" value={invoice.lastSyncDirection} className="text-[var(--ds-primary)]" />
       </div>

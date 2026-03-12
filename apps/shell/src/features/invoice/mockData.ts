@@ -39,7 +39,7 @@ export const initialInvoiceState: InvoiceDashboardState = {
   vehicleModel: "Corolla",
   vehicleMake: "Toyota",
   snapshotTotal: 3845.5,
-  emailStates: ["Email Sent", "Waiting for Reply", "Reminder Scheduled"],
+  emailStates: ["Draft"],
   remindersSent: 1,
   reminderLimit: 3,
   lastEmailSent: "2026-03-05 10:30 AM",

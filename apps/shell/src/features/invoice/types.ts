@@ -36,7 +36,7 @@ export type InvoiceItem = {
   taxRate: TaxRateOption;
 };
 
-export type EmailState = "Email Sent" | "Waiting for Reply" | "Reminder Scheduled";
+export type EmailState = "Draft" | "Email Sent" | "Get Reply" | "Reminder Scheduled" | "Get PO";
 
 export type EmailTimelineEventType =
   | "sent"

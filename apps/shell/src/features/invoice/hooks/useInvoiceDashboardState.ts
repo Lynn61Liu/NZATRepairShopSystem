@@ -7,7 +7,7 @@ import {
   initialItemCatalog,
   initialPoDetections,
 } from "../mockData";
-import type { InvoiceItem, TaxRateOption } from "../types";
+import type { EmailState, InvoiceItem, TaxRateOption } from "../types";
 
 const TAX_RATE_PERCENTAGE: Record<TaxRateOption, number> = {
   "15% GST on Expenses": 15,
@@ -45,6 +45,15 @@ function buildReference(currentReference: string, poNumber: string) {
   const slashIndex = currentReference.indexOf("/");
   if (slashIndex === -1) return trimmedPo;
   return `${trimmedPo} ${currentReference.slice(slashIndex)}`;
+}
+
+const EMAIL_STATE_ORDER: EmailState[] = ["Draft", "Email Sent", "Get Reply", "Reminder Scheduled", "Get PO"];
+
+function mergeEmailStates(current: EmailState[], add: EmailState[], remove: EmailState[] = []): EmailState[] {
+  const next = new Set(current);
+  remove.forEach((state) => next.delete(state));
+  add.forEach((state) => next.add(state));
+  return EMAIL_STATE_ORDER.filter((state) => next.has(state));
 }
 
 export function useInvoiceDashboardState() {
@@ -178,7 +187,7 @@ export function useInvoiceDashboardState() {
     setInvoice((prev) => ({
       ...prev,
       selectedMerchantEmail: to,
-      emailStates: ["Email Sent", "Waiting for Reply", "Reminder Scheduled"],
+      emailStates: mergeEmailStates(prev.emailStates, ["Email Sent"], ["Draft"]),
       currentWorkflowStep: Math.max(prev.currentWorkflowStep, 3),
       lastEmailSent: now,
       nextReminderIn: "23h 59m",
@@ -202,6 +211,7 @@ export function useInvoiceDashboardState() {
       remindersSent: Math.min(prev.reminderLimit, prev.remindersSent + 1),
       nextReminderIn: "47h 59m",
       lastEmailSent: now,
+      emailStates: mergeEmailStates(prev.emailStates, ["Reminder Scheduled"], ["Draft"]),
     }));
     setTimeline((prev) => [
       {
@@ -252,6 +262,10 @@ export function useInvoiceDashboardState() {
     if (!po) return;
     setDetections((prev) => prev.map((item) => (item.id === id ? { ...item, status: "confirmed" } : item)));
     setSelectedDetectionId(id);
+    setInvoice((prev) => ({
+      ...prev,
+      emailStates: mergeEmailStates(prev.emailStates, ["Get Reply", "Get PO"], ["Draft"]),
+    }));
     syncPoReference(po.poNumber, "PO Detection");
   };
 
