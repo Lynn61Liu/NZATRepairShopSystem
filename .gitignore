@@ -16,3 +16,4 @@ coverage
 .idea
 .vscode
 zic8STUb
+backend/Workshop.Api/appsettings.Development.json
