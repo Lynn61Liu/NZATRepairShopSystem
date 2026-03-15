@@ -19,19 +19,22 @@ public sealed class GmailThreadSyncService
     private readonly GmailTokenService _gmailTokenService;
     private readonly GmailSyncOptions _syncOptions;
     private readonly ILogger<GmailThreadSyncService> _logger;
+    private readonly JobPoStateService _jobPoStateService;
 
     public GmailThreadSyncService(
         AppDbContext db,
         IHttpClientFactory httpClientFactory,
         GmailTokenService gmailTokenService,
         IOptions<GmailSyncOptions> syncOptions,
-        ILogger<GmailThreadSyncService> logger)
+        ILogger<GmailThreadSyncService> logger,
+        JobPoStateService jobPoStateService)
     {
         _db = db;
         _httpClientFactory = httpClientFactory;
         _gmailTokenService = gmailTokenService;
         _syncOptions = syncOptions.Value;
         _logger = logger;
+        _jobPoStateService = jobPoStateService;
     }
 
     public async Task<GmailThreadDbSnapshot> GetThreadSnapshotAsync(
@@ -221,6 +224,8 @@ public sealed class GmailThreadSyncService
                 ct);
             synced++;
         }
+
+        await _jobPoStateService.SyncStateByCorrelationAsync(normalizedCorrelationId, ct);
 
         return GmailThreadSyncResult.Success(synced);
     }

@@ -43,6 +43,9 @@ public sealed class GmailBackgroundSyncService : BackgroundService
 
         try
         {
+            var poStateService = scope.ServiceProvider.GetRequiredService<JobPoStateService>();
+            await poStateService.EnsureStatesForNeedsPoJobsAsync(ct);
+
             var targets = await syncService.GetActiveSyncTargetsAsync(ct);
             if (targets.Count == 0)
                 return delay;

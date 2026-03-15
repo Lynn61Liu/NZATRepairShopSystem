@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Workshop.Api.Data;
 using Workshop.Api.Models;
+using Workshop.Api.Services;
 using Workshop.Api.Utils;
 
 namespace Workshop.Api.Controllers;
@@ -12,10 +13,12 @@ namespace Workshop.Api.Controllers;
 public class JobsController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly JobPoStateService _jobPoStateService;
 
-    public JobsController(AppDbContext db)
+    public JobsController(AppDbContext db, JobPoStateService jobPoStateService)
     {
         _db = db;
+        _jobPoStateService = jobPoStateService;
     }
 
     [HttpGet]
@@ -546,6 +549,7 @@ public class JobsController : ControllerBase
         job.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync(ct);
+        await _jobPoStateService.SyncStateForJobAsync(id, ct);
 
         return Ok(new
         {
@@ -580,6 +584,7 @@ public class JobsController : ControllerBase
         await _db.JobPaintServices.Where(x => x.JobId == id).ExecuteDeleteAsync(ct);
         await _db.JobTags.Where(x => x.JobId == id).ExecuteDeleteAsync(ct);
         await _db.JobWofRecords.Where(x => x.JobId == id).ExecuteDeleteAsync(ct);
+        await _db.JobPoStates.Where(x => x.JobId == id).ExecuteDeleteAsync(ct);
         await _db.GmailMessageLogs.Where(x => x.CorrelationId == correlationId).ExecuteDeleteAsync(ct);
 
         var existingInactive = await _db.InactiveGmailCorrelations

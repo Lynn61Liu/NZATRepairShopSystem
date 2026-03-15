@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Workshop.Api.Data;
 using Workshop.Api.DTOs;
 using Workshop.Api.Models;
+using Workshop.Api.Services;
 
 namespace Workshop.Api.Controllers;
 
@@ -11,10 +12,12 @@ namespace Workshop.Api.Controllers;
 public class NewJobController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly JobPoStateService _jobPoStateService;
 
-    public NewJobController(AppDbContext db)
+    public NewJobController(AppDbContext db, JobPoStateService jobPoStateService)
     {
         _db = db;
+        _jobPoStateService = jobPoStateService;
     }
 
     [HttpPost]
@@ -164,6 +167,9 @@ catch (Exception ex)
         }
 
         await tx.CommitAsync(ct);
+
+        if (job.NeedsPo)
+            await _jobPoStateService.SyncStateForJobAsync(job.Id, ct);
 
         return Ok(new
         {

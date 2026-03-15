@@ -12,6 +12,7 @@ public class AppDbContext : DbContext
     public DbSet<GmailMessageLog> GmailMessageLogs => Set<GmailMessageLog>();
     public DbSet<InactiveGmailCorrelation> InactiveGmailCorrelations => Set<InactiveGmailCorrelation>();
     public DbSet<Job> Jobs => Set<Job>();
+    public DbSet<JobPoState> JobPoStates => Set<JobPoState>();
     public DbSet<Tag> Tags => Set<Tag>();
     public DbSet<JobTag> JobTags => Set<JobTag>();
 
@@ -166,6 +167,34 @@ public class AppDbContext : DbContext
         j.Property(x => x.Notes).HasColumnName("notes");
         j.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         j.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+
+        var jp = modelBuilder.Entity<JobPoState>();
+        jp.ToTable("job_po_state");
+        jp.HasKey(x => x.Id);
+        jp.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        jp.Property(x => x.JobId).HasColumnName("job_id").IsRequired();
+        jp.Property(x => x.CorrelationId).HasColumnName("correlation_id").IsRequired();
+        jp.Property(x => x.CounterpartyEmail).HasColumnName("counterparty_email");
+        jp.Property(x => x.Status).HasColumnName("status").HasConversion<string>().IsRequired();
+        jp.Property(x => x.RequiresAdminAttention).HasColumnName("requires_admin_attention").HasDefaultValue(false);
+        jp.Property(x => x.AdminAttentionReason).HasColumnName("admin_attention_reason");
+        jp.Property(x => x.ConfirmedPoNumber).HasColumnName("confirmed_po_number");
+        jp.Property(x => x.DetectedPoNumber).HasColumnName("detected_po_number");
+        jp.Property(x => x.FirstRequestSentAt).HasColumnName("first_request_sent_at");
+        jp.Property(x => x.LastRequestSentAt).HasColumnName("last_request_sent_at");
+        jp.Property(x => x.LastFollowUpSentAt).HasColumnName("last_follow_up_sent_at");
+        jp.Property(x => x.LastSupplierReplyAt).HasColumnName("last_supplier_reply_at");
+        jp.Property(x => x.LastSupplierReplyMessageId).HasColumnName("last_supplier_reply_message_id");
+        jp.Property(x => x.FollowUpCount).HasColumnName("follow_up_count").HasDefaultValue(0);
+        jp.Property(x => x.FollowUpEnabled).HasColumnName("follow_up_enabled").HasDefaultValue(true);
+        jp.Property(x => x.NextFollowUpDueAt).HasColumnName("next_follow_up_due_at");
+        jp.Property(x => x.LastSyncedAt).HasColumnName("last_synced_at");
+        jp.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        jp.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        jp.HasIndex(x => x.JobId).IsUnique().HasDatabaseName("ux_job_po_state_job_id");
+        jp.HasIndex(x => x.Status).HasDatabaseName("ix_job_po_state_status");
+        jp.HasIndex(x => x.CorrelationId).HasDatabaseName("ix_job_po_state_correlation_id");
+        jp.HasIndex(x => x.NextFollowUpDueAt).HasDatabaseName("ix_job_po_state_next_follow_up_due_at");
 
         var s = modelBuilder.Entity<Staff>();
         s.ToTable("staff");

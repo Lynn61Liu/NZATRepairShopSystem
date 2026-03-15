@@ -90,7 +90,9 @@ builder.Services.AddScoped<XeroInvoiceService>();
 builder.Services.AddScoped<JobXeroDraftInvoiceService>();
 builder.Services.AddScoped<GmailTokenService>();
 builder.Services.AddScoped<GmailThreadSyncService>();
+builder.Services.AddScoped<JobPoStateService>();
 builder.Services.AddSingleton<AppleVisionImageOcrService>();
+builder.Services.AddHostedService<PoStateSchemaInitializerService>();
 builder.Services.AddHostedService<GmailBackgroundSyncService>();
 
 // ========= Carjam Importer DI =========

@@ -129,6 +129,15 @@ export function Sidebar() {
           >
             Invoice
           </NavLink>
+
+          <NavLink
+            to="/po-dashboard-preview"
+            className={({ isActive }) =>
+              `${linkBase} ${isActive ? linkActive : linkIdle}`
+            }
+          >
+            PO Ops Preview
+          </NavLink>
         </div>
 
         <div>

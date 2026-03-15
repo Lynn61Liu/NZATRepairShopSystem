@@ -31,6 +31,7 @@ public class GmailAuthController : ControllerBase
     private readonly GmailTokenService _gmailTokenService;
     private readonly GmailThreadSyncService _gmailThreadSyncService;
     private readonly AppleVisionImageOcrService _imageOcrService;
+    private readonly JobPoStateService _jobPoStateService;
 
     public GmailAuthController(
         IHttpClientFactory httpClientFactory,
@@ -40,7 +41,8 @@ public class GmailAuthController : ControllerBase
         IOptions<GmailOptions> options,
         GmailTokenService gmailTokenService,
         GmailThreadSyncService gmailThreadSyncService,
-        AppleVisionImageOcrService imageOcrService)
+        AppleVisionImageOcrService imageOcrService,
+        JobPoStateService jobPoStateService)
     {
         _httpClientFactory = httpClientFactory;
         _cache = cache;
@@ -50,6 +52,7 @@ public class GmailAuthController : ControllerBase
         _gmailTokenService = gmailTokenService;
         _gmailThreadSyncService = gmailThreadSyncService;
         _imageOcrService = imageOcrService;
+        _jobPoStateService = jobPoStateService;
     }
 
     [HttpGet("connect")]
@@ -245,6 +248,8 @@ public class GmailAuthController : ControllerBase
                 referencesHeader: sentReferencesHeader,
                 attachments: [],
                 ct: ct);
+
+            await _jobPoStateService.SyncStateByCorrelationAsync(req.CorrelationId?.Trim(), ct);
         }
 
         return Ok(new
