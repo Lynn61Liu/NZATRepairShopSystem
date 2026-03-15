@@ -473,12 +473,28 @@ export function useInvoiceDashboardState({
     setPoPanelInitialized(false);
     setPoPanelRefreshing(false);
     setMerchantRecipientsLoading(true);
-  }, [resolvedCorrelationId, savedPoNumber, savedInvoiceReference]);
+  }, [resolvedCorrelationId]);
 
   useEffect(() => {
     setSavedPoNumber(persistedPoNumber?.trim() || "");
     setSavedInvoiceReference(persistedInvoiceReference?.trim() || "");
   }, [persistedPoNumber, persistedInvoiceReference]);
+
+  useEffect(() => {
+    setInvoice((prev) => {
+      const nextReference = savedInvoiceReference || prev.reference;
+      const hasSavedSelection = Boolean(savedPoNumber || extractPoFromReference(nextReference));
+
+      return {
+        ...prev,
+        reference: nextReference,
+        status: hasSavedSelection ? "PO Received" : prev.status,
+        currentWorkflowStep: hasSavedSelection ? Math.max(prev.currentWorkflowStep, 7) : prev.currentWorkflowStep,
+        emailStates: hasSavedSelection ? mergeEmailStates(prev.emailStates, ["Get PO"], ["Draft"]) : prev.emailStates,
+      };
+    });
+    setManualPoNumber((prev) => savedPoNumber || prev || extractPoFromReference(savedInvoiceReference));
+  }, [savedPoNumber, savedInvoiceReference]);
 
   useEffect(() => {
     let cancelled = false;
