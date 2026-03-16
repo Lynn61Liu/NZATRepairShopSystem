@@ -27,7 +27,15 @@ public class PoStateController : ControllerBase
     [HttpGet("dashboard")]
     public async Task<IActionResult> GetDashboard(CancellationToken ct)
     {
-        var states = await _db.JobPoStates.AsNoTracking().ToListAsync(ct);
+        await _jobPoStateService.EnsureStatesForNeedsPoJobsAsync(ct);
+
+        var states = await (
+                from state in _db.JobPoStates.AsNoTracking()
+                join job in _db.Jobs.AsNoTracking() on state.JobId equals job.Id
+                where job.NeedsPo
+                select state
+            )
+            .ToListAsync(ct);
 
         return Ok(new
         {
@@ -50,10 +58,17 @@ public class PoStateController : ControllerBase
         [FromQuery] string? search,
         CancellationToken ct)
     {
+        await _jobPoStateService.EnsureStatesForNeedsPoJobsAsync(ct);
+
         var normalizedStatus = NormalizeStatusFilter(status);
         var normalizedSearch = search?.Trim().ToLowerInvariant();
 
-        var states = await _db.JobPoStates.AsNoTracking()
+        var states = await (
+                from state in _db.JobPoStates.AsNoTracking()
+                join job in _db.Jobs.AsNoTracking() on state.JobId equals job.Id
+                where job.NeedsPo
+                select state
+            )
             .OrderBy(x => x.JobId)
             .ToListAsync(ct);
 

@@ -38,9 +38,14 @@ public sealed class PoAutoFollowUpService
     {
         await _jobPoStateService.EnsureStatesForNeedsPoJobsAsync(ct);
 
-        var candidateStates = await _db.JobPoStates
-            .Where(x => x.FollowUpEnabled)
-            .Where(x => x.Status == JobPoStateStatus.AwaitingReply || x.Status == JobPoStateStatus.EscalationRequired)
+        var candidateStates = await (
+                from state in _db.JobPoStates
+                join job in _db.Jobs on state.JobId equals job.Id
+                where job.NeedsPo
+                where state.FollowUpEnabled
+                where state.Status == JobPoStateStatus.AwaitingReply || state.Status == JobPoStateStatus.EscalationRequired
+                select state
+            )
             .OrderBy(x => x.JobId)
             .ToListAsync(ct);
 
@@ -49,10 +54,15 @@ public sealed class PoAutoFollowUpService
             await _jobPoStateService.SyncStateForJobAsync(state.JobId, ct);
         }
 
-        var dueStates = await _db.JobPoStates
-            .Where(x => x.FollowUpEnabled)
-            .Where(x => x.Status == JobPoStateStatus.AwaitingReply)
-            .Where(x => x.NextFollowUpDueAt.HasValue && x.NextFollowUpDueAt.Value <= DateTime.UtcNow)
+        var dueStates = await (
+                from state in _db.JobPoStates
+                join job in _db.Jobs on state.JobId equals job.Id
+                where job.NeedsPo
+                where state.FollowUpEnabled
+                where state.Status == JobPoStateStatus.AwaitingReply
+                where state.NextFollowUpDueAt.HasValue && state.NextFollowUpDueAt.Value <= DateTime.UtcNow
+                select state
+            )
             .OrderBy(x => x.NextFollowUpDueAt)
             .ToListAsync(ct);
 

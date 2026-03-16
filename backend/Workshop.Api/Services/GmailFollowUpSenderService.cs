@@ -30,11 +30,33 @@ public sealed class GmailFollowUpSenderService
 
     public async Task<bool> SendFollowUpAsync(JobPoState state, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(state.CounterpartyEmail))
+        var correlationId = state.CorrelationId?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(correlationId))
+            return false;
+
+        var isInactive = await _db.InactiveGmailCorrelations.AsNoTracking()
+            .AnyAsync(x => x.CorrelationId == correlationId, ct);
+        if (isInactive)
+            return false;
+
+        var currentState = await _db.JobPoStates.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == state.Id, ct);
+        if (currentState is null || !currentState.FollowUpEnabled)
+            return false;
+
+        if (currentState.Status != JobPoStateStatus.AwaitingReply && currentState.Status != JobPoStateStatus.EscalationRequired)
+            return false;
+
+        var jobExists = await _db.Jobs.AsNoTracking()
+            .AnyAsync(x => x.Id == currentState.JobId && x.NeedsPo, ct);
+        if (!jobExists)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(currentState.CounterpartyEmail))
             return false;
 
         var threadLogs = await _db.GmailMessageLogs.AsNoTracking()
-            .Where(x => x.CorrelationId == state.CorrelationId)
+            .Where(x => x.CorrelationId == correlationId)
             .Select(x => new
             {
                 x.GmailThreadId,
@@ -53,7 +75,7 @@ public sealed class GmailFollowUpSenderService
             .FirstOrDefault();
 
         var rootSubjectCandidates = await _db.GmailMessageLogs.AsNoTracking()
-            .Where(x => x.CorrelationId == state.CorrelationId)
+            .Where(x => x.CorrelationId == correlationId)
             .Where(x => !string.IsNullOrWhiteSpace(x.Subject))
             .Select(x => new
             {
@@ -74,10 +96,24 @@ public sealed class GmailFollowUpSenderService
         if (!tokenResult.Ok)
             return false;
 
+        var stillActive = await _db.JobPoStates.AsNoTracking()
+            .AnyAsync(
+                x => x.Id == currentState.Id
+                    && x.FollowUpEnabled
+                    && (x.Status == JobPoStateStatus.AwaitingReply || x.Status == JobPoStateStatus.EscalationRequired),
+                ct);
+        if (!stillActive)
+            return false;
+
+        var stillNotInactive = !await _db.InactiveGmailCorrelations.AsNoTracking()
+            .AnyAsync(x => x.CorrelationId == correlationId, ct);
+        if (!stillNotInactive)
+            return false;
+
         var subject = EnsureReplySubject(rootSubject ?? threadContext?.Subject);
         var body = "Hi,\n\nFollowing up on our PO request. Could you please confirm the PO number for this job when available?\n\nThanks.";
         var rawMessage = BuildRawMessage(
-            state.CounterpartyEmail,
+            currentState.CounterpartyEmail!,
             subject,
             body,
             threadContext?.RfcMessageId,
@@ -104,15 +140,15 @@ public sealed class GmailFollowUpSenderService
             sentMessageId,
             sendResult?.ThreadId,
             sendResult?.InternalDate,
-            state.CounterpartyEmail,
+            currentState.CounterpartyEmail!,
             subject,
             body,
-            state.CorrelationId,
+            correlationId,
             sentDetails?.RfcMessageId,
             sentDetails?.ReferencesHeader,
             ct);
 
-        await _jobPoStateService.SyncStateForJobAsync(state.JobId, ct);
+        await _jobPoStateService.SyncStateForJobAsync(currentState.JobId, ct);
         return true;
     }
 

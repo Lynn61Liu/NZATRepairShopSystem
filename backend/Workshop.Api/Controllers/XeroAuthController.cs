@@ -21,17 +21,20 @@ public class XeroAuthController : ControllerBase
     private readonly IMemoryCache _cache;
     private readonly XeroOptions _options;
     private readonly XeroTokenService _xeroTokenService;
+    private readonly XeroTokenStore _xeroTokenStore;
 
     public XeroAuthController(
         IHttpClientFactory httpClientFactory,
         IMemoryCache cache,
         IOptions<XeroOptions> options,
-        XeroTokenService xeroTokenService)
+        XeroTokenService xeroTokenService,
+        XeroTokenStore xeroTokenStore)
     {
         _httpClientFactory = httpClientFactory;
         _cache = cache;
         _options = options.Value;
         _xeroTokenService = xeroTokenService;
+        _xeroTokenStore = xeroTokenStore;
     }
 
     [HttpGet("connect")]
@@ -99,11 +102,23 @@ public class XeroAuthController : ControllerBase
         }
 
         var hasOfflineAccess = SplitScopes(tokenResult.scope).Contains("offline_access", StringComparer.Ordinal);
+        var effectiveTenantId = connectionsResult.connections?.FirstOrDefault()?.TenantId;
+
+        if (hasOfflineAccess && !string.IsNullOrWhiteSpace(tokenResult.refreshToken))
+        {
+            await _xeroTokenStore.SaveAuthorizationAsync(
+                tokenResult.refreshToken,
+                tokenResult.accessToken,
+                tokenResult.expiresIn,
+                tokenResult.scope,
+                effectiveTenantId,
+                ct);
+        }
 
         return Ok(new
         {
             message = hasOfflineAccess
-                ? "Xero authorization completed. Save the refreshToken and target tenantId into backend configuration."
+                ? "Xero authorization completed. Refresh token and tenant id have been saved to the database."
                 : "Xero authorization completed. No refreshToken was requested because offline_access was not included.",
             refreshToken = tokenResult.refreshToken,
             accessTokenExpiresIn = tokenResult.expiresIn,
@@ -115,21 +130,22 @@ public class XeroAuthController : ControllerBase
                 Xero__ClientSecret = "<already configured>",
                 Xero__RedirectUri = _options.RedirectUri,
                 Xero__RefreshToken = hasOfflineAccess ? tokenResult.refreshToken : "<add offline_access before persisting a refresh token>",
-                Xero__TenantId = connectionsResult.connections?.FirstOrDefault()?.TenantId,
+                Xero__TenantId = effectiveTenantId,
             },
         });
     }
 
     [HttpGet("health")]
-    public IActionResult Health([FromQuery] string? scopes = null)
+    public async Task<IActionResult> Health([FromQuery] string? scopes = null, CancellationToken ct = default)
     {
+        var state = await _xeroTokenStore.GetEffectiveAsync(ct);
         var missing = new List<string>();
         if (string.IsNullOrWhiteSpace(_options.ClientId)) missing.Add("Xero:ClientId");
         if (string.IsNullOrWhiteSpace(_options.ClientSecret)) missing.Add("Xero:ClientSecret");
         if (string.IsNullOrWhiteSpace(_options.RedirectUri)) missing.Add("Xero:RedirectUri");
         var apiMissing = new List<string>();
-        if (string.IsNullOrWhiteSpace(_options.RefreshToken)) apiMissing.Add("Xero:RefreshToken");
-        if (string.IsNullOrWhiteSpace(_options.TenantId)) apiMissing.Add("Xero:TenantId");
+        if (string.IsNullOrWhiteSpace(state.RefreshToken)) apiMissing.Add("Xero:RefreshToken");
+        if (string.IsNullOrWhiteSpace(state.TenantId)) apiMissing.Add("Xero:TenantId");
         var resolvedScopes = ResolveScopes(scopes);
 
         return Ok(new
@@ -138,6 +154,8 @@ public class XeroAuthController : ControllerBase
             missing,
             apiReady = missing.Count == 0 && apiMissing.Count == 0,
             apiMissing,
+            tokenSource = state.FromDatabase ? "database" : "configuration",
+            tenantId = state.TenantId,
             suggestedLocalCallback = "http://localhost:5227/api/xero/callback",
             currentRedirectUri = _options.RedirectUri,
             scopes = SplitScopes(resolvedScopes),
@@ -171,11 +189,12 @@ public class XeroAuthController : ControllerBase
     [HttpGet("invoices/test")]
     public async Task<IActionResult> TestInvoices([FromQuery] int page = 1, CancellationToken ct = default)
     {
+        var state = await _xeroTokenStore.GetEffectiveAsync(ct);
         var missing = new List<string>();
         if (string.IsNullOrWhiteSpace(_options.ClientId)) missing.Add("Xero:ClientId");
         if (string.IsNullOrWhiteSpace(_options.ClientSecret)) missing.Add("Xero:ClientSecret");
-        if (string.IsNullOrWhiteSpace(_options.RefreshToken)) missing.Add("Xero:RefreshToken");
-        if (string.IsNullOrWhiteSpace(_options.TenantId)) missing.Add("Xero:TenantId");
+        if (string.IsNullOrWhiteSpace(state.RefreshToken)) missing.Add("Xero:RefreshToken");
+        if (string.IsNullOrWhiteSpace(state.TenantId)) missing.Add("Xero:TenantId");
 
         if (missing.Count > 0)
         {
@@ -198,7 +217,7 @@ public class XeroAuthController : ControllerBase
         var client = _httpClientFactory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Get, $"https://api.xero.com/api.xro/2.0/Invoices?page={page}");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenResult.AccessToken);
-        request.Headers.Add("xero-tenant-id", _options.TenantId);
+        request.Headers.Add("xero-tenant-id", state.TenantId);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
         using var response = await client.SendAsync(request, ct);
@@ -209,10 +228,10 @@ public class XeroAuthController : ControllerBase
             return StatusCode((int)response.StatusCode, new
             {
                 error = payload,
-                tenantId = _options.TenantId,
-                refreshTokenUpdated = !string.Equals(tokenResult.RefreshToken, _options.RefreshToken, StringComparison.Ordinal),
+                tenantId = state.TenantId,
+                refreshTokenUpdated = tokenResult.RefreshTokenUpdated,
                 latestRefreshToken = tokenResult.RefreshToken,
-                nextAction = "Update Xero__RefreshToken in your environment if latestRefreshToken differs from the configured one.",
+                nextAction = "Reconnect Xero only if refreshTokenUpdated is false and token refresh is failing.",
             });
         }
 
@@ -229,12 +248,12 @@ public class XeroAuthController : ControllerBase
         return Ok(new
         {
             message = "Xero invoice API is reachable.",
-            tenantId = _options.TenantId,
+            tenantId = state.TenantId,
             scope = tokenResult.Scope,
             accessTokenExpiresIn = tokenResult.ExpiresIn,
-            refreshTokenUpdated = !string.Equals(tokenResult.RefreshToken, _options.RefreshToken, StringComparison.Ordinal),
+            refreshTokenUpdated = tokenResult.RefreshTokenUpdated,
             latestRefreshToken = tokenResult.RefreshToken,
-            nextAction = "Update Xero__RefreshToken in your environment if latestRefreshToken differs from the configured one.",
+            tokenSource = state.FromDatabase ? "database" : "configuration",
             invoices = invoicesPayload,
         });
     }

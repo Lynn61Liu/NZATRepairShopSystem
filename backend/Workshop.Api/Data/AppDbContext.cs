@@ -13,6 +13,7 @@ public class AppDbContext : DbContext
     public DbSet<InactiveGmailCorrelation> InactiveGmailCorrelations => Set<InactiveGmailCorrelation>();
     public DbSet<Job> Jobs => Set<Job>();
     public DbSet<JobInvoice> JobInvoices => Set<JobInvoice>();
+    public DbSet<XeroTokenRecord> XeroTokenRecords => Set<XeroTokenRecord>();
     public DbSet<InventoryItem> InventoryItems => Set<InventoryItem>();
     public DbSet<JobPoState> JobPoStates => Set<JobPoState>();
     public DbSet<Tag> Tags => Set<Tag>();
@@ -190,6 +191,20 @@ public class AppDbContext : DbContext
         ji.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         ji.HasIndex(x => x.JobId).IsUnique().HasDatabaseName("ux_job_invoices_job_id");
         ji.HasOne<Job>().WithMany().HasForeignKey(x => x.JobId).OnDelete(DeleteBehavior.Cascade);
+
+        var xt = modelBuilder.Entity<XeroTokenRecord>();
+        xt.ToTable("xero_tokens");
+        xt.HasKey(x => x.Id);
+        xt.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        xt.Property(x => x.Provider).HasColumnName("provider").IsRequired();
+        xt.Property(x => x.RefreshToken).HasColumnName("refresh_token").IsRequired();
+        xt.Property(x => x.AccessToken).HasColumnName("access_token");
+        xt.Property(x => x.AccessTokenExpiresAt).HasColumnName("access_token_expires_at");
+        xt.Property(x => x.Scope).HasColumnName("scope");
+        xt.Property(x => x.TenantId).HasColumnName("tenant_id");
+        xt.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        xt.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        xt.HasIndex(x => x.Provider).IsUnique().HasDatabaseName("ux_xero_tokens_provider");
 
         var ii = modelBuilder.Entity<InventoryItem>();
         ii.ToTable("inventory_items");

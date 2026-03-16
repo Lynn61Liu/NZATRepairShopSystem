@@ -61,7 +61,10 @@ public sealed class JobPoStateService
     {
         var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == jobId, ct);
         if (job is null || !job.NeedsPo)
+        {
+            await _db.JobPoStates.Where(x => x.JobId == jobId).ExecuteDeleteAsync(ct);
             return;
+        }
 
         var correlationId = BuildCorrelationId(job.Id);
         var logs = await _db.GmailMessageLogs.AsNoTracking()

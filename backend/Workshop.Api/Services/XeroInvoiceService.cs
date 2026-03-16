@@ -2,9 +2,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Microsoft.Extensions.Options;
 using Workshop.Api.DTOs;
-using Workshop.Api.Options;
 
 namespace Workshop.Api.Services;
 
@@ -19,17 +17,20 @@ public sealed class XeroInvoiceService
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly XeroOptions _options;
+    private readonly XeroTokenConfiguration _configuration;
     private readonly XeroTokenService _xeroTokenService;
+    private readonly XeroTokenStore _xeroTokenStore;
 
     public XeroInvoiceService(
         IHttpClientFactory httpClientFactory,
-        IOptions<XeroOptions> options,
-        XeroTokenService xeroTokenService)
+        XeroTokenConfiguration configuration,
+        XeroTokenService xeroTokenService,
+        XeroTokenStore xeroTokenStore)
     {
         _httpClientFactory = httpClientFactory;
-        _options = options.Value;
+        _configuration = configuration;
         _xeroTokenService = xeroTokenService;
+        _xeroTokenStore = xeroTokenStore;
     }
 
     public async Task<XeroInvoiceCreateResult> CreateInvoiceAsync(
@@ -37,18 +38,19 @@ public sealed class XeroInvoiceService
         XeroInvoiceCreateOptions? options,
         CancellationToken ct)
     {
+        var state = await _xeroTokenStore.GetEffectiveAsync(ct);
         var missing = new List<string>();
-        if (string.IsNullOrWhiteSpace(_options.ClientId)) missing.Add("Xero:ClientId");
-        if (string.IsNullOrWhiteSpace(_options.ClientSecret)) missing.Add("Xero:ClientSecret");
-        if (string.IsNullOrWhiteSpace(_options.RefreshToken)) missing.Add("Xero:RefreshToken");
-        if (string.IsNullOrWhiteSpace(_options.TenantId)) missing.Add("Xero:TenantId");
+        if (string.IsNullOrWhiteSpace(_configuration.ClientId)) missing.Add("Xero:ClientId");
+        if (string.IsNullOrWhiteSpace(_configuration.ClientSecret)) missing.Add("Xero:ClientSecret");
+        if (string.IsNullOrWhiteSpace(state.RefreshToken)) missing.Add("Xero:RefreshToken");
+        if (string.IsNullOrWhiteSpace(state.TenantId)) missing.Add("Xero:TenantId");
         if (missing.Count > 0)
         {
             return XeroInvoiceCreateResult.Fail(
                 400,
                 "Missing Xero configuration for invoice create.",
                 new { missing },
-                _options.TenantId);
+                state.TenantId ?? "");
         }
 
         var tokenResult = await _xeroTokenService.RefreshAccessTokenAsync(ct);
@@ -58,7 +60,7 @@ public sealed class XeroInvoiceService
                 tokenResult.StatusCode,
                 tokenResult.Error ?? "Failed to refresh Xero access token.",
                 null,
-                _options.TenantId);
+                state.TenantId ?? "");
         }
 
         var requestUri = BuildRequestUri(options?.SummarizeErrors, options?.UnitDp);
@@ -67,7 +69,7 @@ public sealed class XeroInvoiceService
         var client = _httpClientFactory.CreateClient();
         using var httpRequest = new HttpRequestMessage(HttpMethod.Put, requestUri);
         httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenResult.AccessToken);
-        httpRequest.Headers.Add("xero-tenant-id", _options.TenantId);
+        httpRequest.Headers.Add("xero-tenant-id", state.TenantId);
         httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         if (!string.IsNullOrWhiteSpace(options?.IdempotencyKey))
             httpRequest.Headers.Add("Idempotency-Key", options.IdempotencyKey);
@@ -76,7 +78,6 @@ public sealed class XeroInvoiceService
         using var response = await client.SendAsync(httpRequest, ct);
         var responseBody = await response.Content.ReadAsStringAsync(ct);
         var parsedResponse = DeserializePayload(responseBody);
-        var refreshTokenUpdated = !string.Equals(tokenResult.RefreshToken, _options.RefreshToken, StringComparison.Ordinal);
 
         if (!response.IsSuccessStatusCode)
         {
@@ -84,18 +85,18 @@ public sealed class XeroInvoiceService
                 (int)response.StatusCode,
                 responseBody,
                 parsedResponse,
-                _options.TenantId,
+                state.TenantId ?? "",
                 tokenResult.RefreshToken,
-                refreshTokenUpdated,
+                tokenResult.RefreshTokenUpdated,
                 tokenResult.Scope,
                 tokenResult.ExpiresIn);
         }
 
         return XeroInvoiceCreateResult.Success(
             parsedResponse,
-            _options.TenantId,
+            state.TenantId ?? "",
             tokenResult.RefreshToken,
-            refreshTokenUpdated,
+            tokenResult.RefreshTokenUpdated,
             tokenResult.Scope,
             tokenResult.ExpiresIn);
     }
