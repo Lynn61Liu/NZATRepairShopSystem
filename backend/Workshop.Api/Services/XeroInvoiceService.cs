@@ -135,6 +135,7 @@ public sealed class XeroInvoiceService
             [
                 new XeroInvoice
                 {
+                    InvoiceID = request.InvoiceId,
                     Type = request.Type,
                     Status = request.Status,
                     LineAmountTypes = request.LineAmountTypes,
@@ -190,6 +191,9 @@ public sealed class XeroInvoiceService
 
     private sealed class XeroInvoice
     {
+        [JsonPropertyName("InvoiceID")]
+        public Guid? InvoiceID { get; set; }
+
         [JsonPropertyName("Type")]
         public string Type { get; set; } = "ACCREC";
 

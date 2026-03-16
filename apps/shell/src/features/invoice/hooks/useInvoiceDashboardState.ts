@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/ui";
 import { requestJson } from "@/utils/api";
-import { updateJobPoSelection } from "@/features/jobDetail/api/jobDetailApi";
+import { saveJobInvoiceDraft, syncJobXeroDraftInvoice, updateJobPoSelection } from "@/features/jobDetail/api/jobDetailApi";
 import type {
   EmailState,
   EmailTimelineEvent,
@@ -87,7 +87,7 @@ const initialInvoiceState: InvoiceDashboardState = {
   dueDate: "",
   invoiceNumber: "",
   reference: "",
-  amountsAre: "Tax Exclusive",
+  amountsAre: "Tax Inclusive",
   xeroInvoiceId: "",
   status: "Awaiting PO",
   lastSyncTime: "",
@@ -232,6 +232,8 @@ export function useInvoiceDashboardState({
   const [itemCatalogFeedback, setItemCatalogFeedback] = useState<string | null>(null);
   const [itemCatalogLastUpdated, setItemCatalogLastUpdated] = useState<string | null>(null);
   const [itemsDirty, setItemsDirty] = useState(!persistedInvoice);
+  const [draftDirty, setDraftDirty] = useState(false);
+  const [draftSaving, setDraftSaving] = useState(false);
   const [pendingFocusRowId, setPendingFocusRowId] = useState<string | null>(null);
   const [manualPoNumber, setManualPoNumber] = useState("");
   const [poPanelLoading, setPoPanelLoading] = useState(true);
@@ -244,6 +246,48 @@ export function useInvoiceDashboardState({
   const subtotal = useMemo(() => items.reduce((sum, item) => sum + getBaseAmount(item), 0), [items]);
   const taxTotal = useMemo(() => items.reduce((sum, item) => sum + getTaxAmount(item), 0), [items]);
   const totalAmount = useMemo(() => subtotal + taxTotal, [subtotal, taxTotal]);
+
+  const buildDraftPayload = () => ({
+    lineAmountTypes: "Inclusive",
+    date: invoice.issueDate || new Date().toISOString().slice(0, 10),
+    reference: invoice.reference,
+    contactName: invoice.contact,
+    lineItems: items.map((item) => ({
+      description: item.description,
+      quantity: item.quantity,
+      unitAmount: item.unitPrice,
+      itemCode: item.itemCode || undefined,
+      accountCode: item.account || undefined,
+      taxType: item.taxRate,
+      discountRate: item.discount > 0 ? item.discount : undefined,
+    })),
+  });
+
+  const persistDraftToDb = async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!jobId) return true;
+
+    setDraftSaving(true);
+    try {
+      const res = await saveJobInvoiceDraft(jobId, buildDraftPayload());
+      if (!res.ok) {
+        if (!silent) toast.error(res.error || "Failed to save invoice draft");
+        return false;
+      }
+
+      const savedInvoice = res.data?.invoice;
+      setInvoice((prev) => ({
+        ...prev,
+        reference: savedInvoice?.reference || prev.reference,
+        issueDate: savedInvoice?.invoiceDate || prev.issueDate,
+        invoiceNumber: savedInvoice?.externalInvoiceNumber || prev.invoiceNumber,
+        xeroInvoiceId: savedInvoice?.externalInvoiceId || prev.xeroInvoiceId,
+      }));
+      setDraftDirty(false);
+      return true;
+    } finally {
+      setDraftSaving(false);
+    }
+  };
 
   const updateItem = (id: string, field: keyof InvoiceItem, value: string) => {
     setItems((prev) =>
@@ -273,6 +317,7 @@ export function useInvoiceDashboardState({
     );
     setInvoice((prev) => ({ ...prev, synced: false }));
     setItemsDirty(true);
+    setDraftDirty(true);
   };
 
   const addItem = () => {
@@ -282,6 +327,7 @@ export function useInvoiceDashboardState({
     setPendingFocusRowId(newId);
     setInvoice((prev) => ({ ...prev, synced: false }));
     setItemsDirty(true);
+    setDraftDirty(true);
     toast.info("Added a new invoice item row");
   };
 
@@ -289,32 +335,67 @@ export function useInvoiceDashboardState({
     setItems((prev) => prev.filter((item) => item.id !== id));
     setInvoice((prev) => ({ ...prev, synced: false }));
     setItemsDirty(true);
+    setDraftDirty(true);
     toast.info("Invoice item removed");
   };
 
   const syncInvoice = () => {
-    if (!itemsDirty) return;
-    const now = new Date().toLocaleString("zh-CN", { hour12: false }).replace(/\//g, "-");
-    setInvoice((prev) => ({
-      ...prev,
-      snapshotTotal: totalAmount,
-      synced: true,
-      status: prev.status === "Draft" ? "Awaiting PO" : prev.status,
-      lastSyncTime: now,
-      lastSyncDirection: "System -> Xero",
-      currentWorkflowStep: Math.max(prev.currentWorkflowStep, 2),
-    }));
-    setItemsDirty(false);
-    setTimeline((prev) => [
-      {
-        id: `evt-sync-${Date.now()}`,
-        type: "updated",
-        timestamp: now,
-        description: "Invoice synced to Xero successfully",
-      },
-      ...prev,
-    ]);
-    toast.success("Invoice synced with Xero");
+    if (!itemsDirty || !jobId) return;
+
+    const payload = {
+      ...buildDraftPayload(),
+      status: "DRAFT",
+    };
+
+    void syncJobXeroDraftInvoice(jobId, payload).then((res) => {
+      if (!res.ok) {
+        toast.error(res.error || "Failed to sync invoice with Xero");
+        return;
+      }
+
+      const syncedInvoice = res.data?.invoice;
+      const now = new Date().toLocaleString("zh-CN", { hour12: false }).replace(/\//g, "-");
+
+      setInvoice((prev) => ({
+        ...prev,
+        reference: syncedInvoice?.reference || prev.reference,
+        issueDate: syncedInvoice?.invoiceDate || prev.issueDate,
+        invoiceNumber: syncedInvoice?.externalInvoiceNumber || prev.invoiceNumber,
+        xeroInvoiceId: syncedInvoice?.externalInvoiceId || prev.xeroInvoiceId,
+        snapshotTotal: totalAmount,
+        synced: true,
+        status: mapExternalStatus(syncedInvoice?.externalStatus) || prev.status,
+        lastSyncTime: syncedInvoice?.updatedAt || now,
+        lastSyncDirection: "System -> Xero",
+        currentWorkflowStep: Math.max(prev.currentWorkflowStep, 2),
+      }));
+
+      if (typeof syncedInvoice?.requestPayloadJson === "string") {
+        const nextItems = parsePersistedItems({
+          id: syncedInvoice.id || "synced",
+          jobId: syncedInvoice.jobId || jobId,
+          provider: syncedInvoice.provider || "xero",
+          requestPayloadJson: syncedInvoice.requestPayloadJson,
+        });
+        if (nextItems.length > 0) {
+          setItems(nextItems);
+          setNextItemId(nextItems.length + 1);
+        }
+      }
+
+      setItemsDirty(false);
+      setDraftDirty(false);
+      setTimeline((prev) => [
+        {
+          id: `evt-sync-${Date.now()}`,
+          type: "updated",
+          timestamp: now,
+          description: "Invoice synced to Xero successfully",
+        },
+        ...prev,
+      ]);
+      toast.success("Invoice synced with Xero");
+    });
   };
 
   const openInXero = () => {
@@ -418,6 +499,11 @@ export function useInvoiceDashboardState({
   }, []);
 
   const sendPoRequest = async ({ to, subject, body }: { to: string; subject: string; body: string }) => {
+    const draftSaved = await persistDraftToDb();
+    if (!draftSaved) {
+      throw new Error("Failed to save invoice draft before sending PO request");
+    }
+
     const latestThreadEvent = timeline.find((event) => ["sent", "reminder", "reply"].includes(event.type));
     const result = await requestJson<{
       id: string;
@@ -604,6 +690,7 @@ export function useInvoiceDashboardState({
     setItems(persistedItems);
     setNextItemId(persistedItems.length + 1);
     setItemsDirty(!persistedInvoice);
+    setDraftDirty(false);
     setTimeline([]);
     setDetections([]);
     setSelectedDetectionId(null);
@@ -613,6 +700,27 @@ export function useInvoiceDashboardState({
     setPoPanelRefreshing(false);
     setMerchantRecipientsLoading(true);
   }, [persistedInvoice, resolvedCorrelationId, savedInvoiceReference, savedPoNumber]);
+
+  useEffect(() => {
+    if (!draftDirty || !jobId) return;
+
+    const timer = window.setTimeout(() => {
+      void persistDraftToDb({ silent: true });
+    }, 800);
+
+    return () => window.clearTimeout(timer);
+  }, [draftDirty, jobId, items, invoice.contact, invoice.issueDate, invoice.reference]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!draftDirty && !draftSaving) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [draftDirty, draftSaving]);
 
   useEffect(() => {
     setSavedPoNumber(persistedPoNumber?.trim() || "");

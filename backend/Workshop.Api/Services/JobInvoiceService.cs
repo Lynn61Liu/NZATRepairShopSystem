@@ -103,6 +103,153 @@ public sealed class JobInvoiceService
             expiresIn: createResult.ExpiresIn);
     }
 
+    public async Task<JobInvoiceCreateResult> SyncDraftForJobAsync(long jobId, SyncJobInvoiceDraftRequest payload, CancellationToken ct)
+    {
+        var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (jobInvoice is null)
+            return JobInvoiceCreateResult.Fail(404, "Job invoice not found.");
+
+        if (string.IsNullOrWhiteSpace(jobInvoice.ExternalInvoiceId) || !Guid.TryParse(jobInvoice.ExternalInvoiceId, out var invoiceId))
+            return JobInvoiceCreateResult.Fail(400, "Missing Xero invoice id for sync.");
+
+        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == jobId, ct);
+        if (job is null)
+            return JobInvoiceCreateResult.Fail(404, "Job not found.");
+
+        if (payload.LineItems.Count == 0)
+            return JobInvoiceCreateResult.Fail(400, "At least one invoice line item is required.");
+
+        var request = new CreateXeroInvoiceRequest
+        {
+            InvoiceId = invoiceId,
+            Type = "ACCREC",
+            Status = string.IsNullOrWhiteSpace(payload.Status) ? (jobInvoice.ExternalStatus ?? "DRAFT") : payload.Status.Trim(),
+            LineAmountTypes = string.IsNullOrWhiteSpace(payload.LineAmountTypes) ? "Inclusive" : payload.LineAmountTypes.Trim(),
+            Date = payload.Date ?? jobInvoice.InvoiceDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
+            Reference = string.IsNullOrWhiteSpace(payload.Reference) ? jobInvoice.Reference : payload.Reference.Trim(),
+            Contact = new XeroInvoiceContactInput
+            {
+                Name = string.IsNullOrWhiteSpace(payload.ContactName) ? jobInvoice.ContactName : payload.ContactName.Trim(),
+            },
+            LineItems = payload.LineItems
+                .Where(item => !string.IsNullOrWhiteSpace(item.Description))
+                .Select(item => new XeroInvoiceLineItemInput
+                {
+                    Description = item.Description.Trim(),
+                    Quantity = item.Quantity,
+                    UnitAmount = item.UnitAmount,
+                    LineAmount = item.LineAmount,
+                    ItemCode = item.ItemCode?.Trim(),
+                    AccountCode = item.AccountCode?.Trim(),
+                    TaxType = item.TaxType?.Trim(),
+                    TaxAmount = item.TaxAmount,
+                    DiscountRate = item.DiscountRate,
+                    DiscountAmount = item.DiscountAmount,
+                })
+                .ToList(),
+        };
+
+        if (request.LineItems.Count == 0)
+            return JobInvoiceCreateResult.Fail(400, "At least one invoice line item is required.");
+
+        var syncResult = await _xeroInvoiceService.CreateInvoiceAsync(
+            request,
+            new XeroInvoiceCreateOptions
+            {
+                SummarizeErrors = true,
+            },
+            ct);
+
+        if (!syncResult.Ok)
+        {
+            return JobInvoiceCreateResult.Fail(
+                syncResult.StatusCode,
+                syncResult.Error ?? "Failed to sync Xero draft invoice.",
+                syncResult.Payload,
+                request,
+                syncResult.RefreshToken,
+                syncResult.RefreshTokenUpdated,
+                syncResult.Scope,
+                syncResult.ExpiresIn);
+        }
+
+        ApplyInvoiceUpdate(jobInvoice, request, syncResult.Payload, syncResult.TenantId);
+        job.InvoiceReference = request.Reference;
+        job.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return JobInvoiceCreateResult.Success(
+            jobInvoice,
+            alreadyExists: false,
+            payload: syncResult.Payload,
+            requestBody: request,
+            refreshToken: syncResult.RefreshToken,
+            refreshTokenUpdated: syncResult.RefreshTokenUpdated,
+            scope: syncResult.Scope,
+            expiresIn: syncResult.ExpiresIn);
+    }
+
+    public async Task<JobInvoiceCreateResult> SaveDraftToDbAsync(long jobId, SaveJobInvoiceDraftRequest payload, CancellationToken ct)
+    {
+        var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (jobInvoice is null)
+            return JobInvoiceCreateResult.Fail(404, "Job invoice not found.");
+
+        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == jobId, ct);
+        if (job is null)
+            return JobInvoiceCreateResult.Fail(404, "Job not found.");
+
+        if (payload.LineItems.Count == 0)
+            return JobInvoiceCreateResult.Fail(400, "At least one invoice line item is required.");
+
+        var request = new CreateXeroInvoiceRequest
+        {
+            InvoiceId = Guid.TryParse(jobInvoice.ExternalInvoiceId, out var invoiceId) ? invoiceId : null,
+            Type = "ACCREC",
+            Status = jobInvoice.ExternalStatus ?? "DRAFT",
+            LineAmountTypes = string.IsNullOrWhiteSpace(payload.LineAmountTypes) ? "Inclusive" : payload.LineAmountTypes.Trim(),
+            Date = payload.Date ?? jobInvoice.InvoiceDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
+            Reference = string.IsNullOrWhiteSpace(payload.Reference) ? jobInvoice.Reference : payload.Reference.Trim(),
+            Contact = new XeroInvoiceContactInput
+            {
+                Name = string.IsNullOrWhiteSpace(payload.ContactName) ? jobInvoice.ContactName : payload.ContactName.Trim(),
+            },
+            LineItems = payload.LineItems
+                .Where(item => !string.IsNullOrWhiteSpace(item.Description))
+                .Select(item => new XeroInvoiceLineItemInput
+                {
+                    Description = item.Description.Trim(),
+                    Quantity = item.Quantity,
+                    UnitAmount = item.UnitAmount,
+                    LineAmount = item.LineAmount,
+                    ItemCode = item.ItemCode?.Trim(),
+                    AccountCode = item.AccountCode?.Trim(),
+                    TaxType = item.TaxType?.Trim(),
+                    TaxAmount = item.TaxAmount,
+                    DiscountRate = item.DiscountRate,
+                    DiscountAmount = item.DiscountAmount,
+                })
+                .ToList(),
+        };
+
+        if (request.LineItems.Count == 0)
+            return JobInvoiceCreateResult.Fail(400, "At least one invoice line item is required.");
+
+        jobInvoice.Reference = request.Reference;
+        jobInvoice.ContactName = request.Contact.Name;
+        jobInvoice.InvoiceDate = request.Date;
+        jobInvoice.LineAmountTypes = request.LineAmountTypes;
+        jobInvoice.RequestPayloadJson = JsonSerializer.Serialize(request, JsonOptions);
+        jobInvoice.UpdatedAt = DateTime.UtcNow;
+
+        job.InvoiceReference = request.Reference;
+        job.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+
+        return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true, requestBody: request);
+    }
+
     private static CreateXeroInvoiceRequest BuildCreateRequest(
         Job job,
         Customer customer,
@@ -223,26 +370,32 @@ public sealed class JobInvoiceService
 
     private static JobInvoice BuildJobInvoice(long jobId, CreateXeroInvoiceRequest request, object? payload, string? tenantId)
     {
-        var extracted = ExtractInvoiceSummary(payload);
         var now = DateTime.UtcNow;
-
-        return new JobInvoice
+        var jobInvoice = new JobInvoice
         {
             JobId = jobId,
             Provider = "xero",
-            ExternalInvoiceId = extracted.InvoiceId,
-            ExternalInvoiceNumber = extracted.InvoiceNumber,
-            ExternalStatus = extracted.Status ?? request.Status,
-            Reference = extracted.Reference ?? request.Reference,
-            ContactName = extracted.ContactName ?? request.Contact.Name,
-            InvoiceDate = extracted.Date ?? request.Date,
-            LineAmountTypes = request.LineAmountTypes,
-            TenantId = tenantId,
-            RequestPayloadJson = JsonSerializer.Serialize(request, JsonOptions),
-            ResponsePayloadJson = payload is null ? null : JsonSerializer.Serialize(payload, JsonOptions),
             CreatedAt = now,
             UpdatedAt = now,
         };
+        ApplyInvoiceUpdate(jobInvoice, request, payload, tenantId);
+        return jobInvoice;
+    }
+
+    private static void ApplyInvoiceUpdate(JobInvoice jobInvoice, CreateXeroInvoiceRequest request, object? payload, string? tenantId)
+    {
+        var extracted = ExtractInvoiceSummary(payload);
+        jobInvoice.ExternalInvoiceId = extracted.InvoiceId ?? request.InvoiceId?.ToString();
+        jobInvoice.ExternalInvoiceNumber = extracted.InvoiceNumber;
+        jobInvoice.ExternalStatus = extracted.Status ?? request.Status;
+        jobInvoice.Reference = extracted.Reference ?? request.Reference;
+        jobInvoice.ContactName = extracted.ContactName ?? request.Contact.Name;
+        jobInvoice.InvoiceDate = extracted.Date ?? request.Date;
+        jobInvoice.LineAmountTypes = request.LineAmountTypes;
+        jobInvoice.TenantId = tenantId;
+        jobInvoice.RequestPayloadJson = JsonSerializer.Serialize(request, JsonOptions);
+        jobInvoice.ResponsePayloadJson = payload is null ? null : JsonSerializer.Serialize(payload, JsonOptions);
+        jobInvoice.UpdatedAt = DateTime.UtcNow;
     }
 
     private static ExtractedInvoiceSummary ExtractInvoiceSummary(object? payload)

@@ -4,6 +4,7 @@ namespace Workshop.Api.DTOs;
 
 public sealed class CreateXeroInvoiceRequest
 {
+    public Guid? InvoiceId { get; set; }
     public string Type { get; set; } = "ACCREC";
     public string Status { get; set; } = "DRAFT";
     public string LineAmountTypes { get; set; } = "Exclusive";

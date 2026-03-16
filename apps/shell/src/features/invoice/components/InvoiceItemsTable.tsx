@@ -41,10 +41,6 @@ const TAX_RATE_PERCENTAGE: Record<TaxRateOption, number> = {
   "Zero Rated - Exp": 0,
 };
 
-function getBaseAmount(item: InvoiceItem) {
-  return getLineAmount(item) - getTaxAmount(item);
-}
-
 function getTaxAmount(item: InvoiceItem) {
   const rate = TAX_RATE_PERCENTAGE[item.taxRate];
   if (rate <= 0) return 0;
