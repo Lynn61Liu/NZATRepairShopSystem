@@ -85,6 +85,12 @@ export function saveJobInvoiceDraft(jobId: string, payload: unknown) {
   });
 }
 
+export function pullJobXeroDraftInvoice(jobId: string) {
+  return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}/xero-draft-invoice/pull`, {
+    method: "POST",
+  });
+}
+
 export function createXeroInvoice(payload: unknown) {
   return requestJson<any>("/api/xero/invoices?summarizeErrors=true", {
     method: "POST",

@@ -70,7 +70,9 @@ export function InvoiceDashboardContent({
           totalAmount={model.totalAmount}
           canSync={model.itemsDirty}
           onSync={model.syncInvoice}
+          onRefreshFromXero={model.refreshFromXero}
           onOpenXero={model.openInXero}
+          isRefreshingFromXero={model.refreshingFromXero}
           hasInvoice={hasInvoice}
           onCreateInvoice={onCreateInvoice}
           isCreatingInvoice={isCreatingInvoice}

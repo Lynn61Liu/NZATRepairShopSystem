@@ -26,6 +26,7 @@ builder.Services.Configure<GmailSyncOptions>(builder.Configuration.GetSection(Gm
 builder.Services.Configure<ImageOcrOptions>(builder.Configuration.GetSection(ImageOcrOptions.SectionName));
 builder.Services.Configure<InventoryItemOptions>(builder.Configuration.GetSection(InventoryItemOptions.SectionName));
 builder.Services.Configure<PoFollowUpOptions>(builder.Configuration.GetSection(PoFollowUpOptions.SectionName));
+builder.Services.Configure<XeroWebhookOptions>(builder.Configuration.GetSection(XeroWebhookOptions.SectionName));
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -103,6 +104,7 @@ builder.Services.AddSingleton<AppleVisionImageOcrService>();
 builder.Services.AddHostedService<PoStateSchemaInitializerService>();
 builder.Services.AddHostedService<GmailBackgroundSyncService>();
 builder.Services.AddHostedService<PoAutoFollowUpBackgroundService>();
+builder.Services.AddHostedService<XeroInvoicePollingBackgroundService>();
 
 // ========= Carjam Importer DI =========
 

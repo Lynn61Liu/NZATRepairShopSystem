@@ -11,7 +11,9 @@ type Props = {
   totalAmount: number;
   canSync: boolean;
   onSync: () => void;
+  onRefreshFromXero?: () => void;
   onOpenXero: () => void;
+  isRefreshingFromXero?: boolean;
   hasInvoice?: boolean;
   onCreateInvoice?: () => Promise<{ success: boolean; message?: string }>;
   isCreatingInvoice?: boolean;
@@ -31,7 +33,9 @@ export function InvoiceSummaryCard({
   invoice,
   canSync,
   onSync,
+  onRefreshFromXero,
   onOpenXero,
+  isRefreshingFromXero = false,
   hasInvoice = true,
   onCreateInvoice,
   isCreatingInvoice = false,
@@ -48,13 +52,24 @@ export function InvoiceSummaryCard({
           </div>
         </div>
         {hasInvoice ? (
-          <Button
-            leftIcon={<ExternalLink className="h-4 w-4" />}
-            className="h-11 border-[var(--ds-primary)] bg-white px-5 text-[var(--ds-primary)] hover:bg-red-50"
-            onClick={onOpenXero}
-          >
-            Open in Xero
-          </Button>
+          <div className="flex flex-wrap gap-3">
+            <Button
+              variant="ghost"
+              leftIcon={<RefreshCcw className={["h-4 w-4", isRefreshingFromXero ? "animate-spin" : ""].join(" ")} />}
+              className="h-11 px-5"
+              onClick={onRefreshFromXero}
+              disabled={!onRefreshFromXero || isRefreshingFromXero}
+            >
+              {isRefreshingFromXero ? "Refreshing..." : "Refresh From Xero"}
+            </Button>
+            <Button
+              leftIcon={<ExternalLink className="h-4 w-4" />}
+              className="h-11 border-[var(--ds-primary)] bg-white px-5 text-[var(--ds-primary)] hover:bg-red-50"
+              onClick={onOpenXero}
+            >
+              Open in Xero
+            </Button>
+          </div>
         ) : (
           <Button
             leftIcon={<Plus className="h-4 w-4" />}

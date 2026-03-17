@@ -252,6 +252,46 @@ public sealed class JobInvoiceService
         return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true, requestBody: request);
     }
 
+    public async Task<JobInvoiceCreateResult> SyncFromXeroAsync(long jobId, CancellationToken ct)
+    {
+        var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (jobInvoice is null)
+            return JobInvoiceCreateResult.Fail(404, "Job invoice not found.");
+
+        if (string.IsNullOrWhiteSpace(jobInvoice.ExternalInvoiceId) || !Guid.TryParse(jobInvoice.ExternalInvoiceId, out var invoiceId))
+            return JobInvoiceCreateResult.Fail(400, "Missing Xero invoice id.");
+
+        return await SyncFromXeroInvoiceIdAsync(invoiceId, ct);
+    }
+
+    public async Task<JobInvoiceCreateResult> SyncFromXeroInvoiceIdAsync(Guid invoiceId, CancellationToken ct)
+    {
+        var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.ExternalInvoiceId == invoiceId.ToString(), ct);
+        if (jobInvoice is null)
+            return JobInvoiceCreateResult.Fail(404, "Linked job invoice not found.");
+
+        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == jobInvoice.JobId, ct);
+        if (job is null)
+            return JobInvoiceCreateResult.Fail(404, "Job not found.");
+
+        var xeroResult = await _xeroInvoiceService.GetInvoiceByIdAsync(invoiceId, ct);
+        if (!xeroResult.Ok)
+        {
+            return JobInvoiceCreateResult.Fail(
+                xeroResult.StatusCode,
+                xeroResult.Error ?? "Failed to fetch invoice from Xero.",
+                xeroResult.Payload);
+        }
+
+        var request = BuildRequestFromPayload(xeroResult.Payload, jobInvoice);
+        ApplyInvoiceUpdate(jobInvoice, request, xeroResult.Payload, xeroResult.TenantId);
+        job.InvoiceReference = jobInvoice.Reference;
+        job.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true, payload: xeroResult.Payload, requestBody: request);
+    }
+
     private async Task<CreateXeroInvoiceRequest> BuildCreateRequestAsync(
         Job job,
         Customer customer,
@@ -281,10 +321,30 @@ public sealed class JobInvoiceService
         if (brakeServiceItem is not null)
             lineItems.Add(brakeServiceItem);
 
+        var batteryServiceItem = await BuildBatteryServiceLineItemAsync(mechServices, ct);
+        if (batteryServiceItem is not null)
+            lineItems.Add(batteryServiceItem);
+
+        var tireServiceItem = await BuildTireServiceLineItemAsync(mechServices, ct);
+        if (tireServiceItem is not null)
+            lineItems.Add(tireServiceItem);
+
+        var filterServiceItem = await BuildFilterServiceLineItemAsync(vehicle, mechServices, ct);
+        if (filterServiceItem is not null)
+            lineItems.Add(filterServiceItem);
+
+        var otherServiceItem = await BuildOtherMechServiceLineItemAsync(mechServices, ct);
+        if (otherServiceItem is not null)
+            lineItems.Add(otherServiceItem);
+
         lineItems.AddRange(mechServices
             .Where(x => !string.IsNullOrWhiteSpace(x.Description) &&
                         !IsOilServiceDescription(x.Description) &&
-                        !IsBrakeServiceDescription(x.Description))
+                        !IsBrakeServiceDescription(x.Description) &&
+                        !IsBatteryServiceDescription(x.Description) &&
+                        !IsTireServiceDescription(x.Description) &&
+                        !IsFilterServiceDescription(x.Description) &&
+                        !IsOtherMechServiceDescription(x.Description))
             .Select(x => new XeroInvoiceLineItemInput
             {
                 Description = x.Description.Trim(),
@@ -440,6 +500,77 @@ public sealed class JobInvoiceService
         };
     }
 
+    private async Task<XeroInvoiceLineItemInput?> BuildBatteryServiceLineItemAsync(
+        IReadOnlyList<JobMechService> mechServices,
+        CancellationToken ct)
+    {
+        if (!mechServices.Any(x => !string.IsNullOrWhiteSpace(x.Description) && IsBatteryServiceDescription(x.Description)))
+            return null;
+
+        const string itemCode = "BATTERY CHANGE / WARNING LIGHT";
+        var inventoryItem = await _db.InventoryItems.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.ItemCode == itemCode, ct);
+
+        if (inventoryItem is not null)
+        {
+            return new XeroInvoiceLineItemInput
+            {
+                ItemCode = inventoryItem.ItemCode,
+                Description = string.IsNullOrWhiteSpace(inventoryItem.SalesDescription)
+                    ? inventoryItem.ItemName
+                    : inventoryItem.SalesDescription,
+                Quantity = 1m,
+                UnitAmount = inventoryItem.SalesUnitPrice ?? inventoryItem.PurchasesUnitPrice ?? 0m,
+                AccountCode = inventoryItem.SalesAccount ?? inventoryItem.PurchasesAccount,
+                TaxType = NormalizeXeroTaxType(inventoryItem.SalesTaxRate ?? inventoryItem.PurchasesTaxRate),
+            };
+        }
+
+        return new XeroInvoiceLineItemInput
+        {
+            ItemCode = itemCode,
+            Description = "WARNING LIGHTS ON/ BATTERY REPLACEMENT",
+            Quantity = 1m,
+        };
+    }
+
+    private async Task<XeroInvoiceLineItemInput?> BuildTireServiceLineItemAsync(
+        IReadOnlyList<JobMechService> mechServices,
+        CancellationToken ct)
+    {
+        if (!mechServices.Any(x => !string.IsNullOrWhiteSpace(x.Description) && IsTireServiceDescription(x.Description)))
+            return null;
+
+        const string itemCode = "Swap Wheel";
+        return await BuildInventoryBackedLineItemAsync(itemCode, "Swap all four wheels from another car", ct);
+    }
+
+    private async Task<XeroInvoiceLineItemInput?> BuildFilterServiceLineItemAsync(
+        Vehicle vehicle,
+        IReadOnlyList<JobMechService> mechServices,
+        CancellationToken ct)
+    {
+        if (!mechServices.Any(x => !string.IsNullOrWhiteSpace(x.Description) && IsFilterServiceDescription(x.Description)))
+            return null;
+
+        var itemCode = ResolveFilterItemCode(vehicle);
+        if (string.IsNullOrWhiteSpace(itemCode))
+            return null;
+
+        return await BuildInventoryBackedLineItemAsync(itemCode, "Air filter replacement", ct);
+    }
+
+    private async Task<XeroInvoiceLineItemInput?> BuildOtherMechServiceLineItemAsync(
+        IReadOnlyList<JobMechService> mechServices,
+        CancellationToken ct)
+    {
+        if (!mechServices.Any(x => !string.IsNullOrWhiteSpace(x.Description) && IsOtherMechServiceDescription(x.Description)))
+            return null;
+
+        const string itemCode = "999";
+        return await BuildInventoryBackedLineItemAsync(itemCode, "Labour:", ct);
+    }
+
     private async Task<XeroInvoiceLineItemInput?> BuildWofLineItemAsync(bool hasWofRecord, Customer customer, CancellationToken ct)
     {
         if (!hasWofRecord)
@@ -496,6 +627,37 @@ public sealed class JobInvoiceService
         };
     }
 
+    private async Task<XeroInvoiceLineItemInput?> BuildInventoryBackedLineItemAsync(
+        string itemCode,
+        string fallbackDescription,
+        CancellationToken ct)
+    {
+        var inventoryItem = await _db.InventoryItems.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.ItemCode == itemCode, ct);
+
+        if (inventoryItem is not null)
+        {
+            return new XeroInvoiceLineItemInput
+            {
+                ItemCode = inventoryItem.ItemCode,
+                Description = string.IsNullOrWhiteSpace(inventoryItem.SalesDescription)
+                    ? inventoryItem.ItemName
+                    : inventoryItem.SalesDescription,
+                Quantity = 1m,
+                UnitAmount = inventoryItem.SalesUnitPrice ?? inventoryItem.PurchasesUnitPrice ?? 0m,
+                AccountCode = inventoryItem.SalesAccount ?? inventoryItem.PurchasesAccount,
+                TaxType = NormalizeXeroTaxType(inventoryItem.SalesTaxRate ?? inventoryItem.PurchasesTaxRate),
+            };
+        }
+
+        return new XeroInvoiceLineItemInput
+        {
+            ItemCode = itemCode,
+            Description = fallbackDescription,
+            Quantity = 1m,
+        };
+    }
+
     private static bool IsOilServiceDescription(string description)
     {
         var normalized = description.Trim();
@@ -519,6 +681,50 @@ public sealed class JobInvoiceService
                normalized.Contains("brake", StringComparison.OrdinalIgnoreCase) ||
                normalized.Contains("brake pad", StringComparison.OrdinalIgnoreCase) ||
                normalized.Contains("pads", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsBatteryServiceDescription(string description)
+    {
+        var normalized = description.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return false;
+
+        return normalized.Contains("电池", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("battery", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("warning light", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("warning lights", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsTireServiceDescription(string description)
+    {
+        var normalized = description.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return false;
+
+        return normalized.Contains("补胎", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("tire", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("tyre", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("wheel", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsFilterServiceDescription(string description)
+    {
+        var normalized = description.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return false;
+
+        return normalized.Contains("滤芯", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("filter", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsOtherMechServiceDescription(string description)
+    {
+        var normalized = description.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return false;
+
+        return normalized.Contains("其他机修", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(normalized, "other", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? NormalizeXeroTaxType(string? value)
@@ -600,6 +806,21 @@ public sealed class JobInvoiceService
         };
     }
 
+    private static string? ResolveFilterItemCode(Vehicle vehicle)
+    {
+        var model = (vehicle.Model ?? "").Trim();
+        if (model.Contains("xtrail", StringComparison.OrdinalIgnoreCase) ||
+            model.Contains("x-trail", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Xtrail-fasst-services";
+        }
+
+        if (model.Contains("note", StringComparison.OrdinalIgnoreCase))
+            return "A1913";
+
+        return null;
+    }
+
     private static string ResolveWofItemCode(Customer customer)
     {
         if (string.Equals(customer.Type, "Personal", StringComparison.OrdinalIgnoreCase))
@@ -659,6 +880,120 @@ public sealed class JobInvoiceService
         };
         ApplyInvoiceUpdate(jobInvoice, request, payload, tenantId);
         return jobInvoice;
+    }
+
+    private static CreateXeroInvoiceRequest BuildRequestFromPayload(object? payload, JobInvoice existing)
+    {
+        var fallback = new CreateXeroInvoiceRequest
+        {
+            InvoiceId = Guid.TryParse(existing.ExternalInvoiceId, out var existingId) ? existingId : null,
+            Status = existing.ExternalStatus ?? "DRAFT",
+            Reference = existing.Reference,
+            Date = existing.InvoiceDate,
+            LineAmountTypes = existing.LineAmountTypes,
+            Contact = new XeroInvoiceContactInput
+            {
+                Name = existing.ContactName,
+            },
+        };
+
+        if (payload is null)
+            return fallback;
+
+        try
+        {
+            using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload, JsonOptions));
+            if (!document.RootElement.TryGetProperty("Invoices", out var invoices) || invoices.ValueKind != JsonValueKind.Array)
+                return fallback;
+
+            var invoice = invoices.EnumerateArray().FirstOrDefault();
+            if (invoice.ValueKind == JsonValueKind.Undefined)
+                return fallback;
+
+            var request = new CreateXeroInvoiceRequest
+            {
+                InvoiceId = invoice.TryGetProperty("InvoiceID", out var invoiceIdProp) &&
+                            invoiceIdProp.ValueKind == JsonValueKind.String &&
+                            Guid.TryParse(invoiceIdProp.GetString(), out var parsedInvoiceId)
+                    ? parsedInvoiceId
+                    : fallback.InvoiceId,
+                Type = invoice.TryGetProperty("Type", out var typeProp) && typeProp.ValueKind == JsonValueKind.String
+                    ? typeProp.GetString() ?? "ACCREC"
+                    : "ACCREC",
+                Status = invoice.TryGetProperty("Status", out var statusProp) && statusProp.ValueKind == JsonValueKind.String
+                    ? statusProp.GetString() ?? fallback.Status
+                    : fallback.Status,
+                LineAmountTypes = invoice.TryGetProperty("LineAmountTypes", out var lineAmountProp) && lineAmountProp.ValueKind == JsonValueKind.String
+                    ? lineAmountProp.GetString() ?? fallback.LineAmountTypes
+                    : fallback.LineAmountTypes,
+                Date = invoice.TryGetProperty("DateString", out var dateStringProp) &&
+                       dateStringProp.ValueKind == JsonValueKind.String &&
+                       DateOnly.TryParse(dateStringProp.GetString(), out var parsedDate)
+                    ? parsedDate
+                    : fallback.Date,
+                Reference = invoice.TryGetProperty("Reference", out var referenceProp) && referenceProp.ValueKind == JsonValueKind.String
+                    ? referenceProp.GetString() ?? fallback.Reference
+                    : fallback.Reference,
+                InvoiceNumber = invoice.TryGetProperty("InvoiceNumber", out var invoiceNumberProp) && invoiceNumberProp.ValueKind == JsonValueKind.String
+                    ? invoiceNumberProp.GetString()
+                    : null,
+                Contact = new XeroInvoiceContactInput
+                {
+                    Name = invoice.TryGetProperty("Contact", out var contactProp) &&
+                           contactProp.ValueKind == JsonValueKind.Object &&
+                           contactProp.TryGetProperty("Name", out var contactNameProp) &&
+                           contactNameProp.ValueKind == JsonValueKind.String
+                        ? contactNameProp.GetString() ?? fallback.Contact.Name
+                        : fallback.Contact.Name,
+                },
+            };
+
+            if (invoice.TryGetProperty("LineItems", out var lineItemsProp) && lineItemsProp.ValueKind == JsonValueKind.Array)
+            {
+                request.LineItems = lineItemsProp.EnumerateArray()
+                    .Select(item => new XeroInvoiceLineItemInput
+                    {
+                        Description = item.TryGetProperty("Description", out var descriptionProp) && descriptionProp.ValueKind == JsonValueKind.String
+                            ? descriptionProp.GetString() ?? ""
+                            : "",
+                        Quantity = item.TryGetProperty("Quantity", out var quantityProp) && quantityProp.TryGetDecimal(out var quantity)
+                            ? quantity
+                            : 1m,
+                        UnitAmount = item.TryGetProperty("UnitAmount", out var unitAmountProp) && unitAmountProp.TryGetDecimal(out var unitAmount)
+                            ? unitAmount
+                            : null,
+                        LineAmount = item.TryGetProperty("LineAmount", out var lineAmountItemProp) && lineAmountItemProp.TryGetDecimal(out var lineAmount)
+                            ? lineAmount
+                            : null,
+                        ItemCode = item.TryGetProperty("ItemCode", out var itemCodeProp) && itemCodeProp.ValueKind == JsonValueKind.String
+                            ? itemCodeProp.GetString()
+                            : null,
+                        AccountCode = item.TryGetProperty("AccountCode", out var accountCodeProp) && accountCodeProp.ValueKind == JsonValueKind.String
+                            ? accountCodeProp.GetString()
+                            : null,
+                        TaxType = item.TryGetProperty("TaxType", out var taxTypeProp) && taxTypeProp.ValueKind == JsonValueKind.String
+                            ? taxTypeProp.GetString()
+                            : null,
+                        TaxAmount = item.TryGetProperty("TaxAmount", out var taxAmountProp) && taxAmountProp.TryGetDecimal(out var taxAmount)
+                            ? taxAmount
+                            : null,
+                        DiscountRate = item.TryGetProperty("DiscountRate", out var discountRateProp) && discountRateProp.TryGetDecimal(out var discountRate)
+                            ? discountRate
+                            : null,
+                        DiscountAmount = item.TryGetProperty("DiscountAmount", out var discountAmountProp) && discountAmountProp.TryGetDecimal(out var discountAmount)
+                            ? discountAmount
+                            : null,
+                    })
+                    .Where(x => !string.IsNullOrWhiteSpace(x.Description) || !string.IsNullOrWhiteSpace(x.ItemCode))
+                    .ToList();
+            }
+
+            return request;
+        }
+        catch (JsonException)
+        {
+            return fallback;
+        }
     }
 
     private static void ApplyInvoiceUpdate(JobInvoice jobInvoice, CreateXeroInvoiceRequest request, object? payload, string? tenantId)

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/ui";
 import { requestJson } from "@/utils/api";
-import { saveJobInvoiceDraft, syncJobXeroDraftInvoice, updateJobPoSelection } from "@/features/jobDetail/api/jobDetailApi";
+import { pullJobXeroDraftInvoice, saveJobInvoiceDraft, syncJobXeroDraftInvoice, updateJobPoSelection } from "@/features/jobDetail/api/jobDetailApi";
 import type {
   EmailState,
   EmailTimelineEvent,
@@ -139,7 +139,7 @@ function mapExternalStatus(status?: string | null): InvoiceDashboardState["statu
   const normalized = status?.trim().toUpperCase();
   switch (normalized) {
     case "AUTHORISED":
-      return "Authorised";
+      return "Awaiting Payment";
     case "PAID":
       return "Awaiting Payment";
     case "DRAFT":
@@ -234,6 +234,7 @@ export function useInvoiceDashboardState({
   const [itemsDirty, setItemsDirty] = useState(!persistedInvoice);
   const [draftDirty, setDraftDirty] = useState(false);
   const [draftSaving, setDraftSaving] = useState(false);
+  const [refreshingFromXero, setRefreshingFromXero] = useState(false);
   const [pendingFocusRowId, setPendingFocusRowId] = useState<string | null>(null);
   const [manualPoNumber, setManualPoNumber] = useState("");
   const [poPanelLoading, setPoPanelLoading] = useState(true);
@@ -341,6 +342,10 @@ export function useInvoiceDashboardState({
 
   const syncInvoice = () => {
     if (!itemsDirty || !jobId) return;
+    if (invoice.status !== "Draft") {
+      toast.error("This Xero invoice is no longer Draft. Line item changes cannot be synced from the system.");
+      return;
+    }
 
     const payload = {
       ...buildDraftPayload(),
@@ -358,6 +363,7 @@ export function useInvoiceDashboardState({
 
       setInvoice((prev) => ({
         ...prev,
+        contact: syncedInvoice?.contactName || prev.contact,
         reference: syncedInvoice?.reference || prev.reference,
         issueDate: syncedInvoice?.invoiceDate || prev.issueDate,
         invoiceNumber: syncedInvoice?.externalInvoiceNumber || prev.invoiceNumber,
@@ -396,6 +402,53 @@ export function useInvoiceDashboardState({
       ]);
       toast.success("Invoice synced with Xero");
     });
+  };
+
+  const refreshFromXero = async () => {
+    if (!jobId) return;
+
+    setRefreshingFromXero(true);
+    try {
+      const res = await pullJobXeroDraftInvoice(jobId);
+      if (!res.ok) {
+        toast.error(res.error || "Failed to refresh invoice from Xero");
+        return;
+      }
+
+      const pulledInvoice = res.data?.invoice;
+      const now = new Date().toLocaleString("zh-CN", { hour12: false }).replace(/\//g, "-");
+      setInvoice((prev) => ({
+        ...prev,
+        contact: pulledInvoice?.contactName || prev.contact,
+        reference: pulledInvoice?.reference || prev.reference,
+        issueDate: pulledInvoice?.invoiceDate || prev.issueDate,
+        invoiceNumber: pulledInvoice?.externalInvoiceNumber || prev.invoiceNumber,
+        xeroInvoiceId: pulledInvoice?.externalInvoiceId || prev.xeroInvoiceId,
+        status: mapExternalStatus(pulledInvoice?.externalStatus) || prev.status,
+        synced: true,
+        lastSyncTime: pulledInvoice?.updatedAt || now,
+        lastSyncDirection: "Xero -> System",
+      }));
+
+      if (typeof pulledInvoice?.requestPayloadJson === "string") {
+        const nextItems = parsePersistedItems({
+          id: pulledInvoice.id || "pulled",
+          jobId: pulledInvoice.jobId || jobId,
+          provider: pulledInvoice.provider || "xero",
+          requestPayloadJson: pulledInvoice.requestPayloadJson,
+        });
+        if (nextItems.length > 0) {
+          setItems(nextItems);
+          setNextItemId(nextItems.length + 1);
+          setItemsDirty(false);
+          setDraftDirty(false);
+        }
+      }
+
+      toast.success("Invoice refreshed from Xero");
+    } finally {
+      setRefreshingFromXero(false);
+    }
   };
 
   const openInXero = () => {
@@ -614,12 +667,35 @@ export function useInvoiceDashboardState({
     if (!persisted) {
       return false;
     }
+
+    let syncedInvoice: any = null;
+    let xeroSyncFailed = false;
+    if (jobId && (invoice.xeroInvoiceId || persistedInvoice?.externalInvoiceId)) {
+      const syncRes = await syncJobXeroDraftInvoice(jobId, {
+        ...buildDraftPayload(),
+        reference: nextReference,
+        status: "DRAFT",
+      });
+
+      if (!syncRes.ok) {
+        xeroSyncFailed = true;
+        toast.error(syncRes.error || "Failed to update invoice reference in Xero");
+      } else {
+        syncedInvoice = syncRes.data?.invoice;
+      }
+    }
+
     setInvoice((prev) => ({
       ...prev,
-      reference: nextReference,
+      contact: syncedInvoice?.contactName || prev.contact,
+      reference: syncedInvoice?.reference || nextReference,
+      issueDate: syncedInvoice?.invoiceDate || prev.issueDate,
+      invoiceNumber: syncedInvoice?.externalInvoiceNumber || prev.invoiceNumber,
+      xeroInvoiceId: syncedInvoice?.externalInvoiceId || prev.xeroInvoiceId,
       status: "PO Received",
       currentWorkflowStep: Math.max(prev.currentWorkflowStep, 7),
-      lastSyncTime: now,
+      synced: !xeroSyncFailed && Boolean(syncedInvoice || prev.xeroInvoiceId),
+      lastSyncTime: syncedInvoice?.updatedAt || now,
       lastSyncDirection: "System -> Xero",
     }));
     setManualPoNumber(persistedPo);
@@ -628,11 +704,15 @@ export function useInvoiceDashboardState({
         id: `evt-ref-${Date.now()}`,
         type: "updated",
         timestamp: now,
-        description: `${persistedPo} synced to invoice reference from ${sourceLabel}`,
+        description: xeroSyncFailed
+          ? `${persistedPo} saved from ${sourceLabel}, but Xero reference update failed`
+          : `${persistedPo} synced to invoice reference in Xero from ${sourceLabel}`,
       },
       ...prev,
     ]);
-    toast.success("Invoice reference updated");
+    if (!xeroSyncFailed) {
+      toast.success("Invoice reference updated in Xero");
+    }
     return true;
   };
 
@@ -670,7 +750,7 @@ export function useInvoiceDashboardState({
     setInvoice((prev) => ({
       ...prev,
       correlationId: resolvedCorrelationId,
-      reference: persistedInvoice?.reference?.trim() || savedInvoiceReference,
+      reference: persistedInvoice?.reference?.trim() || prev.reference,
       issueDate: persistedInvoice?.invoiceDate || "",
       invoiceNumber: persistedInvoice?.externalInvoiceNumber || "",
       xeroInvoiceId: persistedInvoice?.externalInvoiceId || "",
@@ -694,12 +774,12 @@ export function useInvoiceDashboardState({
     setTimeline([]);
     setDetections([]);
     setSelectedDetectionId(null);
-    setManualPoNumber(savedPoNumber || (!persistedInvoice ? getLegacyPoFromReference(savedInvoiceReference) : ""));
+    setManualPoNumber((persistedPoNumber?.trim() || "") || (!persistedInvoice ? getLegacyPoFromReference(persistedInvoiceReference?.trim() || "") : ""));
     setPoPanelLoading(true);
     setPoPanelInitialized(false);
     setPoPanelRefreshing(false);
     setMerchantRecipientsLoading(true);
-  }, [persistedInvoice, resolvedCorrelationId, savedInvoiceReference, savedPoNumber]);
+  }, [persistedInvoice, persistedInvoiceReference, persistedPoNumber, resolvedCorrelationId]);
 
   useEffect(() => {
     if (!draftDirty || !jobId) return;
@@ -1006,6 +1086,7 @@ export function useInvoiceDashboardState({
     itemCatalogFeedback,
     itemCatalogLastUpdated,
     itemsDirty,
+    refreshingFromXero,
     pendingFocusRowId,
     poPanelLoading,
     poPanelRefreshing,
@@ -1021,6 +1102,7 @@ export function useInvoiceDashboardState({
     addItem,
     deleteItem,
     syncInvoice,
+    refreshFromXero,
     openInXero,
     refreshItemCatalog,
     sendPoRequest,

@@ -100,6 +100,43 @@ public class JobXeroInvoicesController : ControllerBase
         });
     }
 
+    [HttpPost("pull")]
+    public async Task<IActionResult> PullFromXero(long id, CancellationToken ct)
+    {
+        var result = await _jobInvoiceService.SyncFromXeroAsync(id, ct);
+        if (!result.Ok)
+        {
+            return StatusCode(result.StatusCode, new
+            {
+                error = result.Error,
+                xero = result.Payload,
+            });
+        }
+
+        return Ok(new
+        {
+            invoice = result.Invoice is null ? null : new
+            {
+                id = result.Invoice.Id.ToString(),
+                jobId = result.Invoice.JobId.ToString(),
+                provider = result.Invoice.Provider,
+                externalInvoiceId = result.Invoice.ExternalInvoiceId,
+                externalInvoiceNumber = result.Invoice.ExternalInvoiceNumber,
+                externalStatus = result.Invoice.ExternalStatus,
+                reference = result.Invoice.Reference,
+                contactName = result.Invoice.ContactName,
+                invoiceDate = result.Invoice.InvoiceDate,
+                lineAmountTypes = result.Invoice.LineAmountTypes,
+                tenantId = result.Invoice.TenantId,
+                requestPayloadJson = result.Invoice.RequestPayloadJson,
+                responsePayloadJson = result.Invoice.ResponsePayloadJson,
+                createdAt = result.Invoice.CreatedAt,
+                updatedAt = result.Invoice.UpdatedAt,
+            },
+            xero = result.Payload,
+        });
+    }
+
     [HttpPut("/api/jobs/{id:long}/invoice-draft")]
     public async Task<IActionResult> SaveDraft(long id, [FromBody] SaveJobInvoiceDraftRequest request, CancellationToken ct)
     {
