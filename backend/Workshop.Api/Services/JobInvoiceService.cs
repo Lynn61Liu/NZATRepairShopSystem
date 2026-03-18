@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Workshop.Api.Data;
 using Workshop.Api.DTOs;
 using Workshop.Api.Models;
+using Workshop.Api.Options;
 
 namespace Workshop.Api.Services;
 
@@ -12,11 +13,19 @@ public sealed class JobInvoiceService
 
     private readonly AppDbContext _db;
     private readonly XeroInvoiceService _xeroInvoiceService;
+    private readonly XeroPaymentService _xeroPaymentService;
+    private readonly XeroPaymentOptions _xeroPaymentOptions;
 
-    public JobInvoiceService(AppDbContext db, XeroInvoiceService xeroInvoiceService)
+    public JobInvoiceService(
+        AppDbContext db,
+        XeroInvoiceService xeroInvoiceService,
+        XeroPaymentService xeroPaymentService,
+        Microsoft.Extensions.Options.IOptions<XeroPaymentOptions> xeroPaymentOptions)
     {
         _db = db;
         _xeroInvoiceService = xeroInvoiceService;
+        _xeroPaymentService = xeroPaymentService;
+        _xeroPaymentOptions = xeroPaymentOptions.Value;
     }
 
     public async Task<JobInvoiceCreateResult> CreateDraftForJobAsync(long jobId, CancellationToken ct)
@@ -290,6 +299,226 @@ public sealed class JobInvoiceService
         await _db.SaveChangesAsync(ct);
 
         return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true, payload: xeroResult.Payload, requestBody: request);
+    }
+
+    public async Task<JobInvoiceStateUpdateResult> UpdateXeroStateAsync(long jobId, UpdateJobInvoiceXeroStateRequest payload, CancellationToken ct)
+    {
+        var synced = await SyncFromXeroAsync(jobId, ct);
+        if (!synced.Ok || synced.Invoice is null)
+            return JobInvoiceStateUpdateResult.Fail(synced.StatusCode, synced.Error ?? "Failed to sync invoice from Xero.", synced.Payload);
+
+        var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (jobInvoice is null)
+            return JobInvoiceStateUpdateResult.Fail(404, "Job invoice not found.");
+
+        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == jobId, ct);
+        if (job is null)
+            return JobInvoiceStateUpdateResult.Fail(404, "Job not found.");
+
+        var state = (payload.State ?? "").Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(state))
+            return JobInvoiceStateUpdateResult.Fail(400, "State is required.");
+
+        if (string.IsNullOrWhiteSpace(jobInvoice.ExternalInvoiceId) || !Guid.TryParse(jobInvoice.ExternalInvoiceId, out var invoiceId))
+            return JobInvoiceStateUpdateResult.Fail(400, "Missing Xero invoice id.");
+
+        if (state == "DRAFT")
+        {
+            if (!string.Equals(jobInvoice.ExternalStatus, "DRAFT", StringComparison.OrdinalIgnoreCase))
+                return JobInvoiceStateUpdateResult.Fail(400, "Xero does not allow reverting this invoice back to Draft from the system.");
+
+            return await BuildStateUpdateResultAsync(jobInvoice, ct);
+        }
+
+        if (state == "AUTHORISED")
+        {
+            if (string.Equals(jobInvoice.ExternalStatus, "PAID", StringComparison.OrdinalIgnoreCase))
+                return JobInvoiceStateUpdateResult.Fail(400, "This Xero invoice is already Paid.");
+
+            if (!string.Equals(jobInvoice.ExternalStatus, "AUTHORISED", StringComparison.OrdinalIgnoreCase))
+            {
+                var authoriseResult = await SyncInvoiceStatusAsync(jobInvoice, "AUTHORISED", ct);
+                if (!authoriseResult.Ok)
+                    return JobInvoiceStateUpdateResult.Fail(authoriseResult.StatusCode, authoriseResult.Error ?? "Failed to update invoice status.", authoriseResult.Payload);
+
+                job.InvoiceReference = jobInvoice.Reference;
+                job.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync(ct);
+            }
+
+            return await BuildStateUpdateResultAsync(jobInvoice, ct);
+        }
+
+        if (state is "PAID_CASH" or "PAID_EPOST" or "PAID_BANK_TRANSFER")
+        {
+            if (string.Equals(jobInvoice.ExternalStatus, "PAID", StringComparison.OrdinalIgnoreCase))
+                return await BuildStateUpdateResultAsync(jobInvoice, ct);
+
+            var authorisedDuringRequest = false;
+            if (!string.Equals(jobInvoice.ExternalStatus, "AUTHORISED", StringComparison.OrdinalIgnoreCase))
+            {
+                var authoriseResult = await SyncInvoiceStatusAsync(jobInvoice, "AUTHORISED", ct);
+                if (!authoriseResult.Ok)
+                    return JobInvoiceStateUpdateResult.Fail(authoriseResult.StatusCode, authoriseResult.Error ?? "Failed to authorise invoice before payment.", authoriseResult.Payload);
+
+                authorisedDuringRequest = true;
+            }
+
+            var paymentMethod = state switch
+            {
+                "PAID_CASH" => "cash",
+                "PAID_EPOST" => "epost",
+                _ => "bank_transfer",
+            };
+
+            var accountCode = ResolvePaymentAccountCode(paymentMethod);
+            if (string.IsNullOrWhiteSpace(accountCode))
+                return JobInvoiceStateUpdateResult.Fail(400, $"Missing Xero payment account configuration for method '{paymentMethod}'.");
+
+            var amountToPay = ExtractAmountDue(jobInvoice.ResponsePayloadJson) ?? ExtractInvoiceTotal(jobInvoice.ResponsePayloadJson) ?? ExtractInvoiceTotal(jobInvoice.RequestPayloadJson);
+            if (amountToPay is null || amountToPay <= 0)
+                return JobInvoiceStateUpdateResult.Fail(400, "Unable to determine invoice payment amount.");
+
+            var paymentRequest = new CreateXeroPaymentRequest
+            {
+                InvoiceId = invoiceId,
+                AccountCode = accountCode,
+                Amount = amountToPay.Value,
+                Date = DateOnly.FromDateTime(DateTime.UtcNow),
+                Reference = paymentMethod == "epost" ? payload.EpostReferenceId?.Trim() : null,
+            };
+
+            var paymentResult = await _xeroPaymentService.CreatePaymentAsync(paymentRequest, ct);
+            if (!paymentResult.Ok)
+            {
+                var message = authorisedDuringRequest
+                    ? $"Invoice authorised successfully, but payment was not created. {paymentResult.Error ?? "Failed to create payment in Xero."}"
+                    : paymentResult.Error ?? "Failed to create payment in Xero.";
+                return JobInvoiceStateUpdateResult.Fail(paymentResult.StatusCode, message, paymentResult.Payload);
+            }
+
+            var jobPayment = BuildJobPayment(jobInvoice, paymentMethod, accountCode, paymentRequest, paymentResult.Payload);
+            _db.JobPayments.Add(jobPayment);
+            await _db.SaveChangesAsync(ct);
+
+            var resynced = await SyncFromXeroAsync(jobId, ct);
+            if (!resynced.Ok || resynced.Invoice is null)
+                return JobInvoiceStateUpdateResult.Fail(resynced.StatusCode, resynced.Error ?? "Payment created, but failed to refresh invoice status from Xero.", resynced.Payload);
+
+            return await BuildStateUpdateResultAsync(resynced.Invoice, ct);
+        }
+
+        return JobInvoiceStateUpdateResult.Fail(400, $"Unsupported state '{payload.State}'.");
+    }
+
+    private async Task<JobInvoiceCreateResult> SyncInvoiceStatusAsync(JobInvoice jobInvoice, string targetStatus, CancellationToken ct)
+    {
+        var request = BuildRequestFromPayload(jobInvoice.ResponsePayloadJson, jobInvoice);
+        request.Status = targetStatus;
+        request.DueDate ??= request.Date ?? jobInvoice.InvoiceDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var syncResult = await _xeroInvoiceService.CreateInvoiceAsync(
+            request,
+            new XeroInvoiceCreateOptions
+            {
+                SummarizeErrors = true,
+            },
+            ct);
+
+        if (!syncResult.Ok)
+        {
+            return JobInvoiceCreateResult.Fail(syncResult.StatusCode, syncResult.Error ?? "Failed to sync Xero invoice status.", syncResult.Payload, request);
+        }
+
+        ApplyInvoiceUpdate(jobInvoice, request, syncResult.Payload, syncResult.TenantId);
+        return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true, payload: syncResult.Payload, requestBody: request);
+    }
+
+    private async Task<JobInvoiceStateUpdateResult> BuildStateUpdateResultAsync(JobInvoice jobInvoice, CancellationToken ct)
+    {
+        var latestPayment = await _db.JobPayments.AsNoTracking()
+            .Where(x => x.JobInvoiceId == jobInvoice.Id)
+            .OrderByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+
+        return JobInvoiceStateUpdateResult.Success(jobInvoice, latestPayment);
+    }
+
+    private string? ResolvePaymentAccountCode(string method) =>
+        method switch
+        {
+            "cash" => FirstNonEmpty(_xeroPaymentOptions.CashAccountCode, _xeroPaymentOptions.DefaultAccountCode),
+            "epost" => FirstNonEmpty(_xeroPaymentOptions.EpostAccountCode, _xeroPaymentOptions.DefaultAccountCode),
+            "bank_transfer" => FirstNonEmpty(_xeroPaymentOptions.BankTransferAccountCode, _xeroPaymentOptions.DefaultAccountCode),
+            _ => FirstNonEmpty(_xeroPaymentOptions.DefaultAccountCode),
+        };
+
+    private static string? FirstNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
+
+    private static JobPayment BuildJobPayment(JobInvoice jobInvoice, string method, string accountCode, CreateXeroPaymentRequest request, object? payload)
+    {
+        var now = DateTime.UtcNow;
+        return new JobPayment
+        {
+            JobId = jobInvoice.JobId,
+            JobInvoiceId = jobInvoice.Id,
+            Provider = "xero",
+            ExternalPaymentId = ExtractPaymentId(payload),
+            ExternalInvoiceId = jobInvoice.ExternalInvoiceId,
+            Method = method,
+            Amount = request.Amount,
+            PaymentDate = request.Date,
+            Reference = request.Reference,
+            AccountCode = accountCode,
+            ExternalStatus = "PAID",
+            RequestPayloadJson = JsonSerializer.Serialize(request, JsonOptions),
+            ResponsePayloadJson = payload is null ? null : JsonSerializer.Serialize(payload, JsonOptions),
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+    }
+
+    private static string? ExtractPaymentId(object? payload)
+    {
+        if (payload is null) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload, JsonOptions));
+            if (!document.RootElement.TryGetProperty("Payments", out var payments) || payments.ValueKind != JsonValueKind.Array)
+                return null;
+            var payment = payments.EnumerateArray().FirstOrDefault();
+            return TryGetString(payment, "PaymentID");
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static decimal? ExtractAmountDue(string? payloadJson) => ExtractDecimalFromInvoicePayload(payloadJson, "AmountDue");
+
+    private static decimal? ExtractInvoiceTotal(string? payloadJson) => ExtractDecimalFromInvoicePayload(payloadJson, "Total");
+
+    private static decimal? ExtractDecimalFromInvoicePayload(string? payloadJson, string propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(payloadJson);
+            if (!document.RootElement.TryGetProperty("Invoices", out var invoices) || invoices.ValueKind != JsonValueKind.Array)
+                return null;
+            var invoice = invoices.EnumerateArray().FirstOrDefault();
+            if (invoice.ValueKind == JsonValueKind.Undefined)
+                return null;
+            if (!invoice.TryGetProperty(propertyName, out var property))
+                return null;
+            return property.TryGetDecimal(out var value) ? value : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private async Task<CreateXeroInvoiceRequest> BuildCreateRequestAsync(
@@ -896,19 +1125,25 @@ public sealed class JobInvoiceService
                 Name = existing.ContactName,
             },
         };
+        var storedRequest = TryDeserializeStoredRequest(existing.RequestPayloadJson) ?? new CreateXeroInvoiceRequest();
+        var baseRequest = MergeRequestWithFallback(storedRequest, fallback);
 
         if (payload is null)
-            return fallback;
+            return baseRequest;
 
         try
         {
-            using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload, JsonOptions));
+            using var document = payload switch
+            {
+                string raw when !string.IsNullOrWhiteSpace(raw) => JsonDocument.Parse(raw),
+                _ => JsonDocument.Parse(JsonSerializer.Serialize(payload, JsonOptions)),
+            };
             if (!document.RootElement.TryGetProperty("Invoices", out var invoices) || invoices.ValueKind != JsonValueKind.Array)
-                return fallback;
+                return baseRequest;
 
             var invoice = invoices.EnumerateArray().FirstOrDefault();
             if (invoice.ValueKind == JsonValueKind.Undefined)
-                return fallback;
+                return baseRequest;
 
             var request = new CreateXeroInvoiceRequest
             {
@@ -916,84 +1151,148 @@ public sealed class JobInvoiceService
                             invoiceIdProp.ValueKind == JsonValueKind.String &&
                             Guid.TryParse(invoiceIdProp.GetString(), out var parsedInvoiceId)
                     ? parsedInvoiceId
-                    : fallback.InvoiceId,
+                    : baseRequest.InvoiceId,
                 Type = invoice.TryGetProperty("Type", out var typeProp) && typeProp.ValueKind == JsonValueKind.String
-                    ? typeProp.GetString() ?? "ACCREC"
-                    : "ACCREC",
+                    ? typeProp.GetString() ?? baseRequest.Type
+                    : baseRequest.Type,
                 Status = invoice.TryGetProperty("Status", out var statusProp) && statusProp.ValueKind == JsonValueKind.String
-                    ? statusProp.GetString() ?? fallback.Status
-                    : fallback.Status,
+                    ? statusProp.GetString() ?? baseRequest.Status
+                    : baseRequest.Status,
                 LineAmountTypes = invoice.TryGetProperty("LineAmountTypes", out var lineAmountProp) && lineAmountProp.ValueKind == JsonValueKind.String
-                    ? lineAmountProp.GetString() ?? fallback.LineAmountTypes
-                    : fallback.LineAmountTypes,
+                    ? lineAmountProp.GetString() ?? baseRequest.LineAmountTypes
+                    : baseRequest.LineAmountTypes,
                 Date = invoice.TryGetProperty("DateString", out var dateStringProp) &&
                        dateStringProp.ValueKind == JsonValueKind.String &&
                        DateOnly.TryParse(dateStringProp.GetString(), out var parsedDate)
                     ? parsedDate
-                    : fallback.Date,
+                    : baseRequest.Date,
                 Reference = invoice.TryGetProperty("Reference", out var referenceProp) && referenceProp.ValueKind == JsonValueKind.String
-                    ? referenceProp.GetString() ?? fallback.Reference
-                    : fallback.Reference,
+                    ? referenceProp.GetString() ?? baseRequest.Reference
+                    : baseRequest.Reference,
                 InvoiceNumber = invoice.TryGetProperty("InvoiceNumber", out var invoiceNumberProp) && invoiceNumberProp.ValueKind == JsonValueKind.String
-                    ? invoiceNumberProp.GetString()
-                    : null,
+                    ? invoiceNumberProp.GetString() ?? baseRequest.InvoiceNumber
+                    : baseRequest.InvoiceNumber,
+                DueDate = baseRequest.DueDate,
+                ExpectedPaymentDate = baseRequest.ExpectedPaymentDate,
+                PlannedPaymentDate = baseRequest.PlannedPaymentDate,
+                BrandingThemeId = baseRequest.BrandingThemeId,
+                CurrencyCode = baseRequest.CurrencyCode,
+                CurrencyRate = baseRequest.CurrencyRate,
+                SentToContact = baseRequest.SentToContact,
+                Url = baseRequest.Url,
                 Contact = new XeroInvoiceContactInput
                 {
+                    ContactId = baseRequest.Contact.ContactId,
                     Name = invoice.TryGetProperty("Contact", out var contactProp) &&
                            contactProp.ValueKind == JsonValueKind.Object &&
                            contactProp.TryGetProperty("Name", out var contactNameProp) &&
                            contactNameProp.ValueKind == JsonValueKind.String
-                        ? contactNameProp.GetString() ?? fallback.Contact.Name
-                        : fallback.Contact.Name,
+                        ? contactNameProp.GetString() ?? baseRequest.Contact.Name
+                        : baseRequest.Contact.Name,
+                    EmailAddress = baseRequest.Contact.EmailAddress,
+                    ContactNumber = baseRequest.Contact.ContactNumber,
                 },
             };
 
             if (invoice.TryGetProperty("LineItems", out var lineItemsProp) && lineItemsProp.ValueKind == JsonValueKind.Array)
             {
                 request.LineItems = lineItemsProp.EnumerateArray()
-                    .Select(item => new XeroInvoiceLineItemInput
+                    .Select((item, index) =>
                     {
-                        Description = item.TryGetProperty("Description", out var descriptionProp) && descriptionProp.ValueKind == JsonValueKind.String
-                            ? descriptionProp.GetString() ?? ""
-                            : "",
-                        Quantity = item.TryGetProperty("Quantity", out var quantityProp) && quantityProp.TryGetDecimal(out var quantity)
-                            ? quantity
-                            : 1m,
-                        UnitAmount = item.TryGetProperty("UnitAmount", out var unitAmountProp) && unitAmountProp.TryGetDecimal(out var unitAmount)
-                            ? unitAmount
-                            : null,
-                        LineAmount = item.TryGetProperty("LineAmount", out var lineAmountItemProp) && lineAmountItemProp.TryGetDecimal(out var lineAmount)
-                            ? lineAmount
-                            : null,
-                        ItemCode = item.TryGetProperty("ItemCode", out var itemCodeProp) && itemCodeProp.ValueKind == JsonValueKind.String
-                            ? itemCodeProp.GetString()
-                            : null,
-                        AccountCode = item.TryGetProperty("AccountCode", out var accountCodeProp) && accountCodeProp.ValueKind == JsonValueKind.String
-                            ? accountCodeProp.GetString()
-                            : null,
-                        TaxType = item.TryGetProperty("TaxType", out var taxTypeProp) && taxTypeProp.ValueKind == JsonValueKind.String
-                            ? taxTypeProp.GetString()
-                            : null,
-                        TaxAmount = item.TryGetProperty("TaxAmount", out var taxAmountProp) && taxAmountProp.TryGetDecimal(out var taxAmount)
-                            ? taxAmount
-                            : null,
-                        DiscountRate = item.TryGetProperty("DiscountRate", out var discountRateProp) && discountRateProp.TryGetDecimal(out var discountRate)
-                            ? discountRate
-                            : null,
-                        DiscountAmount = item.TryGetProperty("DiscountAmount", out var discountAmountProp) && discountAmountProp.TryGetDecimal(out var discountAmount)
-                            ? discountAmount
-                            : null,
+                        var storedLineItem = index < baseRequest.LineItems.Count ? baseRequest.LineItems[index] : null;
+                        return new XeroInvoiceLineItemInput
+                        {
+                            Description = item.TryGetProperty("Description", out var descriptionProp) && descriptionProp.ValueKind == JsonValueKind.String
+                                ? descriptionProp.GetString() ?? storedLineItem?.Description ?? ""
+                                : storedLineItem?.Description ?? "",
+                            Quantity = item.TryGetProperty("Quantity", out var quantityProp) && quantityProp.TryGetDecimal(out var quantity)
+                                ? quantity
+                                : storedLineItem?.Quantity ?? 1m,
+                            UnitAmount = item.TryGetProperty("UnitAmount", out var unitAmountProp) && unitAmountProp.TryGetDecimal(out var unitAmount)
+                                ? unitAmount
+                                : storedLineItem?.UnitAmount,
+                            LineAmount = item.TryGetProperty("LineAmount", out var lineAmountItemProp) && lineAmountItemProp.TryGetDecimal(out var lineAmount)
+                                ? lineAmount
+                                : storedLineItem?.LineAmount,
+                            ItemCode = item.TryGetProperty("ItemCode", out var itemCodeProp) && itemCodeProp.ValueKind == JsonValueKind.String
+                                ? itemCodeProp.GetString() ?? storedLineItem?.ItemCode
+                                : storedLineItem?.ItemCode,
+                            AccountCode = item.TryGetProperty("AccountCode", out var accountCodeProp) && accountCodeProp.ValueKind == JsonValueKind.String
+                                ? accountCodeProp.GetString() ?? storedLineItem?.AccountCode
+                                : storedLineItem?.AccountCode,
+                            TaxType = item.TryGetProperty("TaxType", out var taxTypeProp) && taxTypeProp.ValueKind == JsonValueKind.String
+                                ? taxTypeProp.GetString() ?? storedLineItem?.TaxType
+                                : storedLineItem?.TaxType,
+                            TaxAmount = item.TryGetProperty("TaxAmount", out var taxAmountProp) && taxAmountProp.TryGetDecimal(out var taxAmount)
+                                ? taxAmount
+                                : storedLineItem?.TaxAmount,
+                            DiscountRate = item.TryGetProperty("DiscountRate", out var discountRateProp) && discountRateProp.TryGetDecimal(out var discountRate)
+                                ? discountRate
+                                : storedLineItem?.DiscountRate,
+                            DiscountAmount = item.TryGetProperty("DiscountAmount", out var discountAmountProp) && discountAmountProp.TryGetDecimal(out var discountAmount)
+                                ? discountAmount
+                                : storedLineItem?.DiscountAmount,
+                        };
                     })
                     .Where(x => !string.IsNullOrWhiteSpace(x.Description) || !string.IsNullOrWhiteSpace(x.ItemCode))
                     .ToList();
+            }
+            else
+            {
+                request.LineItems = baseRequest.LineItems;
             }
 
             return request;
         }
         catch (JsonException)
         {
-            return fallback;
+            return baseRequest;
         }
+    }
+
+    private static CreateXeroInvoiceRequest? TryDeserializeStoredRequest(string? payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+            return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<CreateXeroInvoiceRequest>(payloadJson, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static CreateXeroInvoiceRequest MergeRequestWithFallback(CreateXeroInvoiceRequest source, CreateXeroInvoiceRequest fallback)
+    {
+        return new CreateXeroInvoiceRequest
+        {
+            InvoiceId = source.InvoiceId ?? fallback.InvoiceId,
+            Type = string.IsNullOrWhiteSpace(source.Type) ? fallback.Type : source.Type,
+            Status = string.IsNullOrWhiteSpace(source.Status) ? fallback.Status : source.Status,
+            LineAmountTypes = string.IsNullOrWhiteSpace(source.LineAmountTypes) ? fallback.LineAmountTypes : source.LineAmountTypes,
+            Date = source.Date ?? fallback.Date,
+            DueDate = source.DueDate ?? fallback.DueDate,
+            ExpectedPaymentDate = source.ExpectedPaymentDate ?? fallback.ExpectedPaymentDate,
+            PlannedPaymentDate = source.PlannedPaymentDate ?? fallback.PlannedPaymentDate,
+            InvoiceNumber = string.IsNullOrWhiteSpace(source.InvoiceNumber) ? fallback.InvoiceNumber : source.InvoiceNumber,
+            Reference = string.IsNullOrWhiteSpace(source.Reference) ? fallback.Reference : source.Reference,
+            BrandingThemeId = source.BrandingThemeId ?? fallback.BrandingThemeId,
+            CurrencyCode = string.IsNullOrWhiteSpace(source.CurrencyCode) ? fallback.CurrencyCode : source.CurrencyCode,
+            CurrencyRate = source.CurrencyRate ?? fallback.CurrencyRate,
+            SentToContact = source.SentToContact ?? fallback.SentToContact,
+            Url = string.IsNullOrWhiteSpace(source.Url) ? fallback.Url : source.Url,
+            Contact = new XeroInvoiceContactInput
+            {
+                ContactId = source.Contact.ContactId ?? fallback.Contact.ContactId,
+                Name = string.IsNullOrWhiteSpace(source.Contact.Name) ? fallback.Contact.Name : source.Contact.Name,
+                EmailAddress = string.IsNullOrWhiteSpace(source.Contact.EmailAddress) ? fallback.Contact.EmailAddress : source.Contact.EmailAddress,
+                ContactNumber = string.IsNullOrWhiteSpace(source.Contact.ContactNumber) ? fallback.Contact.ContactNumber : source.Contact.ContactNumber,
+            },
+            LineItems = source.LineItems.Count > 0 ? source.LineItems : fallback.LineItems,
+        };
     }
 
     private static void ApplyInvoiceUpdate(JobInvoice jobInvoice, CreateXeroInvoiceRequest request, object? payload, string? tenantId)
@@ -1140,5 +1439,33 @@ public sealed class JobInvoiceCreateResult
             RefreshTokenUpdated = refreshTokenUpdated,
             Scope = scope ?? "",
             AccessTokenExpiresIn = expiresIn,
+        };
+}
+
+public sealed class JobInvoiceStateUpdateResult
+{
+    public bool Ok { get; private init; }
+    public int StatusCode { get; private init; }
+    public string? Error { get; private init; }
+    public JobInvoice? Invoice { get; private init; }
+    public JobPayment? LatestPayment { get; private init; }
+    public object? Payload { get; private init; }
+
+    public static JobInvoiceStateUpdateResult Success(JobInvoice invoice, JobPayment? latestPayment) =>
+        new()
+        {
+            Ok = true,
+            StatusCode = 200,
+            Invoice = invoice,
+            LatestPayment = latestPayment,
+        };
+
+    public static JobInvoiceStateUpdateResult Fail(int statusCode, string error, object? payload = null) =>
+        new()
+        {
+            Ok = false,
+            StatusCode = statusCode,
+            Error = error,
+            Payload = payload,
         };
 }

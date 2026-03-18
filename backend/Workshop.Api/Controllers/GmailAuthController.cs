@@ -29,6 +29,7 @@ public class GmailAuthController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IWebHostEnvironment _environment;
     private readonly GmailOptions _options;
+    private readonly GmailAccountService _gmailAccountService;
     private readonly GmailTokenService _gmailTokenService;
     private readonly GmailThreadSyncService _gmailThreadSyncService;
     private readonly AppleVisionImageOcrService _imageOcrService;
@@ -40,6 +41,7 @@ public class GmailAuthController : ControllerBase
         AppDbContext db,
         IWebHostEnvironment environment,
         IOptions<GmailOptions> options,
+        GmailAccountService gmailAccountService,
         GmailTokenService gmailTokenService,
         GmailThreadSyncService gmailThreadSyncService,
         AppleVisionImageOcrService imageOcrService,
@@ -50,6 +52,7 @@ public class GmailAuthController : ControllerBase
         _db = db;
         _environment = environment;
         _options = options.Value;
+        _gmailAccountService = gmailAccountService;
         _gmailTokenService = gmailTokenService;
         _gmailThreadSyncService = gmailThreadSyncService;
         _imageOcrService = imageOcrService;
@@ -126,10 +129,20 @@ public class GmailAuthController : ControllerBase
             });
         }
 
+        var account = await _gmailAccountService.UpsertAuthorizedAccountAsync(
+            profileResult.Email,
+            tokenResult.RefreshToken,
+            tokenResult.AccessToken,
+            tokenResult.ExpiresIn,
+            tokenResult.Scope,
+            ct);
+
         return Ok(new
         {
-            message = "Gmail authorization completed. Save the refreshToken into backend configuration.",
+            message = "Gmail authorization completed. Account saved in database.",
             email = profileResult.Email,
+            accountId = account.Id,
+            isDefault = account.IsDefault,
             refreshToken = tokenResult.RefreshToken,
             accessTokenExpiresIn = tokenResult.ExpiresIn,
             scope = tokenResult.Scope,
@@ -152,17 +165,20 @@ public class GmailAuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(_options.ClientSecret)) missing.Add("Gmail:ClientSecret");
         if (string.IsNullOrWhiteSpace(_options.RedirectUri)) missing.Add("Gmail:RedirectUri");
         var apiMissing = new List<string>();
-        if (string.IsNullOrWhiteSpace(_options.RefreshToken)) apiMissing.Add("Gmail:RefreshToken");
+        var accounts = await _gmailAccountService.GetAccountsAsync(ct);
+        if (string.IsNullOrWhiteSpace(_options.RefreshToken) && accounts.Count == 0) apiMissing.Add("Gmail:RefreshToken or GmailAccounts");
         var resolvedScopes = ResolveScopes(scopes);
 
         string? authorizedEmail = null;
         string? grantedScopes = null;
+        long? activeAccountId = null;
         if (missing.Count == 0 && apiMissing.Count == 0)
         {
             var tokenResult = await _gmailTokenService.RefreshAccessTokenAsync(ct);
             if (tokenResult.Ok)
             {
                 grantedScopes = tokenResult.Scope;
+                activeAccountId = tokenResult.AccountId;
                 var profileResult = await LoadProfileAsync(tokenResult.AccessToken, ct);
                 if (profileResult.Ok)
                     authorizedEmail = profileResult.Email;
@@ -180,7 +196,36 @@ public class GmailAuthController : ControllerBase
             scopes = SplitScopes(resolvedScopes),
             scopesSource = string.IsNullOrWhiteSpace(scopes) ? "configuration" : "query",
             authorizedEmail,
+            activeAccountId,
             grantedScopes = SplitScopes(grantedScopes),
+            accounts = accounts.Select(MapAccount),
+        });
+    }
+
+    [HttpGet("accounts")]
+    public async Task<IActionResult> GetAccounts(CancellationToken ct)
+    {
+        var accounts = await _gmailAccountService.GetAccountsAsync(ct);
+        return Ok(new
+        {
+            items = accounts.Select(MapAccount).ToList(),
+            total = accounts.Count,
+        });
+    }
+
+    [HttpPut("accounts/{id:long}/default")]
+    public async Task<IActionResult> SetDefaultAccount(long id, CancellationToken ct)
+    {
+        var updated = await _gmailAccountService.SetDefaultAccountAsync(id, ct);
+        if (!updated)
+            return NotFound(new { error = "Gmail account not found." });
+
+        var accounts = await _gmailAccountService.GetAccountsAsync(ct);
+        return Ok(new
+        {
+            success = true,
+            defaultAccountId = id,
+            items = accounts.Select(MapAccount).ToList(),
         });
     }
 
@@ -192,11 +237,20 @@ public class GmailAuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(req.Subject))
             return BadRequest(new { error = "Subject is required." });
 
+        var correlatedJobId = JobPoStateService.TryExtractJobIdFromCorrelationId(req.CorrelationId?.Trim());
+        if (correlatedJobId.HasValue)
+        {
+            var hasPaidInvoice = await _db.JobInvoices.AsNoTracking()
+                .AnyAsync(x => x.JobId == correlatedJobId.Value && x.ExternalStatus != null && x.ExternalStatus.ToUpper() == "PAID", ct);
+            if (hasPaidInvoice)
+                return BadRequest(new { error = "PO Request data is locked because the invoice is already marked as Paid in Xero." });
+        }
+
         var recipients = NormalizeRecipientAddresses(req.To);
         if (recipients.Length == 0)
             return BadRequest(new { error = "At least one valid recipient email is required." });
 
-        var tokenResult = await _gmailTokenService.RefreshAccessTokenAsync(ct);
+        var tokenResult = await _gmailTokenService.RefreshAccessTokenAsync(req.GmailAccountId, ct);
         if (!tokenResult.Ok)
             return StatusCode(tokenResult.StatusCode, new { error = tokenResult.Error });
 
@@ -237,6 +291,8 @@ public class GmailAuthController : ControllerBase
                 gmailMessageId: sentMessageId,
                 gmailThreadId: sendResult?.ThreadId,
                 internalDateMs: sendResult?.InternalDate is long internalDate ? internalDate : null,
+                gmailAccountId: tokenResult.AccountId,
+                gmailAccountEmail: tokenResult.AccountEmail,
                 direction: "sent",
                 counterpartyEmail: string.Join(", ", recipients),
                 fromAddress: null,
@@ -260,6 +316,8 @@ public class GmailAuthController : ControllerBase
             threadId = sendResult?.ThreadId ?? "",
             rfcMessageId = sentRfcMessageId ?? "",
             referencesHeader = sentReferencesHeader ?? "",
+            gmailAccountId = tokenResult.AccountId,
+            gmailAccountEmail = tokenResult.AccountEmail,
             scope = tokenResult.Scope,
             accessTokenExpiresIn = tokenResult.ExpiresIn,
         });
@@ -271,25 +329,28 @@ public class GmailAuthController : ControllerBase
         [FromQuery] string? correlationId,
         [FromQuery] int limit = 20,
         [FromQuery] bool refresh = false,
+        [FromQuery] long? gmailAccountId = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(counterpartyEmail) && string.IsNullOrWhiteSpace(correlationId))
             return BadRequest(new { error = "counterpartyEmail or correlationId is required." });
 
         string? syncWarning = null;
-        var snapshot = await _gmailThreadSyncService.GetThreadSnapshotAsync(counterpartyEmail, correlationId, limit, ct);
+        var snapshot = await _gmailThreadSyncService.GetThreadSnapshotAsync(counterpartyEmail, correlationId, limit, gmailAccountId, ct);
         if (_gmailThreadSyncService.ShouldRefresh(snapshot, refresh))
         {
             var syncResult = await _gmailThreadSyncService.SyncThreadAsync(
                 snapshot.CounterpartyEmail,
                 snapshot.CorrelationId,
                 snapshot.Limit,
+                snapshot.GmailAccountId,
                 ct);
             syncWarning = syncResult.Warning;
             snapshot = await _gmailThreadSyncService.GetThreadSnapshotAsync(
                 snapshot.CounterpartyEmail,
                 snapshot.CorrelationId,
                 snapshot.Limit,
+                snapshot.GmailAccountId,
                 ct);
         }
 
@@ -352,23 +413,26 @@ public class GmailAuthController : ControllerBase
         [FromQuery] string? correlationId,
         [FromQuery] int limit = 20,
         [FromQuery] bool refresh = false,
+        [FromQuery] long? gmailAccountId = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(counterpartyEmail) && string.IsNullOrWhiteSpace(correlationId))
             return BadRequest(new { error = "counterpartyEmail or correlationId is required." });
 
-        var snapshot = await _gmailThreadSyncService.GetThreadSnapshotAsync(counterpartyEmail, correlationId, limit, ct);
+        var snapshot = await _gmailThreadSyncService.GetThreadSnapshotAsync(counterpartyEmail, correlationId, limit, gmailAccountId, ct);
         if (_gmailThreadSyncService.ShouldRefresh(snapshot, refresh))
         {
             await _gmailThreadSyncService.SyncThreadAsync(
                 snapshot.CounterpartyEmail,
                 snapshot.CorrelationId,
                 snapshot.Limit,
+                snapshot.GmailAccountId,
                 ct);
             snapshot = await _gmailThreadSyncService.GetThreadSnapshotAsync(
                 snapshot.CounterpartyEmail,
                 snapshot.CorrelationId,
                 snapshot.Limit,
+                snapshot.GmailAccountId,
                 ct);
         }
 
@@ -385,7 +449,7 @@ public class GmailAuthController : ControllerBase
         var normalizedCounterpartyEmail = req.CounterpartyEmail.Trim();
         var normalizedCorrelationId = req.CorrelationId?.Trim();
 
-        var query = _db.GmailMessageLogs
+        var query = FilterLogsByAccount(_db.GmailMessageLogs, req.GmailAccountId)
             .Where(x => x.CounterpartyEmail == normalizedCounterpartyEmail)
             .Where(x => x.Direction == "reply" && !x.IsRead);
 
@@ -406,9 +470,9 @@ public class GmailAuthController : ControllerBase
     }
 
     [HttpGet("debug/token")]
-    public async Task<IActionResult> DebugToken(CancellationToken ct)
+    public async Task<IActionResult> DebugToken([FromQuery] long? gmailAccountId, CancellationToken ct)
     {
-        var tokenResult = await _gmailTokenService.RefreshAccessTokenAsync(ct);
+        var tokenResult = await _gmailTokenService.RefreshAccessTokenAsync(gmailAccountId, ct);
         if (!tokenResult.Ok)
             return StatusCode(tokenResult.StatusCode, new { error = tokenResult.Error });
 
@@ -419,6 +483,9 @@ public class GmailAuthController : ControllerBase
             grantedScopes = SplitScopes(tokenResult.Scope),
             rawScope = tokenResult.Scope,
             configuredScopes = SplitScopes(_options.Scopes),
+            accountId = tokenResult.AccountId,
+            accountEmail = tokenResult.AccountEmail,
+            tokenSource = tokenResult.Source,
             emailResolved = profileResult.Ok ? profileResult.Email : null,
             profileError = profileResult.Ok ? null : profileResult.Error,
         });
@@ -478,7 +545,7 @@ public class GmailAuthController : ControllerBase
                 return cachedPath;
         }
 
-        var tokenResult = await _gmailTokenService.RefreshAccessTokenAsync(ct);
+        var tokenResult = await _gmailTokenService.RefreshAccessTokenAsync(log?.GmailAccountId, ct);
         if (!tokenResult.Ok)
             return null;
 
@@ -957,8 +1024,9 @@ public class GmailAuthController : ControllerBase
         string? CorrelationId,
         string? ThreadId,
         string? ReplyToRfcMessageId,
-        string? ReferencesHeader);
-    public sealed record GmailThreadReadRequest(string CounterpartyEmail, string? CorrelationId);
+        string? ReferencesHeader,
+        long? GmailAccountId);
+    public sealed record GmailThreadReadRequest(string CounterpartyEmail, string? CorrelationId, long? GmailAccountId);
     public sealed record PoDetectionResponse(
         string Id,
         string PoNumber,
@@ -979,6 +1047,8 @@ public class GmailAuthController : ControllerBase
         string gmailMessageId,
         string? gmailThreadId,
         long? internalDateMs,
+        long? gmailAccountId,
+        string? gmailAccountEmail,
         string direction,
         string counterpartyEmail,
         string? fromAddress,
@@ -995,7 +1065,9 @@ public class GmailAuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(gmailMessageId))
             return;
 
-        var existing = await _db.GmailMessageLogs.FirstOrDefaultAsync(x => x.GmailMessageId == gmailMessageId, ct);
+        var existing = await _db.GmailMessageLogs.FirstOrDefaultAsync(
+            x => x.GmailMessageId == gmailMessageId && x.GmailAccountId == gmailAccountId,
+            ct);
         if (existing is null)
         {
             existing = new GmailMessageLog
@@ -1006,6 +1078,8 @@ public class GmailAuthController : ControllerBase
             _db.GmailMessageLogs.Add(existing);
         }
 
+        existing.GmailAccountId = gmailAccountId;
+        existing.GmailAccountEmail = NullIfBlank(gmailAccountEmail);
         existing.GmailThreadId = gmailThreadId?.Trim();
         existing.InternalDateMs = internalDateMs;
         existing.Direction = direction.Trim();
@@ -1066,6 +1140,23 @@ public class GmailAuthController : ControllerBase
 
     private static string BuildAttachmentMergeKey(GmailAttachmentDescriptor attachment) =>
         $"{attachment.AttachmentId ?? ""}|{attachment.FileName}|{attachment.MimeType}";
+
+    private static IQueryable<GmailMessageLog> FilterLogsByAccount(IQueryable<GmailMessageLog> query, long? gmailAccountId) =>
+        gmailAccountId.HasValue
+            ? query.Where(x => x.GmailAccountId == gmailAccountId.Value)
+            : query.Where(x => x.GmailAccountId == null);
+
+    private static object MapAccount(GmailAccount account) => new
+    {
+        id = account.Id,
+        email = account.Email,
+        isActive = account.IsActive,
+        isDefault = account.IsDefault,
+        scope = account.Scope,
+        accessTokenExpiresAt = account.AccessTokenExpiresAt,
+        createdAt = account.CreatedAt,
+        updatedAt = account.UpdatedAt,
+    };
 
     private string? ValidateConfiguration()
     {

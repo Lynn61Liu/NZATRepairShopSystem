@@ -56,6 +56,7 @@ public sealed class GmailBackgroundSyncService : BackgroundService
                     target.CounterpartyEmail,
                     target.CorrelationId,
                     syncService.BackgroundThreadFetchLimit,
+                    null,
                     ct);
 
                 if (!result.Ok && !string.IsNullOrWhiteSpace(result.Warning))

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
+using Workshop.Api.Models;
 using Workshop.Api.Options;
 
 namespace Workshop.Api.Services;
@@ -11,21 +12,48 @@ public sealed class GmailTokenService
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly GmailOptions _options;
+    private readonly GmailAccountService _gmailAccountService;
 
     public GmailTokenService(
         IHttpClientFactory httpClientFactory,
-        IOptions<GmailOptions> options)
+        IOptions<GmailOptions> options,
+        GmailAccountService gmailAccountService)
     {
         _httpClientFactory = httpClientFactory;
         _options = options.Value;
+        _gmailAccountService = gmailAccountService;
     }
 
-    public async Task<GmailTokenRefreshResult> RefreshAccessTokenAsync(CancellationToken ct)
+    public Task<GmailTokenRefreshResult> RefreshAccessTokenAsync(CancellationToken ct) =>
+        RefreshAccessTokenAsync(accountId: null, ct);
+
+    public async Task<GmailTokenRefreshResult> RefreshAccessTokenAsync(long? accountId, CancellationToken ct)
     {
         var missing = new List<string>();
         if (string.IsNullOrWhiteSpace(_options.ClientId)) missing.Add("Gmail:ClientId");
         if (string.IsNullOrWhiteSpace(_options.ClientSecret)) missing.Add("Gmail:ClientSecret");
-        if (string.IsNullOrWhiteSpace(_options.RefreshToken)) missing.Add("Gmail:RefreshToken");
+
+        GmailAccount? account = null;
+        if (accountId.HasValue)
+        {
+            account = await _gmailAccountService.GetByIdAsync(accountId.Value, ct);
+            if (account is null || !account.IsActive)
+            {
+                return GmailTokenRefreshResult.Fail(
+                    404,
+                    "Gmail account not found or inactive.");
+            }
+        }
+        else
+        {
+            account = await _gmailAccountService.GetEffectiveAccountAsync(ct);
+        }
+
+        var refreshToken = account?.RefreshToken;
+        if (string.IsNullOrWhiteSpace(refreshToken))
+            refreshToken = _options.RefreshToken;
+
+        if (string.IsNullOrWhiteSpace(refreshToken)) missing.Add("Gmail:RefreshToken");
 
         if (missing.Count > 0)
         {
@@ -40,7 +68,7 @@ public sealed class GmailTokenService
         {
             ["client_id"] = _options.ClientId,
             ["client_secret"] = _options.ClientSecret,
-            ["refresh_token"] = _options.RefreshToken,
+            ["refresh_token"] = refreshToken!,
             ["grant_type"] = "refresh_token",
         });
 
@@ -53,10 +81,23 @@ public sealed class GmailTokenService
         if (token is null || string.IsNullOrWhiteSpace(token.AccessToken))
             return GmailTokenRefreshResult.Fail(502, "Refresh token response was empty or invalid.");
 
+        if (account is not null)
+        {
+            await _gmailAccountService.TouchAccessTokenAsync(
+                account.Id,
+                token.AccessToken,
+                token.ExpiresIn,
+                token.Scope,
+                ct);
+        }
+
         return GmailTokenRefreshResult.Success(
             token.AccessToken,
             token.ExpiresIn,
-            token.Scope ?? "");
+            token.Scope ?? "",
+            account?.Id,
+            account?.Email,
+            account is not null ? "account" : "config");
     }
 
     private sealed class RefreshTokenResponse
@@ -80,6 +121,9 @@ public sealed class GmailTokenRefreshResult
     public string AccessToken { get; private init; } = "";
     public int ExpiresIn { get; private init; }
     public string Scope { get; private init; } = "";
+    public long? AccountId { get; private init; }
+    public string? AccountEmail { get; private init; }
+    public string Source { get; private init; } = "";
 
     public static GmailTokenRefreshResult Fail(int statusCode, string error) =>
         new()
@@ -92,7 +136,10 @@ public sealed class GmailTokenRefreshResult
     public static GmailTokenRefreshResult Success(
         string accessToken,
         int expiresIn,
-        string scope) =>
+        string scope,
+        long? accountId,
+        string? accountEmail,
+        string source) =>
         new()
         {
             Ok = true,
@@ -100,5 +147,8 @@ public sealed class GmailTokenRefreshResult
             AccessToken = accessToken,
             ExpiresIn = expiresIn,
             Scope = scope,
+            AccountId = accountId,
+            AccountEmail = accountEmail,
+            Source = source,
         };
 }

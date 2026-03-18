@@ -155,6 +155,23 @@ public class JobsController : ControllerBase
                 responsePayloadJson = x.ResponsePayloadJson,
                 createdAt = FormatDateTime(x.CreatedAt),
                 updatedAt = FormatDateTime(x.UpdatedAt),
+                latestPayment = _db.JobPayments.AsNoTracking()
+                    .Where(p => p.JobInvoiceId == x.Id)
+                    .OrderByDescending(p => p.CreatedAt)
+                    .Select(p => new
+                    {
+                        id = p.Id.ToString(CultureInfo.InvariantCulture),
+                        method = p.Method,
+                        amount = p.Amount,
+                        paymentDate = p.PaymentDate,
+                        reference = p.Reference,
+                        accountCode = p.AccountCode,
+                        accountName = p.AccountName,
+                        externalStatus = p.ExternalStatus,
+                        createdAt = FormatDateTime(p.CreatedAt),
+                        updatedAt = FormatDateTime(p.UpdatedAt),
+                    })
+                    .FirstOrDefault(),
             })
             .FirstOrDefaultAsync(ct);
 
@@ -566,6 +583,11 @@ public class JobsController : ControllerBase
         var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (job is null)
             return NotFound(new { error = "Job not found." });
+
+        var hasPaidInvoice = await _db.JobInvoices.AsNoTracking()
+            .AnyAsync(x => x.JobId == id && x.ExternalStatus != null && x.ExternalStatus.ToUpper() == "PAID", ct);
+        if (hasPaidInvoice)
+            return BadRequest(new { error = "PO Request data is locked because the invoice is already marked as Paid in Xero." });
 
         job.PoNumber = string.IsNullOrWhiteSpace(req?.PoNumber) ? null : req.PoNumber.Trim();
         job.InvoiceReference = string.IsNullOrWhiteSpace(req?.InvoiceReference) ? null : req.InvoiceReference.Trim();

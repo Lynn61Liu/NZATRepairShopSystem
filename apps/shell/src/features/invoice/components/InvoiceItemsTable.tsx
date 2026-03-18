@@ -7,6 +7,7 @@ type ItemCatalogSyncState = "idle" | "syncing" | "success" | "error";
 
 type Props = {
   items: InvoiceItem[];
+  readOnly?: boolean;
   synced: boolean;
   subtotal: number;
   taxTotal: number;
@@ -53,6 +54,7 @@ function getLineAmount(item: InvoiceItem) {
 
 export function InvoiceItemsTable({
   items,
+  readOnly = false,
   synced,
   subtotal,
   taxTotal,
@@ -170,7 +172,7 @@ export function InvoiceItemsTable({
                     className="inline-flex h-6 w-6 items-center justify-center rounded-full text-[var(--ds-muted)] transition hover:bg-[rgba(0,0,0,0.06)] hover:text-[var(--ds-primary)] disabled:cursor-not-allowed disabled:opacity-50"
                     title="Refresh item list from Xero"
                     onClick={onRefreshItemCatalog}
-                    disabled={itemCatalogSyncState === "syncing"}
+                    disabled={readOnly || itemCatalogSyncState === "syncing"}
                   >
                     {itemCatalogSyncState === "syncing" ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -207,6 +209,7 @@ export function InvoiceItemsTable({
                       onChange={(e) => onChangeItem(item.id, "itemCode", e.target.value)}
                       placeholder="Type code or name"
                       className="h-8 rounded-[6px] border-0 px-1 shadow-none focus:ring-0"
+                      disabled={readOnly}
                     />
                     <datalist id={`invoice-item-options-${item.id}`}>
                       {itemOptions.map((option) => (
@@ -222,6 +225,7 @@ export function InvoiceItemsTable({
                       value={item.description}
                       onChange={(e) => onChangeItem(item.id, "description", e.target.value)}
                       className="w-full resize-none overflow-hidden rounded-[6px] border-0 bg-white px-1 py-1 text-sm leading-5 text-[var(--ds-text)] outline-none"
+                      disabled={readOnly}
                     />
                   </td>
                   <td className="px-2 py-2 align-top">
@@ -233,6 +237,7 @@ export function InvoiceItemsTable({
                       onFocus={(e) => e.currentTarget.select()}
                       onChange={(e) => onChangeItem(item.id, "quantity", e.target.value)}
                       className="h-8 rounded-[6px] border-0 px-1 shadow-none focus:ring-0"
+                      disabled={readOnly}
                     />
                   </td>
                   <td className="px-2 py-2 align-top">
@@ -244,6 +249,7 @@ export function InvoiceItemsTable({
                       onFocus={(e) => e.currentTarget.select()}
                       onChange={(e) => onChangeItem(item.id, "unitPrice", e.target.value)}
                       className="h-8 rounded-[6px] border-0 px-1 shadow-none focus:ring-0"
+                      disabled={readOnly}
                     />
                   </td>
                   <td className="px-2 py-2 align-top">
@@ -255,16 +261,18 @@ export function InvoiceItemsTable({
                       onFocus={(e) => e.currentTarget.select()}
                       onChange={(e) => onChangeItem(item.id, "discount", e.target.value)}
                       className="h-8 rounded-[6px] border-0 px-1 shadow-none focus:ring-0"
+                      disabled={readOnly}
                     />
                   </td>
                   <td className="px-2 py-2 align-top">
-                    <Input value={item.account} onChange={(e) => onChangeItem(item.id, "account", e.target.value)} className="h-8 rounded-[6px] border-0 px-1 shadow-none focus:ring-0" />
+                    <Input value={item.account} onChange={(e) => onChangeItem(item.id, "account", e.target.value)} className="h-8 rounded-[6px] border-0 px-1 shadow-none focus:ring-0" disabled={readOnly} />
                   </td>
                   <td className="px-2 py-2 align-top">
                     <Select
                       value={item.taxRate}
                       onChange={(e) => onChangeItem(item.id, "taxRate", e.target.value)}
                       className="h-8 rounded-[6px] border-0 px-1 shadow-none focus:ring-0"
+                      disabled={readOnly}
                     >
                       {TAX_RATE_OPTIONS.map((option) => (
                         <option key={option} value={option}>
@@ -276,7 +284,12 @@ export function InvoiceItemsTable({
                   <td className="px-2 py-2 text-sm font-medium text-[var(--ds-text)] align-top">${taxAmount.toFixed(2)}</td>
                   <td className="px-2 py-2 text-sm font-semibold text-[var(--ds-text)] align-top">${lineAmount.toFixed(2)}</td>
                   <td className="px-2 py-2 text-right align-top">
-                    <button type="button" className="rounded-lg p-2 text-[var(--ds-muted)] hover:bg-red-50 hover:text-red-600" onClick={() => onDeleteItem(item.id)}>
+                    <button
+                      type="button"
+                      className="rounded-lg p-2 text-[var(--ds-muted)] hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[var(--ds-muted)]"
+                      onClick={() => onDeleteItem(item.id)}
+                      disabled={readOnly}
+                    >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </td>
@@ -292,6 +305,7 @@ export function InvoiceItemsTable({
           className="h-11 self-start border-[var(--ds-primary)] bg-white px-5 text-[var(--ds-primary)] hover:bg-red-50"
           leftIcon={<Plus className="h-4 w-4" />}
           onClick={onAddItem}
+          disabled={readOnly}
         >
           Add item
         </Button>

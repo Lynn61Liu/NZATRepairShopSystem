@@ -16,6 +16,7 @@ public sealed class GmailThreadSyncService
 
     private readonly AppDbContext _db;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly GmailAccountService _gmailAccountService;
     private readonly GmailTokenService _gmailTokenService;
     private readonly GmailSyncOptions _syncOptions;
     private readonly ILogger<GmailThreadSyncService> _logger;
@@ -24,6 +25,7 @@ public sealed class GmailThreadSyncService
     public GmailThreadSyncService(
         AppDbContext db,
         IHttpClientFactory httpClientFactory,
+        GmailAccountService gmailAccountService,
         GmailTokenService gmailTokenService,
         IOptions<GmailSyncOptions> syncOptions,
         ILogger<GmailThreadSyncService> logger,
@@ -31,6 +33,7 @@ public sealed class GmailThreadSyncService
     {
         _db = db;
         _httpClientFactory = httpClientFactory;
+        _gmailAccountService = gmailAccountService;
         _gmailTokenService = gmailTokenService;
         _syncOptions = syncOptions.Value;
         _logger = logger;
@@ -41,17 +44,19 @@ public sealed class GmailThreadSyncService
         string? counterpartyEmail,
         string? correlationId,
         int limit,
+        long? gmailAccountId,
         CancellationToken ct)
     {
         var normalizedCounterpartyEmail = NormalizeCounterpartyEmail(counterpartyEmail);
         var normalizedCorrelationId = NormalizeCorrelationId(correlationId);
         var normalizedLimit = Math.Clamp(limit, 1, 50);
+        var effectiveAccount = await ResolveRequestedAccountAsync(gmailAccountId, ct);
 
         var isInactive = !string.IsNullOrWhiteSpace(normalizedCorrelationId) &&
             await _db.InactiveGmailCorrelations.AsNoTracking()
                 .AnyAsync(x => x.CorrelationId == normalizedCorrelationId, ct);
 
-        var logsQuery = _db.GmailMessageLogs.AsNoTracking();
+        var logsQuery = FilterLogsByAccount(_db.GmailMessageLogs.AsNoTracking(), effectiveAccount?.Id);
         if (!string.IsNullOrWhiteSpace(normalizedCorrelationId))
         {
             logsQuery = logsQuery.Where(x => x.CorrelationId == normalizedCorrelationId);
@@ -71,6 +76,8 @@ public sealed class GmailThreadSyncService
             normalizedCounterpartyEmail,
             normalizedCorrelationId,
             normalizedLimit,
+            effectiveAccount?.Id,
+            effectiveAccount?.Email,
             logs,
             isInactive,
             logs.Count == 0 ? null : logs.Max(x => x.UpdatedAt));
@@ -94,6 +101,7 @@ public sealed class GmailThreadSyncService
         string? counterpartyEmail,
         string? correlationId,
         int limit,
+        long? gmailAccountId,
         CancellationToken ct)
     {
         var normalizedCounterpartyEmail = NormalizeCounterpartyEmail(counterpartyEmail);
@@ -111,7 +119,7 @@ public sealed class GmailThreadSyncService
                 return GmailThreadSyncResult.SkippedResult("Correlation is inactive. Gmail sync skipped.");
         }
 
-        var tokenResult = await _gmailTokenService.RefreshAccessTokenAsync(ct);
+        var tokenResult = await _gmailTokenService.RefreshAccessTokenAsync(gmailAccountId, ct);
         if (!tokenResult.Ok)
         {
             _logger.LogWarning(
@@ -127,6 +135,7 @@ public sealed class GmailThreadSyncService
             ? []
             : await _db.GmailMessageLogs.AsNoTracking()
                 .Where(x => x.CorrelationId == normalizedCorrelationId)
+                .Where(BuildAccountFilter(tokenResult.AccountId))
                 .Where(x => !string.IsNullOrWhiteSpace(x.GmailThreadId))
                 .Select(x => x.GmailThreadId!)
                 .Distinct()
@@ -170,6 +179,8 @@ public sealed class GmailThreadSyncService
                             counterpartyEmails,
                             normalizedCounterpartyEmail,
                             normalizedCorrelationId,
+                            tokenResult.AccountId,
+                            tokenResult.AccountEmail,
                             requireCorrelationMatch: false,
                             ct))
                     {
@@ -232,6 +243,8 @@ public sealed class GmailThreadSyncService
                     counterpartyEmails,
                     normalizedCounterpartyEmail,
                     normalizedCorrelationId,
+                    tokenResult.AccountId,
+                    tokenResult.AccountEmail,
                     requireCorrelationMatch: true,
                     ct))
             {
@@ -249,6 +262,8 @@ public sealed class GmailThreadSyncService
         string[] counterpartyEmails,
         string normalizedCounterpartyEmail,
         string? normalizedCorrelationId,
+        long? gmailAccountId,
+        string? gmailAccountEmail,
         bool requireCorrelationMatch,
         CancellationToken ct)
     {
@@ -281,6 +296,8 @@ public sealed class GmailThreadSyncService
             message.Id ?? "",
             message.ThreadId,
             message.InternalDate,
+            gmailAccountId,
+            gmailAccountEmail,
             direction,
             normalizedCounterpartyEmail,
             from,
@@ -298,12 +315,13 @@ public sealed class GmailThreadSyncService
 
     public async Task<List<GmailThreadSyncTarget>> GetActiveSyncTargetsAsync(CancellationToken ct)
     {
+        var effectiveAccount = await _gmailAccountService.GetEffectiveAccountAsync(ct);
         var cutoff = DateTime.UtcNow.AddDays(-Math.Max(1, _syncOptions.ActiveThreadLookbackDays));
         var inactiveCorrelationIds = await _db.InactiveGmailCorrelations.AsNoTracking()
             .Select(x => x.CorrelationId)
             .ToListAsync(ct);
 
-        var targetRows = await _db.GmailMessageLogs.AsNoTracking()
+        var targetRows = await FilterLogsByAccount(_db.GmailMessageLogs.AsNoTracking(), effectiveAccount?.Id)
             .Where(x => x.UpdatedAt >= cutoff)
             .Where(x => !string.IsNullOrWhiteSpace(x.CorrelationId))
             .Where(x => !string.IsNullOrWhiteSpace(x.CounterpartyEmail))
@@ -338,6 +356,8 @@ public sealed class GmailThreadSyncService
         string gmailMessageId,
         string? gmailThreadId,
         long? internalDateMs,
+        long? gmailAccountId,
+        string? gmailAccountEmail,
         string direction,
         string counterpartyEmail,
         string? fromAddress,
@@ -354,7 +374,9 @@ public sealed class GmailThreadSyncService
         if (string.IsNullOrWhiteSpace(gmailMessageId))
             return;
 
-        var existing = await _db.GmailMessageLogs.FirstOrDefaultAsync(x => x.GmailMessageId == gmailMessageId, ct);
+        var existing = await _db.GmailMessageLogs.FirstOrDefaultAsync(
+            x => x.GmailMessageId == gmailMessageId && x.GmailAccountId == gmailAccountId,
+            ct);
         if (existing is null)
         {
             existing = new GmailMessageLog
@@ -365,6 +387,8 @@ public sealed class GmailThreadSyncService
             _db.GmailMessageLogs.Add(existing);
         }
 
+        existing.GmailAccountId = gmailAccountId;
+        existing.GmailAccountEmail = NullIfBlank(gmailAccountEmail);
         existing.GmailThreadId = NullIfBlank(gmailThreadId);
         existing.InternalDateMs = internalDateMs;
         var normalizedDirection = direction.Trim();
@@ -652,6 +676,8 @@ public sealed class GmailThreadSyncService
         string CounterpartyEmail,
         string? CorrelationId,
         int Limit,
+        long? GmailAccountId,
+        string? GmailAccountEmail,
         List<GmailMessageLog> Logs,
         bool IsInactive,
         DateTime? LastUpdatedAtUtc);
@@ -690,6 +716,24 @@ public sealed class GmailThreadSyncService
                 Warning = warning,
             };
     }
+
+    private async Task<GmailAccount?> ResolveRequestedAccountAsync(long? gmailAccountId, CancellationToken ct)
+    {
+        if (gmailAccountId.HasValue)
+            return await _gmailAccountService.GetByIdAsync(gmailAccountId.Value, ct);
+
+        return await _gmailAccountService.GetEffectiveAccountAsync(ct);
+    }
+
+    private static IQueryable<GmailMessageLog> FilterLogsByAccount(IQueryable<GmailMessageLog> query, long? gmailAccountId) =>
+        gmailAccountId.HasValue
+            ? query.Where(x => x.GmailAccountId == gmailAccountId.Value)
+            : query.Where(x => x.GmailAccountId == null);
+
+    private static System.Linq.Expressions.Expression<Func<GmailMessageLog, bool>> BuildAccountFilter(long? gmailAccountId) =>
+        gmailAccountId.HasValue
+            ? x => x.GmailAccountId == gmailAccountId.Value
+            : x => x.GmailAccountId == null;
 
     private sealed class GmailMessageListResponse
     {

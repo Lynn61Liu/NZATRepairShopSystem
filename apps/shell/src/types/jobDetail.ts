@@ -16,6 +16,18 @@ export type JobInvoiceData = {
   responsePayloadJson?: string;
   createdAt?: string;
   updatedAt?: string;
+  latestPayment?: {
+    id: string;
+    method: string;
+    amount: number;
+    paymentDate: string;
+    reference?: string;
+    accountCode?: string;
+    accountName?: string;
+    externalStatus?: string;
+    createdAt?: string;
+    updatedAt?: string;
+  } | null;
 };
 
 export type VehicleInfo = {

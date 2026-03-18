@@ -1,9 +1,8 @@
 import { Check, ExternalLink, Pencil, Plus, RefreshCcw, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Button, Card, Input } from "@/components/ui";
+import { Button, Card, Input, Select } from "@/components/ui";
 import { withApiBase } from "@/utils/api";
-import { StatusBadge } from "./StatusBadge";
-import type { InvoiceDashboardState, ReferencePreviewSource } from "../types";
+import type { InvoiceDashboardState, ReferencePreviewSource, XeroStateOption } from "../types";
 import type React from "react";
 
 type Props = {
@@ -18,7 +17,9 @@ type Props = {
   onRefreshFromXero?: () => void;
   onOpenXero: () => void;
   onSaveReference?: (value: string) => Promise<boolean>;
+  onUpdateXeroState?: (state: XeroStateOption, epostReferenceId?: string) => Promise<boolean>;
   isRefreshingFromXero?: boolean;
+  isUpdatingXeroState?: boolean;
   referencePreview?: ReferencePreviewSource | null;
   hasInvoice?: boolean;
   onCreateInvoice?: () => Promise<{ success: boolean; message?: string }>;
@@ -44,17 +45,44 @@ export function InvoiceSummaryCard({
   onRefreshFromXero,
   onOpenXero,
   onSaveReference,
+  onUpdateXeroState,
   isRefreshingFromXero = false,
+  isUpdatingXeroState = false,
   referencePreview = null,
   hasInvoice = true,
   onCreateInvoice,
   isCreatingInvoice = false,
   children,
 }: Props) {
+  const isReadOnly = invoice.xeroStatus === "PAID";
   const [isEditingReference, setIsEditingReference] = useState(false);
   const [referenceDraft, setReferenceDraft] = useState(invoice.reference);
   const [savingReference, setSavingReference] = useState(false);
   const [showReferencePreview, setShowReferencePreview] = useState(false);
+  const [xeroState, setXeroState] = useState<XeroStateOption>("DRAFT");
+  const [epostReferenceId, setEpostReferenceId] = useState("");
+  const [savedXeroState, setSavedXeroState] = useState<XeroStateOption>("DRAFT");
+  const [savedEpostReferenceId, setSavedEpostReferenceId] = useState("");
+
+  useEffect(() => {
+    if (invoice.xeroStatus === "PAID") {
+      const method = invoice.latestPaymentMethod?.trim().toLowerCase();
+      const nextState = method === "cash" ? "PAID_CASH" : method === "epost" ? "PAID_EPOST" : "PAID_BANK_TRANSFER";
+      const nextReference = invoice.latestPaymentReference || "";
+      setXeroState(nextState);
+      setSavedXeroState(nextState);
+      setEpostReferenceId(nextReference);
+      setSavedEpostReferenceId(nextReference);
+      return;
+    }
+
+    const nextState = invoice.xeroStatus === "AUTHORISED" ? "AUTHORISED" : "DRAFT";
+    const nextReference = invoice.latestPaymentReference || "";
+    setXeroState(nextState);
+    setSavedXeroState(nextState);
+    setEpostReferenceId(nextReference);
+    setSavedEpostReferenceId(nextReference);
+  }, [invoice.latestPaymentMethod, invoice.latestPaymentReference, invoice.xeroStatus]);
 
   useEffect(() => {
     setReferenceDraft(invoice.reference);
@@ -88,6 +116,24 @@ export function InvoiceSummaryCard({
     }
   };
 
+  const handleApplyXeroState = async () => {
+    if (!onUpdateXeroState) return;
+    const ok = await onUpdateXeroState(xeroState, epostReferenceId);
+    if (ok) {
+      setSavedXeroState(xeroState);
+      setSavedEpostReferenceId(epostReferenceId);
+    }
+  };
+
+  const handleCancelXeroStateChange = () => {
+    setXeroState(savedXeroState);
+    setEpostReferenceId(savedEpostReferenceId);
+  };
+
+  const xeroStateDirty =
+    xeroState !== savedXeroState || (xeroState === "PAID_EPOST" && epostReferenceId.trim() !== savedEpostReferenceId.trim());
+  const epostReferenceLocked = savedXeroState === "PAID_EPOST" && !xeroStateDirty;
+
   return (
     <Card className="rounded-[18px] p-6">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--ds-border)] pb-5">
@@ -95,13 +141,29 @@ export function InvoiceSummaryCard({
           <div className="text-2xl font-semibold text-[var(--ds-text)]">Invoice Summary</div>
           <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-[var(--ds-muted)]">
             <span>Xero ID: {invoice.xeroInvoiceId}</span>
-            {/* <div className="inline-flex items-center gap-2">
-              <span className="font-medium text-[var(--ds-text)]">Workflow:</span>
-              <StatusBadge kind="invoice" value={invoice.status} />
-            </div> */}
-            <div className="inline-flex items-center gap-2">
-              {/* <span className="font-medium text-[var(--ds-text)]">Xero:</span> */}
-              <StatusBadge kind="xero" value={invoice.xeroStatus} />
+            <div className="inline-flex items-center gap-2 whitespace-nowrap">
+              <Select
+                value={xeroState}
+                onChange={(event) => setXeroState(event.target.value as XeroStateOption)}
+                className="h-8 min-w-[90px] py-0 text-xs"
+                disabled={isReadOnly}
+              >
+                <option value="DRAFT">Draft</option>
+                <option value="AUTHORISED">Approve</option>
+                <option value="PAID_CASH">Payment (cash)</option>
+                <option value="PAID_EPOST">Payment (epost)</option>
+                <option value="PAID_BANK_TRANSFER">Payment (bank)</option>
+              </Select>
+              {xeroStateDirty ? (
+                <>
+                  <Button className="h-8 px-3 text-xs" variant="ghost" onClick={handleCancelXeroStateChange} disabled={isReadOnly || isUpdatingXeroState}>
+                    Cancel
+                  </Button>
+                  <Button className="h-8 px-3 text-xs" variant="primary" onClick={() => void handleApplyXeroState()} disabled={isReadOnly || !onUpdateXeroState || isUpdatingXeroState}>
+                    {isUpdatingXeroState ? "Saving..." : "Apply"}
+                  </Button>
+                </>
+              ) : null}
             </div>
           </div>
         </div>
@@ -112,7 +174,7 @@ export function InvoiceSummaryCard({
               leftIcon={<RefreshCcw className={["h-4 w-4", isRefreshingFromXero ? "animate-spin" : ""].join(" ")} />}
               className="h-11 px-5"
               onClick={onRefreshFromXero}
-              disabled={!onRefreshFromXero || isRefreshingFromXero}
+              disabled={isReadOnly || !onRefreshFromXero || isRefreshingFromXero}
             >
               {isRefreshingFromXero ? "Refreshing..." : "Refresh From Xero"}
             </Button>
@@ -169,6 +231,7 @@ export function InvoiceSummaryCard({
                   type="button"
                   className="rounded-full p-1 text-[var(--ds-muted)] hover:bg-[rgba(0,0,0,0.04)] hover:text-[var(--ds-text)]"
                   onClick={() => setIsEditingReference(true)}
+                  disabled={isReadOnly}
                 >
                   <Pencil className="h-4 w-4" />
                 </button>
@@ -189,6 +252,20 @@ export function InvoiceSummaryCard({
         <SummaryField label="Sync Direction" value={invoice.lastSyncDirection} className="text-[var(--ds-primary)]" />
       </div>
 
+      {xeroState === "PAID_EPOST" ? (
+        <div className="mt-4">
+          <div className="text-sm text-[var(--ds-muted)]">ePost Ref ID</div>
+          <Input
+            placeholder="Optional ePost ref ID"
+            value={epostReferenceId}
+            onChange={(event) => setEpostReferenceId(event.target.value)}
+            className="mt-1 h-9 max-w-[320px]"
+            readOnly={isReadOnly || epostReferenceLocked}
+            disabled={isReadOnly}
+          />
+        </div>
+      ) : null}
+
       {hasInvoice ? (
         children
       ) : (
@@ -199,7 +276,7 @@ export function InvoiceSummaryCard({
 
       {hasInvoice ? (
         <div className="mt-6 flex justify-end gap-3 border-t border-[var(--ds-border)] pt-5">
-          {canDiscardChanges ? (
+          {!isReadOnly && canDiscardChanges ? (
             <Button
               variant="ghost"
               leftIcon={<X className="h-4 w-4" />}
@@ -209,18 +286,20 @@ export function InvoiceSummaryCard({
               Cancel Changes
             </Button>
           ) : null}
-          <Button
-            variant={canSync ? "primary" : "ghost"}
-            leftIcon={<RefreshCcw className="h-4 w-4" />}
-            className={[
-              "h-11 px-5",
-              !canSync ? "border-[var(--ds-border)] bg-[rgba(0,0,0,0.04)] text-[var(--ds-muted)] hover:bg-[rgba(0,0,0,0.04)]" : "",
-            ].join(" ")}
-            onClick={onSync}
-            disabled={!canSync}
-          >
-            Sync with Xero
-          </Button>
+          {!isReadOnly ? (
+            <Button
+              variant={canSync ? "primary" : "ghost"}
+              leftIcon={<RefreshCcw className="h-4 w-4" />}
+              className={[
+                "h-11 px-5",
+                !canSync ? "border-[var(--ds-border)] bg-[rgba(0,0,0,0.04)] text-[var(--ds-muted)] hover:bg-[rgba(0,0,0,0.04)]" : "",
+              ].join(" ")}
+              onClick={onSync}
+              disabled={!canSync}
+            >
+              Sync with Xero
+            </Button>
+          ) : null}
         </div>
       ) : null}
 

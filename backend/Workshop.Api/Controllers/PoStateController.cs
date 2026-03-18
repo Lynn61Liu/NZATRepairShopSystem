@@ -211,6 +211,9 @@ public class PoStateController : ControllerBase
     [HttpPost("jobs/{jobId:long}/send-follow-up")]
     public async Task<IActionResult> SendFollowUp(long jobId, CancellationToken ct)
     {
+        if (await HasPaidInvoiceAsync(jobId, ct))
+            return BadRequest(new { error = "PO Request data is locked because the invoice is already marked as Paid in Xero." });
+
         var state = await _db.JobPoStates.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
         if (state is null)
             return NotFound(new { error = "PO state not found." });
@@ -250,6 +253,9 @@ public class PoStateController : ControllerBase
     [HttpPost("jobs/{jobId:long}/cancel-follow-up")]
     public async Task<IActionResult> CancelFollowUp(long jobId, CancellationToken ct)
     {
+        if (await HasPaidInvoiceAsync(jobId, ct))
+            return BadRequest(new { error = "PO Request data is locked because the invoice is already marked as Paid in Xero." });
+
         var state = await _db.JobPoStates.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
         if (state is null)
             return NotFound(new { error = "PO state not found." });
@@ -324,4 +330,8 @@ public class PoStateController : ControllerBase
 
     private static string FormatDateTime(DateTime? value) =>
         value.HasValue ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "-";
+
+    private Task<bool> HasPaidInvoiceAsync(long jobId, CancellationToken ct) =>
+        _db.JobInvoices.AsNoTracking()
+            .AnyAsync(x => x.JobId == jobId && x.ExternalStatus != null && x.ExternalStatus.ToUpper() == "PAID", ct);
 }

@@ -55,7 +55,11 @@ public sealed class GmailFollowUpSenderService
         if (string.IsNullOrWhiteSpace(currentState.CounterpartyEmail))
             return false;
 
-        var threadLogs = await _db.GmailMessageLogs.AsNoTracking()
+        var tokenResult = await _gmailTokenService.RefreshAccessTokenAsync(ct);
+        if (!tokenResult.Ok)
+            return false;
+
+        var threadLogs = await FilterLogsByAccount(_db.GmailMessageLogs.AsNoTracking(), tokenResult.AccountId)
             .Where(x => x.CorrelationId == correlationId)
             .Select(x => new
             {
@@ -74,7 +78,7 @@ public sealed class GmailFollowUpSenderService
             .ThenByDescending(x => x.Id)
             .FirstOrDefault();
 
-        var rootSubjectCandidates = await _db.GmailMessageLogs.AsNoTracking()
+        var rootSubjectCandidates = await FilterLogsByAccount(_db.GmailMessageLogs.AsNoTracking(), tokenResult.AccountId)
             .Where(x => x.CorrelationId == correlationId)
             .Where(x => !string.IsNullOrWhiteSpace(x.Subject))
             .Select(x => new
@@ -91,10 +95,6 @@ public sealed class GmailFollowUpSenderService
             .ThenBy(x => x.Id)
             .Select(x => x.Subject)
             .FirstOrDefault();
-
-        var tokenResult = await _gmailTokenService.RefreshAccessTokenAsync(ct);
-        if (!tokenResult.Ok)
-            return false;
 
         var stillActive = await _db.JobPoStates.AsNoTracking()
             .AnyAsync(
@@ -140,6 +140,8 @@ public sealed class GmailFollowUpSenderService
             sentMessageId,
             sendResult?.ThreadId,
             sendResult?.InternalDate,
+            tokenResult.AccountId,
+            tokenResult.AccountEmail,
             currentState.CounterpartyEmail!,
             subject,
             body,
@@ -156,6 +158,8 @@ public sealed class GmailFollowUpSenderService
         string gmailMessageId,
         string? gmailThreadId,
         long? internalDateMs,
+        long? gmailAccountId,
+        string? gmailAccountEmail,
         string counterpartyEmail,
         string subject,
         string body,
@@ -164,7 +168,9 @@ public sealed class GmailFollowUpSenderService
         string? referencesHeader,
         CancellationToken ct)
     {
-        var existing = await _db.GmailMessageLogs.FirstOrDefaultAsync(x => x.GmailMessageId == gmailMessageId, ct);
+        var existing = await _db.GmailMessageLogs.FirstOrDefaultAsync(
+            x => x.GmailMessageId == gmailMessageId && x.GmailAccountId == gmailAccountId,
+            ct);
         if (existing is null)
         {
             existing = new GmailMessageLog
@@ -175,6 +181,8 @@ public sealed class GmailFollowUpSenderService
             _db.GmailMessageLogs.Add(existing);
         }
 
+        existing.GmailAccountId = gmailAccountId;
+        existing.GmailAccountEmail = gmailAccountEmail;
         existing.GmailThreadId = gmailThreadId;
         existing.InternalDateMs = internalDateMs;
         existing.Direction = "reminder";
@@ -303,6 +311,11 @@ public sealed class GmailFollowUpSenderService
         if (payload?.Headers is null) return "";
         return payload.Headers.FirstOrDefault(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase))?.Value ?? "";
     }
+
+    private static IQueryable<GmailMessageLog> FilterLogsByAccount(IQueryable<GmailMessageLog> query, long? gmailAccountId) =>
+        gmailAccountId.HasValue
+            ? query.Where(x => x.GmailAccountId == gmailAccountId.Value)
+            : query.Where(x => x.GmailAccountId == null);
 
     private sealed record GmailSendApiRequest(string Raw, string? ThreadId);
     private sealed record GmailSendApiResponse(string? Id, string? ThreadId, long? InternalDate);

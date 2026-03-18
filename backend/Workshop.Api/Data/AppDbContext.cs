@@ -9,10 +9,12 @@ public class AppDbContext : DbContext
     public DbSet<Vehicle> Vehicles => Set<Vehicle>();
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<CustomerStaff> CustomerStaffMembers => Set<CustomerStaff>();
+    public DbSet<GmailAccount> GmailAccounts => Set<GmailAccount>();
     public DbSet<GmailMessageLog> GmailMessageLogs => Set<GmailMessageLog>();
     public DbSet<InactiveGmailCorrelation> InactiveGmailCorrelations => Set<InactiveGmailCorrelation>();
     public DbSet<Job> Jobs => Set<Job>();
     public DbSet<JobInvoice> JobInvoices => Set<JobInvoice>();
+    public DbSet<JobPayment> JobPayments => Set<JobPayment>();
     public DbSet<XeroTokenRecord> XeroTokenRecords => Set<XeroTokenRecord>();
     public DbSet<InventoryItem> InventoryItems => Set<InventoryItem>();
     public DbSet<JobPoState> JobPoStates => Set<JobPoState>();
@@ -119,10 +121,28 @@ public class AppDbContext : DbContext
         cs.Property(x => x.Email).HasColumnName("email");
         cs.HasIndex(x => x.CustomerId).HasDatabaseName("ix_customer_staff_customer_id");
 
+        var ga = modelBuilder.Entity<GmailAccount>();
+        ga.ToTable("gmail_accounts");
+        ga.HasKey(x => x.Id);
+        ga.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        ga.Property(x => x.Email).HasColumnName("email").IsRequired();
+        ga.Property(x => x.RefreshToken).HasColumnName("refresh_token").IsRequired();
+        ga.Property(x => x.AccessToken).HasColumnName("access_token");
+        ga.Property(x => x.AccessTokenExpiresAt).HasColumnName("access_token_expires_at");
+        ga.Property(x => x.Scope).HasColumnName("scope");
+        ga.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true);
+        ga.Property(x => x.IsDefault).HasColumnName("is_default").HasDefaultValue(false);
+        ga.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        ga.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        ga.HasIndex(x => x.Email).IsUnique().HasDatabaseName("ux_gmail_accounts_email");
+        ga.HasIndex(x => x.IsDefault).HasDatabaseName("ix_gmail_accounts_is_default");
+
         var gm = modelBuilder.Entity<GmailMessageLog>();
         gm.ToTable("gmail_message_logs");
         gm.HasKey(x => x.Id);
         gm.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        gm.Property(x => x.GmailAccountId).HasColumnName("gmail_account_id");
+        gm.Property(x => x.GmailAccountEmail).HasColumnName("gmail_account_email");
         gm.Property(x => x.GmailMessageId).HasColumnName("gmail_message_id").IsRequired();
         gm.Property(x => x.GmailThreadId).HasColumnName("gmail_thread_id");
         gm.Property(x => x.InternalDateMs).HasColumnName("internal_date_ms");
@@ -143,9 +163,10 @@ public class AppDbContext : DbContext
         gm.Property(x => x.DetectedPoNumber).HasColumnName("detected_po_number");
         gm.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         gm.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
-        gm.HasIndex(x => x.GmailMessageId).IsUnique().HasDatabaseName("ux_gmail_message_logs_message_id");
+        gm.HasIndex(x => new { x.GmailAccountId, x.GmailMessageId }).IsUnique().HasDatabaseName("ux_gmail_message_logs_account_message_id");
         gm.HasIndex(x => x.GmailThreadId).HasDatabaseName("ix_gmail_message_logs_thread_id");
         gm.HasIndex(x => x.CorrelationId).HasDatabaseName("ix_gmail_message_logs_correlation_id");
+        gm.HasIndex(x => x.GmailAccountId).HasDatabaseName("ix_gmail_message_logs_account_id");
 
         var igc = modelBuilder.Entity<InactiveGmailCorrelation>();
         igc.ToTable("inactive_gmail_correlations");
@@ -191,6 +212,31 @@ public class AppDbContext : DbContext
         ji.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         ji.HasIndex(x => x.JobId).IsUnique().HasDatabaseName("ux_job_invoices_job_id");
         ji.HasOne<Job>().WithMany().HasForeignKey(x => x.JobId).OnDelete(DeleteBehavior.Cascade);
+
+        var jpay = modelBuilder.Entity<JobPayment>();
+        jpay.ToTable("job_payments");
+        jpay.HasKey(x => x.Id);
+        jpay.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        jpay.Property(x => x.JobId).HasColumnName("job_id").IsRequired();
+        jpay.Property(x => x.JobInvoiceId).HasColumnName("job_invoice_id").IsRequired();
+        jpay.Property(x => x.Provider).HasColumnName("provider").IsRequired();
+        jpay.Property(x => x.ExternalPaymentId).HasColumnName("external_payment_id");
+        jpay.Property(x => x.ExternalInvoiceId).HasColumnName("external_invoice_id");
+        jpay.Property(x => x.Method).HasColumnName("method").IsRequired();
+        jpay.Property(x => x.Amount).HasColumnName("amount");
+        jpay.Property(x => x.PaymentDate).HasColumnName("payment_date");
+        jpay.Property(x => x.Reference).HasColumnName("reference");
+        jpay.Property(x => x.AccountCode).HasColumnName("account_code");
+        jpay.Property(x => x.AccountName).HasColumnName("account_name");
+        jpay.Property(x => x.ExternalStatus).HasColumnName("external_status");
+        jpay.Property(x => x.RequestPayloadJson).HasColumnName("request_payload_json");
+        jpay.Property(x => x.ResponsePayloadJson).HasColumnName("response_payload_json");
+        jpay.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        jpay.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        jpay.HasIndex(x => x.JobId).HasDatabaseName("ix_job_payments_job_id");
+        jpay.HasIndex(x => x.JobInvoiceId).HasDatabaseName("ix_job_payments_job_invoice_id");
+        jpay.HasOne<Job>().WithMany().HasForeignKey(x => x.JobId).OnDelete(DeleteBehavior.Cascade);
+        jpay.HasOne<JobInvoice>().WithMany().HasForeignKey(x => x.JobInvoiceId).OnDelete(DeleteBehavior.Cascade);
 
         var xt = modelBuilder.Entity<XeroTokenRecord>();
         xt.ToTable("xero_tokens");

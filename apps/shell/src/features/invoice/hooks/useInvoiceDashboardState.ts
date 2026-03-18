@@ -3,7 +3,7 @@ import { useBlocker } from "react-router-dom";
 import { useToast } from "@/components/ui";
 import { requestJson } from "@/utils/api";
 import { notifyPoDashboardRefresh } from "@/utils/refreshSignals";
-import { pullJobXeroDraftInvoice, saveJobInvoiceDraft, syncJobXeroDraftInvoice, updateJobPoSelection } from "@/features/jobDetail/api/jobDetailApi";
+import { pullJobXeroDraftInvoice, saveJobInvoiceDraft, syncJobXeroDraftInvoice, updateJobInvoiceXeroState, updateJobPoSelection } from "@/features/jobDetail/api/jobDetailApi";
 import type {
   EmailState,
   EmailTimelineEvent,
@@ -14,6 +14,7 @@ import type {
   ReferencePreviewSource,
   TaxRateOption,
   XeroItemDefinition,
+  XeroStateOption,
   XeroInvoiceStatus,
 } from "../types";
 import type { CustomerInfo, JobInvoiceData, VehicleInfo } from "@/types";
@@ -113,6 +114,8 @@ const initialInvoiceState: InvoiceDashboardState = {
   lastReplyReceived: "No reply yet",
   nextReminderIn: "NaNh NaNm",
   currentWorkflowStep: 1,
+  latestPaymentMethod: "",
+  latestPaymentReference: "",
 };
 
 const initialItemCatalog: XeroItemDefinition[] = [];
@@ -255,6 +258,16 @@ function buildStableAlphaSuffix(seed: string) {
   return suffix;
 }
 
+function resolveXeroStateOption(xeroStatus: XeroInvoiceStatus, latestPaymentMethod?: string) : XeroStateOption {
+  if (xeroStatus === "PAID") {
+    const method = latestPaymentMethod?.trim().toLowerCase();
+    if (method === "cash") return "PAID_CASH";
+    if (method === "epost") return "PAID_EPOST";
+    return "PAID_BANK_TRANSFER";
+  }
+  return xeroStatus === "AUTHORISED" ? "AUTHORISED" : "DRAFT";
+}
+
 export function useInvoiceDashboardState({
   jobId,
   customer,
@@ -278,6 +291,7 @@ export function useInvoiceDashboardState({
   const [draftDirty, setDraftDirty] = useState(false);
   const [draftSaving, setDraftSaving] = useState(false);
   const [refreshingFromXero, setRefreshingFromXero] = useState(false);
+  const [updatingXeroState, setUpdatingXeroState] = useState(false);
   const [leavePromptOpen, setLeavePromptOpen] = useState(false);
   const [pendingFocusRowId, setPendingFocusRowId] = useState<string | null>(null);
   const [manualPoNumber, setManualPoNumber] = useState("");
@@ -297,6 +311,8 @@ export function useInvoiceDashboardState({
   const subtotal = useMemo(() => items.reduce((sum, item) => sum + getBaseAmount(item), 0), [items]);
   const taxTotal = useMemo(() => items.reduce((sum, item) => sum + getTaxAmount(item), 0), [items]);
   const totalAmount = useMemo(() => subtotal + taxTotal, [subtotal, taxTotal]);
+  const poLocked = invoice.xeroStatus === "PAID";
+  const poLockReason = poLocked ? "Invoice is already marked as Paid in Xero. PO Request data is locked and can no longer be changed." : "";
   const referencePreview = useMemo<ReferencePreviewSource | null>(() => {
     const normalizedPo = savedPoNumber.trim().toUpperCase();
     if (!normalizedPo) return null;
@@ -388,6 +404,8 @@ export function useInvoiceDashboardState({
         invoiceNumber: savedInvoice?.externalInvoiceNumber || prev.invoiceNumber,
         xeroInvoiceId: savedInvoice?.externalInvoiceId || prev.xeroInvoiceId,
         xeroStatus: mapXeroStatus(savedInvoice?.externalStatus) || prev.xeroStatus,
+        latestPaymentMethod: savedInvoice?.latestPayment?.method || prev.latestPaymentMethod,
+        latestPaymentReference: savedInvoice?.latestPayment?.reference || prev.latestPaymentReference,
       }));
       setDraftDirty(false);
       return true;
@@ -527,6 +545,8 @@ export function useInvoiceDashboardState({
         invoiceNumber: syncedInvoice?.externalInvoiceNumber || prev.invoiceNumber,
         xeroInvoiceId: syncedInvoice?.externalInvoiceId || prev.xeroInvoiceId,
         xeroStatus: mapXeroStatus(syncedInvoice?.externalStatus),
+        latestPaymentMethod: syncedInvoice?.latestPayment?.method || prev.latestPaymentMethod,
+        latestPaymentReference: syncedInvoice?.latestPayment?.reference || prev.latestPaymentReference,
         snapshotTotal: totalAmount,
         synced: true,
         status: resolveInvoiceStatus(syncedInvoice?.externalStatus, savedPoNumber) || prev.status,
@@ -584,6 +604,8 @@ export function useInvoiceDashboardState({
         invoiceNumber: pulledInvoice?.externalInvoiceNumber || prev.invoiceNumber,
         xeroInvoiceId: pulledInvoice?.externalInvoiceId || prev.xeroInvoiceId,
         xeroStatus: mapXeroStatus(pulledInvoice?.externalStatus),
+        latestPaymentMethod: pulledInvoice?.latestPayment?.method || prev.latestPaymentMethod,
+        latestPaymentReference: pulledInvoice?.latestPayment?.reference || prev.latestPaymentReference,
         status: resolveInvoiceStatus(pulledInvoice?.externalStatus, savedPoNumber) || prev.status,
         synced: true,
         lastSyncTime: pulledInvoice?.updatedAt || now,
@@ -712,6 +734,10 @@ export function useInvoiceDashboardState({
   }, []);
 
   const sendPoRequest = async ({ to, subject, body }: { to: string; subject: string; body: string }) => {
+    if (poLocked) {
+      throw new Error(poLockReason);
+    }
+
     const draftSaved = await persistDraftToDb();
     if (!draftSaved) {
       throw new Error("Failed to save invoice draft before sending PO request");
@@ -852,6 +878,8 @@ export function useInvoiceDashboardState({
       invoiceNumber: syncedInvoice?.externalInvoiceNumber || prev.invoiceNumber,
       xeroInvoiceId: syncedInvoice?.externalInvoiceId || prev.xeroInvoiceId,
       xeroStatus: mapXeroStatus(syncedInvoice?.externalStatus || "DRAFT"),
+      latestPaymentMethod: syncedInvoice?.latestPayment?.method || prev.latestPaymentMethod,
+      latestPaymentReference: syncedInvoice?.latestPayment?.reference || prev.latestPaymentReference,
       status: "PO Received",
       currentWorkflowStep: Math.max(prev.currentWorkflowStep, 7),
       synced: !xeroSyncFailed && Boolean(syncedInvoice || prev.xeroInvoiceId),
@@ -904,6 +932,8 @@ export function useInvoiceDashboardState({
       invoiceNumber: syncedInvoice?.externalInvoiceNumber || prev.invoiceNumber,
       xeroInvoiceId: syncedInvoice?.externalInvoiceId || prev.xeroInvoiceId,
       xeroStatus: mapXeroStatus(syncedInvoice?.externalStatus),
+      latestPaymentMethod: syncedInvoice?.latestPayment?.method || prev.latestPaymentMethod,
+      latestPaymentReference: syncedInvoice?.latestPayment?.reference || prev.latestPaymentReference,
       status: resolveInvoiceStatus(syncedInvoice?.externalStatus, savedPoNumber) || prev.status,
       synced: true,
       lastSyncTime: syncedInvoice?.updatedAt || now,
@@ -917,6 +947,11 @@ export function useInvoiceDashboardState({
   };
 
   const confirmPo = async (id: string) => {
+    if (poLocked) {
+      toast.error(poLockReason);
+      return;
+    }
+
     const po = detections.find((item) => item.id === id);
     if (!po) return;
     const synced = await syncPoReference(po.poNumber, "PO Detection");
@@ -940,6 +975,11 @@ export function useInvoiceDashboardState({
   };
 
   const syncManualPoToInvoiceReference = async () => {
+    if (poLocked) {
+      toast.error(poLockReason);
+      return;
+    }
+
     const synced = await syncPoReference(manualPoNumber, "manual input");
     if (!synced) return;
     setSelectedDetectionId(null);
@@ -960,6 +1000,8 @@ export function useInvoiceDashboardState({
       synced: Boolean(persistedInvoice),
       lastSyncTime: persistedInvoice?.updatedAt || "",
       lastSyncDirection: persistedInvoice ? "Xero -> System" : initialInvoiceState.lastSyncDirection,
+      latestPaymentMethod: persistedInvoice?.latestPayment?.method || "",
+      latestPaymentReference: persistedInvoice?.latestPayment?.reference || "",
       selectedMerchantEmail: "",
       merchantEmails: [],
       merchantEmailRecipients: [],
@@ -1313,6 +1355,45 @@ export function useInvoiceDashboardState({
     };
   }, [blocker]);
 
+  const updateXeroState = async (state: XeroStateOption, epostReferenceId?: string) => {
+    if (!jobId) return false;
+
+    setUpdatingXeroState(true);
+    try {
+      const res = await updateJobInvoiceXeroState(jobId, {
+        state,
+        epostReferenceId: epostReferenceId?.trim() || undefined,
+      });
+
+      if (!res.ok) {
+        toast.error(res.error || "Failed to update Xero invoice status");
+        return false;
+      }
+
+      const updatedInvoice = res.data?.invoice;
+      const now = new Date().toLocaleString("zh-CN", { hour12: false }).replace(/\//g, "-");
+      setInvoice((prev) => ({
+        ...prev,
+        reference: updatedInvoice?.reference || prev.reference,
+        issueDate: updatedInvoice?.invoiceDate || prev.issueDate,
+        invoiceNumber: updatedInvoice?.externalInvoiceNumber || prev.invoiceNumber,
+        xeroInvoiceId: updatedInvoice?.externalInvoiceId || prev.xeroInvoiceId,
+        xeroStatus: mapXeroStatus(updatedInvoice?.externalStatus),
+        latestPaymentMethod: updatedInvoice?.latestPayment?.method || prev.latestPaymentMethod,
+        latestPaymentReference: updatedInvoice?.latestPayment?.reference || prev.latestPaymentReference,
+        status: resolveInvoiceStatus(updatedInvoice?.externalStatus, savedPoNumber) || prev.status,
+        lastSyncTime: updatedInvoice?.updatedAt || now,
+        lastSyncDirection: "System -> Xero",
+        currentWorkflowStep: resolveWorkflowStep(updatedInvoice?.externalStatus, savedPoNumber, true),
+        synced: true,
+      }));
+      toast.success("Xero invoice status updated");
+      return true;
+    } finally {
+      setUpdatingXeroState(false);
+    }
+  };
+
   return {
     invoice,
     items,
@@ -1327,10 +1408,13 @@ export function useInvoiceDashboardState({
     draftDirty,
     leavePromptOpen,
     refreshingFromXero,
+    updatingXeroState,
     referencePreview,
     pendingFocusRowId,
     poPanelLoading,
     poPanelRefreshing,
+    poLocked,
+    poLockReason,
     unreadReplyCount,
     subtotal,
     taxTotal,
@@ -1343,6 +1427,8 @@ export function useInvoiceDashboardState({
     addItem,
     deleteItem,
     syncInvoice,
+    updateXeroState,
+    resolveXeroStateOption,
     discardChanges,
     refreshFromXero,
     openInXero,

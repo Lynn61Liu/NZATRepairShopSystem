@@ -15,6 +15,8 @@ type Props = {
   onManualPoNumberChange: (value: string) => void;
   onSyncManualPoToReference: () => void;
   embedded?: boolean;
+  readOnly?: boolean;
+  readOnlyReason?: string;
 };
 
 export function PoDetectionPanel({
@@ -27,10 +29,12 @@ export function PoDetectionPanel({
   onManualPoNumberChange,
   onSyncManualPoToReference,
   embedded = false,
+  readOnly = false,
+  readOnlyReason,
 }: Props) {
   const normalizedManualPo = manualPoNumber.trim();
   const canSyncManualPo =
-    normalizedManualPo.length > 0 && !currentInvoiceReference.toLowerCase().includes(normalizedManualPo.toLowerCase());
+    !readOnly && normalizedManualPo.length > 0 && !currentInvoiceReference.toLowerCase().includes(normalizedManualPo.toLowerCase());
   const [previewDetection, setPreviewDetection] = useState<PoDetection | null>(null);
 
   const canPreview = (detection: PoDetection) =>
@@ -51,6 +55,12 @@ export function PoDetectionPanel({
   const content = (
     <>
       {embedded ? null : <div className="text-[28px] font-semibold tracking-[-0.03em] text-slate-900">PO Detection Panel</div>}
+
+      {readOnly ? (
+        <div className={`${embedded ? "" : "mt-5 "} rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800`}>
+          {readOnlyReason || "PO detection actions are locked for this job."}
+        </div>
+      ) : null}
 
       <div className={`${embedded ? "" : "mt-5 "}overflow-hidden rounded-2xl border border-slate-200`}>
         <table className="w-full border-collapse">
@@ -86,7 +96,7 @@ export function PoDetectionPanel({
                     type="button"
                     className={`text-left text-sm ${isConfirmed ? "text-slate-500" : "text-slate-600 hover:text-slate-900"}`}
                     onClick={() => onSelect(detection.id)}
-                    disabled={isConfirmed}
+                    disabled={readOnly || isConfirmed}
                   >
                     {detection.evidencePreview}
                   </button>
@@ -112,7 +122,7 @@ export function PoDetectionPanel({
                       className={isConfirmed ? "h-9 px-4 bg-slate-200 text-slate-500 border border-slate-300 hover:bg-slate-200" : "h-9 px-4"}
                       leftIcon={<Check className="h-4 w-4" />}
                       onClick={() => onConfirm(detection.id)}
-                      disabled={isConfirmed}
+                      disabled={readOnly || isConfirmed}
                     >
                       {isConfirmed ? "Confirmed" : "Confirm"}
                     </Button>
@@ -132,6 +142,7 @@ export function PoDetectionPanel({
               value={manualPoNumber}
               onChange={(event) => onManualPoNumberChange(event.target.value)}
               placeholder="Input PO number"
+              disabled={readOnly}
             />
           </div>
           <Button

@@ -3,6 +3,8 @@ namespace Workshop.Api.Models;
 public class GmailMessageLog
 {
     public long Id { get; set; }
+    public long? GmailAccountId { get; set; }
+    public string? GmailAccountEmail { get; set; }
     public string GmailMessageId { get; set; } = "";
     public string? GmailThreadId { get; set; }
     public long? InternalDateMs { get; set; }

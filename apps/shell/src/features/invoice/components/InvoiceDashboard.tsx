@@ -55,6 +55,7 @@ export function InvoiceDashboardContent({
   needsPo?: boolean;
 }) {
   const visibleSteps = getVisibleWorkflowSteps(needsPo);
+  const isReadOnly = model.invoice.xeroStatus === "PAID";
   const currentWorkflowStep =
     model.invoice.xeroStatus === "PAID"
       ? 9
@@ -76,14 +77,16 @@ export function InvoiceDashboardContent({
           subtotal={model.subtotal}
           taxTotal={model.taxTotal}
           totalAmount={model.totalAmount}
-          canSync={model.itemsDirty}
-          canDiscardChanges={model.itemsDirty}
+          canSync={!isReadOnly && model.itemsDirty}
+          canDiscardChanges={!isReadOnly && model.itemsDirty}
           onSync={model.syncInvoice}
           onDiscardChanges={() => void model.discardChanges()}
           onRefreshFromXero={model.refreshFromXero}
           onOpenXero={model.openInXero}
           onSaveReference={model.saveReference}
+          onUpdateXeroState={model.updateXeroState}
           isRefreshingFromXero={model.refreshingFromXero}
+          isUpdatingXeroState={model.updatingXeroState}
           referencePreview={model.referencePreview}
           hasInvoice={hasInvoice}
           onCreateInvoice={onCreateInvoice}
@@ -91,6 +94,7 @@ export function InvoiceDashboardContent({
         >
           <InvoiceItemsTable
             items={model.items}
+            readOnly={isReadOnly}
             synced={model.invoice.synced}
             subtotal={model.subtotal}
             taxTotal={model.taxTotal}

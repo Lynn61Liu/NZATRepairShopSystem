@@ -22,6 +22,8 @@ type Props = {
   manualPoNumber: string;
   currentInvoiceReference: string;
   hasConfirmedPo: boolean;
+  readOnly: boolean;
+  readOnlyReason?: string;
   onSendRequest: (payload: { to: string; subject: string; body: string }) => Promise<void>;
   onSelectDetection: (id: string) => void;
   onConfirmDetection: (id: string) => void;
@@ -44,6 +46,8 @@ export function PoRequestPanel({
   manualPoNumber,
   currentInvoiceReference,
   hasConfirmedPo,
+  readOnly,
+  readOnlyReason,
   onSendRequest,
   onSelectDetection,
   onConfirmDetection,
@@ -255,7 +259,7 @@ export function PoRequestPanel({
   const isCurrentPayloadSent =
     lastSentPayload?.to === to && lastSentPayload?.subject === subject && lastSentPayload?.body === body;
 
-  const sendDisabled = sending || Boolean(isCurrentPayloadSent && !isModified);
+  const sendDisabled = readOnly || sending || Boolean(isCurrentPayloadSent && !isModified);
 
   const handleSend = async () => {
     const payload = { to: normalizedToValue, subject, body };
@@ -354,9 +358,15 @@ export function PoRequestPanel({
   return (
     <>
       <Card className="rounded-[18px] p-6">
+      {readOnly ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {readOnlyReason || "PO Request is locked for this job."}
+        </div>
+      ) : null}
+
       {/* <div className="text-[28px] font-semibold tracking-[-0.03em] text-slate-900">Request Purchase Order</div> */}
 
-      <div className="mt-6 space-y-3">
+      <div className={`${readOnly ? "mt-4" : "mt-6"} space-y-3`}>
         {stateRounds.length === 0 ? (
           <div className="flex items-center gap-2">
             {stateMeta.Draft ?? <MailCheck className="h-4 w-4 text-slate-500" />}
@@ -432,6 +442,7 @@ export function PoRequestPanel({
                   value={to}
                   onChange={(event) => setTo(event.target.value)}
                   placeholder="输入一个或多个邮箱，使用逗号分隔"
+                  disabled={readOnly}
                 />
                 <div className="mt-2 flex flex-wrap gap-2">
                   {selectedEmails.map((email) => (
@@ -439,6 +450,7 @@ export function PoRequestPanel({
                       key={email}
                       type="button"
                       onClick={() => removeRecipient(email)}
+                      disabled={readOnly}
                       className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:border-slate-300"
                     >
                       <span>{email}</span>
@@ -450,12 +462,14 @@ export function PoRequestPanel({
                   <Select
                     value={quickAddRecipient}
                     onChange={(event) => {
+                      if (readOnly) return;
                       const nextValue = event.target.value;
                       if (nextValue) {
                         appendRecipient(nextValue);
                       }
                       setQuickAddRecipient("");
                     }}
+                    disabled={readOnly}
                   >
                     <option value="">快速添加商户 / staff 邮箱</option>
                     {recipientOptions.map((recipient) => (
@@ -473,7 +487,7 @@ export function PoRequestPanel({
                 <Input
                   value={subject}
                   onChange={(event) => setSubject(event.target.value)}
-                  disabled={!isDraftRound}
+                  disabled={readOnly || !isDraftRound}
                 />
                 {!isDraftRound ? (
                   <div className="mt-1 text-xs text-slate-500">
@@ -483,10 +497,10 @@ export function PoRequestPanel({
               </div>
               <div>
                 <div className="mb-1 font-semibold text-slate-900">Body</div>
-                <Textarea rows={12} value={body} onChange={(event) => setBody(event.target.value)} />
+                <Textarea rows={12} value={body} onChange={(event) => setBody(event.target.value)} disabled={readOnly} />
               </div>
               <div className="flex items-center justify-end gap-2">
-                {isModified ? (
+                {isModified && !readOnly ? (
                   <Button className="h-10 px-4" leftIcon={<X className="h-4 w-4" />} onClick={handleCancel}>
                     Cancel
                   </Button>
@@ -642,7 +656,7 @@ export function PoRequestPanel({
                 className="mt-5 h-11 px-5"
                 leftIcon={<MessageSquareText className="h-4 w-4" />}
                 onClick={handleReplyInThread}
-                disabled={!latestThreadEvent}
+                disabled={readOnly || !latestThreadEvent}
               >
                 在线程中回复
               </Button>
@@ -660,6 +674,8 @@ export function PoRequestPanel({
               currentInvoiceReference={currentInvoiceReference}
               onManualPoNumberChange={onManualPoNumberChange}
               onSyncManualPoToReference={onSyncManualPoToReference}
+              readOnly={readOnly}
+              readOnlyReason={readOnlyReason}
             />
           ) : null}
         </div>
