@@ -17,6 +17,7 @@ public class AppDbContext : DbContext
     public DbSet<JobPayment> JobPayments => Set<JobPayment>();
     public DbSet<XeroTokenRecord> XeroTokenRecords => Set<XeroTokenRecord>();
     public DbSet<InventoryItem> InventoryItems => Set<InventoryItem>();
+    public DbSet<SystemSyncState> SystemSyncStates => Set<SystemSyncState>();
     public DbSet<JobPoState> JobPoStates => Set<JobPoState>();
     public DbSet<Tag> Tags => Set<Tag>();
     public DbSet<JobTag> JobTags => Set<JobTag>();
@@ -276,6 +277,18 @@ public class AppDbContext : DbContext
         ii.HasIndex(x => x.ItemCode).IsUnique().HasDatabaseName("ux_inventory_items_item_code");
         ii.HasIndex(x => x.ItemName).HasDatabaseName("ix_inventory_items_item_name");
 
+        var sss = modelBuilder.Entity<SystemSyncState>();
+        sss.ToTable("system_sync_state");
+        sss.HasKey(x => x.Id);
+        sss.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        sss.Property(x => x.SyncKey).HasColumnName("sync_key").IsRequired();
+        sss.Property(x => x.LastSyncedAt).HasColumnName("last_synced_at");
+        sss.Property(x => x.LastResult).HasColumnName("last_result");
+        sss.Property(x => x.LastError).HasColumnName("last_error");
+        sss.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        sss.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        sss.HasIndex(x => x.SyncKey).IsUnique().HasDatabaseName("ux_system_sync_state_sync_key");
+
         var jp = modelBuilder.Entity<JobPoState>();
         jp.ToTable("job_po_state");
         jp.HasKey(x => x.Id);
@@ -387,6 +400,7 @@ public class AppDbContext : DbContext
         wfr.ToTable("wof_fail_reasons");
         wfr.HasKey(x => x.Id);
         wfr.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        wfr.Property(x => x.Code).HasColumnName("code");
         wfr.Property(x => x.Label).HasColumnName("label").IsRequired();
         wfr.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true);
         wfr.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");

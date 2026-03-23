@@ -363,11 +363,13 @@ public class GmailAuthController : ControllerBase
                 false,
                 "",
                 "",
-                syncWarning ?? "Correlation is inactive. Gmail sync skipped."
+                syncWarning ?? "Correlation is inactive. Gmail sync skipped.",
+                []
             ));
         }
 
         var logs = snapshot.Logs;
+        var detections = await BuildPoDetectionsAsync(logs, ct);
 
         var events = logs.Select(log => new GmailThreadEventResponse(
             log.GmailMessageId,
@@ -403,7 +405,8 @@ public class GmailAuthController : ControllerBase
             logs.FirstOrDefault(x => string.Equals(x.Direction, "reply", StringComparison.OrdinalIgnoreCase)) is { } latestReply
                 ? NormalizeInternalDate(latestReply.InternalDateMs)
                 : "",
-            syncWarning ?? ""
+            syncWarning ?? "",
+            detections
         ));
     }
 
@@ -1673,7 +1676,8 @@ public class GmailAuthController : ControllerBase
         bool HasPo,
         string DetectedPoNumber,
         string LastReplyTimestamp,
-        string SyncWarning
+        string SyncWarning,
+        List<PoDetectionResponse> Detections
     );
 
     private sealed class GmailTokenResponse

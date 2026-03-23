@@ -411,6 +411,56 @@ public sealed class JobInvoiceService
         return JobInvoiceStateUpdateResult.Fail(400, $"Unsupported state '{payload.State}'.");
     }
 
+    public async Task<JobInvoiceDeleteResult> DeleteDraftInXeroAsync(long jobId, CancellationToken ct)
+    {
+        var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (jobInvoice is null)
+            return JobInvoiceDeleteResult.Success(false);
+
+        if (!string.Equals(jobInvoice.Provider, "xero", StringComparison.OrdinalIgnoreCase))
+            return JobInvoiceDeleteResult.Success(false);
+
+        if (string.Equals(jobInvoice.ExternalStatus, "DELETED", StringComparison.OrdinalIgnoreCase))
+            return JobInvoiceDeleteResult.Success(true);
+
+        if (string.IsNullOrWhiteSpace(jobInvoice.ExternalInvoiceId) || !Guid.TryParse(jobInvoice.ExternalInvoiceId, out var invoiceId))
+            return JobInvoiceDeleteResult.Fail(400, "Missing Xero invoice id.");
+
+        var remoteInvoiceResult = await _xeroInvoiceService.GetInvoiceByIdAsync(invoiceId, ct);
+        if (!remoteInvoiceResult.Ok)
+        {
+            if (remoteInvoiceResult.StatusCode == 404)
+                return JobInvoiceDeleteResult.Success(true);
+
+            return JobInvoiceDeleteResult.Fail(
+                remoteInvoiceResult.StatusCode,
+                remoteInvoiceResult.Error ?? "Failed to fetch Xero invoice before delete.",
+                remoteInvoiceResult.Payload);
+        }
+
+        var remoteInvoice = ExtractInvoiceSummary(remoteInvoiceResult.Payload);
+        if (string.Equals(remoteInvoice.Status, "DELETED", StringComparison.OrdinalIgnoreCase))
+            return JobInvoiceDeleteResult.Success(true);
+
+        if (!string.Equals(jobInvoice.ExternalStatus, "DRAFT", StringComparison.OrdinalIgnoreCase))
+        {
+            return JobInvoiceDeleteResult.Fail(
+                400,
+                $"Only Xero draft invoices can be deleted when deleting a job. Current status: {jobInvoice.ExternalStatus ?? "UNKNOWN"}.");
+        }
+
+        var deleteResult = await SyncInvoiceStatusAsync(jobInvoice, "DELETED", ct);
+        if (!deleteResult.Ok)
+        {
+            if (deleteResult.StatusCode == 404)
+                return JobInvoiceDeleteResult.Success(true);
+
+            return JobInvoiceDeleteResult.Fail(deleteResult.StatusCode, deleteResult.Error ?? "Failed to delete Xero draft invoice.", deleteResult.Payload);
+        }
+
+        return JobInvoiceDeleteResult.Success(true);
+    }
+
     private async Task<JobInvoiceCreateResult> SyncInvoiceStatusAsync(JobInvoice jobInvoice, string targetStatus, CancellationToken ct)
     {
         var request = BuildRequestFromPayload(jobInvoice.ResponsePayloadJson, jobInvoice);
@@ -531,7 +581,7 @@ public sealed class JobInvoiceService
         bool hasWofRecord,
         CancellationToken ct)
     {
-        var reference = BuildReference(customer);
+        var reference = BuildReference(job, customer, vehicle);
         var contactName = BuildContactName(customer, vehicle);
         if (string.IsNullOrWhiteSpace(contactName))
             throw new InvalidOperationException("Unable to derive contact name for invoice.");
@@ -1060,7 +1110,7 @@ public sealed class JobInvoiceService
             : "WOF-DEALERSHIP";
     }
 
-    private static string BuildReference(Customer customer)
+    private static string BuildReference(Job job, Customer customer, Vehicle vehicle)
     {
         if (string.Equals(customer.Type, "Personal", StringComparison.OrdinalIgnoreCase))
         {
@@ -1070,7 +1120,12 @@ public sealed class JobInvoiceService
             return string.Join(' ', parts);
         }
 
-        return "等待PO confirm";
+        var poNumber = string.IsNullOrWhiteSpace(job.PoNumber) ? "[PO]" : job.PoNumber.Trim();
+        var year = vehicle.Year.HasValue && vehicle.Year.Value > 0 ? vehicle.Year.Value.ToString() : "[YEAR]";
+        var make = string.IsNullOrWhiteSpace(vehicle.Make) ? "[MAKE]" : vehicle.Make.Trim();
+        var model = string.IsNullOrWhiteSpace(vehicle.Model) ? "[MODEL]" : vehicle.Model.Trim();
+
+        return $"{poNumber} {year} {make} {model}";
     }
 
     private static string BuildContactName(Customer customer, Vehicle vehicle)
@@ -1461,6 +1516,32 @@ public sealed class JobInvoiceStateUpdateResult
         };
 
     public static JobInvoiceStateUpdateResult Fail(int statusCode, string error, object? payload = null) =>
+        new()
+        {
+            Ok = false,
+            StatusCode = statusCode,
+            Error = error,
+            Payload = payload,
+        };
+}
+
+public sealed class JobInvoiceDeleteResult
+{
+    public bool Ok { get; private init; }
+    public int StatusCode { get; private init; }
+    public string? Error { get; private init; }
+    public object? Payload { get; private init; }
+    public bool DeletedInXero { get; private init; }
+
+    public static JobInvoiceDeleteResult Success(bool deletedInXero) =>
+        new()
+        {
+            Ok = true,
+            StatusCode = 200,
+            DeletedInXero = deletedInXero,
+        };
+
+    public static JobInvoiceDeleteResult Fail(int statusCode, string error, object? payload = null) =>
         new()
         {
             Ok = false,

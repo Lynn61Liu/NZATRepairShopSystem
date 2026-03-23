@@ -87,7 +87,7 @@ export function CardItem({ card, onDelete, onArchive, onAddNote, onDeleteNote }:
                 {card.parts.map((part, index) => (
                   <span
                     key={index}
-                    className="inline-block bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded"
+                    className="inline-block rounded bg-gray-100 px-2 py-1 text-[30px] leading-tight text-gray-700"
                   >
                     {part}
                   </span>

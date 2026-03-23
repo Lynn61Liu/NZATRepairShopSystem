@@ -45,7 +45,7 @@ const TAX_RATE_PERCENTAGE: Record<TaxRateOption, number> = {
 function getTaxAmount(item: InvoiceItem) {
   const rate = TAX_RATE_PERCENTAGE[item.taxRate];
   if (rate <= 0) return 0;
-  return getLineAmount(item) * (rate / (100 + rate));
+  return getLineAmount(item) * (rate / 100);
 }
 
 function getLineAmount(item: InvoiceItem) {

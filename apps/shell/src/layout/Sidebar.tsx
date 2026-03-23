@@ -169,6 +169,14 @@ export function Sidebar() {
             >
               WOF Fails
             </NavLink>
+            <NavLink
+              to="/xero-item-codes"
+              className={({ isActive }) =>
+                `${linkBase} ${isActive ? linkActive : linkIdle}`
+              }
+            >
+              Xero Item Code
+            </NavLink>
           </div>
         </div>
       </nav>

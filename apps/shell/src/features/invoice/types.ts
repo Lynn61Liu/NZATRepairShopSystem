@@ -92,6 +92,17 @@ export type PoDetection = {
   status: "pending" | "confirmed" | "rejected";
 };
 
+export type GmailThreadPayload = {
+  events: EmailTimelineEvent[];
+  unreadReplyCount: number;
+  hasReply: boolean;
+  hasPo: boolean;
+  detectedPoNumber: string;
+  lastReplyTimestamp: string;
+  syncWarning: string;
+  detections: PoDetection[];
+};
+
 export type WorkflowStep = {
   id: number;
   title: string;

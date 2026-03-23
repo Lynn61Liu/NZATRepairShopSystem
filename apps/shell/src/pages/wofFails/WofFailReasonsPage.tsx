@@ -5,6 +5,7 @@ import { Plus, Trash2, Pencil } from "lucide-react";
 
 type FailReasonRow = {
   id: string;
+  code: string | null;
   label: string;
   isActive: boolean;
   createdAt: string;
@@ -14,6 +15,7 @@ type FailReasonRow = {
 type FailReasonDraft = Omit<FailReasonRow, "id" | "createdAt" | "updatedAt">;
 
 const blankDraft: FailReasonDraft = {
+  code: "",
   label: "",
   isActive: true,
 };
@@ -34,7 +36,11 @@ export function WofFailReasonsPage() {
   const filteredRows = useMemo(() => {
     const s = search.trim().toLowerCase();
     if (!s) return rows;
-    return rows.filter((row) => row.label.toLowerCase().includes(s));
+    return rows.filter(
+      (row) =>
+        row.label.toLowerCase().includes(s) ||
+        (row.code ?? "").toLowerCase().includes(s),
+    );
   }, [rows, search]);
 
   const loadReasons = async () => {
@@ -81,7 +87,11 @@ export function WofFailReasonsPage() {
       const res = await fetch(withApiBase("/api/wof-fail-reasons"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: draft.label.trim(), isActive: draft.isActive }),
+        body: JSON.stringify({
+          code: draft.code?.trim() || null,
+          label: draft.label.trim(),
+          isActive: draft.isActive,
+        }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
@@ -103,7 +113,7 @@ export function WofFailReasonsPage() {
   const startEdit = (row: FailReasonRow) => {
     setActionError(null);
     setEditingId(row.id);
-    setEditDraft({ label: row.label, isActive: row.isActive });
+      setEditDraft({ code: row.code ?? "", label: row.label, isActive: row.isActive });
     setAdding(false);
   };
 
@@ -120,7 +130,11 @@ export function WofFailReasonsPage() {
       const res = await fetch(withApiBase(`/api/wof-fail-reasons/${encodeURIComponent(editingId)}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: editDraft.label.trim(), isActive: editDraft.isActive }),
+        body: JSON.stringify({
+          code: editDraft.code?.trim() || null,
+          label: editDraft.label.trim(),
+          isActive: editDraft.isActive,
+        }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
@@ -223,18 +237,25 @@ export function WofFailReasonsPage() {
           <EmptyState message="暂无失败原因" />
         ) : (
           <div className="overflow-x-auto">
-            <div className="min-w-[720px]">
-              <div className="grid grid-cols-[120px_1fr_120px_140px] gap-2 border-b border-[rgba(0,0,0,0.06)] px-4 py-3 text-[12px] font-semibold text-[rgba(0,0,0,0.55)]">
+            <div className="min-w-[860px]">
+              <div className="grid grid-cols-[120px_180px_1fr_120px_140px] gap-2 border-b border-[rgba(0,0,0,0.06)] px-4 py-3 text-[12px] font-semibold text-[rgba(0,0,0,0.55)]">
                 <div>ID</div>
+                <div>Code</div>
                 <div>原因</div>
                 <div>Active</div>
                 <div className="text-right pr-2">操作</div>
               </div>
 
               {adding ? (
-                <div className="grid grid-cols-[120px_1fr_120px_140px] gap-2 px-4 py-3 hover:bg-[rgba(0,0,0,0.02)]">
+                <div className="grid grid-cols-[120px_180px_1fr_120px_140px] gap-2 px-4 py-3 hover:bg-[rgba(0,0,0,0.02)]">
                   <div className="text-xs text-[rgba(0,0,0,0.5)]">-</div>
                   <Input
+                    placeholder="Code"
+                    value={draft.code ?? ""}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, code: event.target.value }))}
+                  />
+                  <Input
+                    placeholder="原因"
                     value={draft.label}
                     onChange={(event) => setDraft((prev) => ({ ...prev, label: event.target.value }))}
                   />
@@ -260,12 +281,24 @@ export function WofFailReasonsPage() {
                 return (
                   <div
                     key={row.id}
-                    className="group grid grid-cols-[120px_1fr_120px_140px] gap-2 px-4 py-3 transition hover:bg-[rgba(0,0,0,0.02)]"
+                    className="group grid grid-cols-[120px_180px_1fr_120px_140px] gap-2 px-4 py-3 transition hover:bg-[rgba(0,0,0,0.02)]"
                   >
                     <div className="text-xs text-[rgba(0,0,0,0.6)]">{row.id}</div>
                     <div>
                       {isEditing ? (
                         <Input
+                          placeholder="Code"
+                          value={editDraft.code ?? ""}
+                          onChange={(event) => setEditDraft((prev) => ({ ...prev, code: event.target.value }))}
+                        />
+                      ) : (
+                        <div className="truncate text-[rgba(0,0,0,0.72)]">{row.code || "-"}</div>
+                      )}
+                    </div>
+                    <div>
+                      {isEditing ? (
+                        <Input
+                          placeholder="原因"
                           value={editDraft.label}
                           onChange={(event) => setEditDraft((prev) => ({ ...prev, label: event.target.value }))}
                         />

@@ -14,11 +14,13 @@ public class JobsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly JobPoStateService _jobPoStateService;
+    private readonly JobInvoiceService _jobInvoiceService;
 
-    public JobsController(AppDbContext db, JobPoStateService jobPoStateService)
+    public JobsController(AppDbContext db, JobPoStateService jobPoStateService, JobInvoiceService jobInvoiceService)
     {
         _db = db;
         _jobPoStateService = jobPoStateService;
+        _jobInvoiceService = jobInvoiceService;
     }
 
     [HttpGet]
@@ -611,6 +613,14 @@ public class JobsController : ControllerBase
         if (job is null)
             return NotFound(new { error = "Job not found." });
 
+        var xeroDeleteResult = await _jobInvoiceService.DeleteDraftInXeroAsync(id, ct);
+        if (!xeroDeleteResult.Ok)
+            return StatusCode(xeroDeleteResult.StatusCode, new { error = xeroDeleteResult.Error, payload = xeroDeleteResult.Payload });
+
+        // DeleteDraftInXeroAsync updates a tracked JobInvoice row before this action bulk-deletes it.
+        // Clear tracked entities so the later SaveChanges only persists the new inactive correlation record.
+        _db.ChangeTracker.Clear();
+
         await using var tx = await _db.Database.BeginTransactionAsync(ct);
         var correlationId = BuildCorrelationId(job.Id);
 
@@ -667,7 +677,14 @@ public class JobsController : ControllerBase
 
         await tx.CommitAsync(ct);
 
-        return Ok(new { success = true, vehicleDeleted, customerDeleted = false, correlationDeactivated = correlationId });
+        return Ok(new
+        {
+            success = true,
+            vehicleDeleted,
+            customerDeleted = false,
+            correlationDeactivated = correlationId,
+            xeroDraftInvoiceDeleted = xeroDeleteResult.DeletedInXero
+        });
     }
 
     private static string BuildCorrelationId(long jobId)

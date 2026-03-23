@@ -26,6 +26,7 @@ public class WofFailReasonsController : ControllerBase
             .Select(x => new
             {
                 id = x.Id.ToString(CultureInfo.InvariantCulture),
+                code = x.Code,
                 label = x.Label,
                 isActive = x.IsActive,
                 createdAt = DateTimeHelper.FormatUtc(x.CreatedAt),
@@ -36,7 +37,7 @@ public class WofFailReasonsController : ControllerBase
         return Ok(reasons);
     }
 
-    public record WofFailReasonUpsertRequest(string Label, bool IsActive);
+    public record WofFailReasonUpsertRequest(string Label, string? Code, bool IsActive);
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] WofFailReasonUpsertRequest req, CancellationToken ct)
@@ -51,6 +52,7 @@ public class WofFailReasonsController : ControllerBase
 
         var reason = new WofFailReason
         {
+            Code = NormalizeCode(req.Code),
             Label = label,
             IsActive = req.IsActive,
             CreatedAt = DateTime.UtcNow,
@@ -63,6 +65,7 @@ public class WofFailReasonsController : ControllerBase
         return Ok(new
         {
             id = reason.Id.ToString(CultureInfo.InvariantCulture),
+            code = reason.Code,
             label = reason.Label,
             isActive = reason.IsActive,
             createdAt = DateTimeHelper.FormatUtc(reason.CreatedAt),
@@ -86,6 +89,7 @@ public class WofFailReasonsController : ControllerBase
         if (exists)
             return Conflict(new { error = "Fail reason already exists." });
 
+        reason.Code = NormalizeCode(req.Code);
         reason.Label = label;
         reason.IsActive = req.IsActive;
         reason.UpdatedAt = DateTime.UtcNow;
@@ -94,6 +98,7 @@ public class WofFailReasonsController : ControllerBase
         return Ok(new
         {
             id = reason.Id.ToString(CultureInfo.InvariantCulture),
+            code = reason.Code,
             label = reason.Label,
             isActive = reason.IsActive,
             createdAt = DateTimeHelper.FormatUtc(reason.CreatedAt),
@@ -111,5 +116,13 @@ public class WofFailReasonsController : ControllerBase
         _db.WofFailReasons.Remove(reason);
         await _db.SaveChangesAsync(ct);
         return Ok(new { success = true });
+    }
+
+    private static string? NormalizeCode(string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+            return null;
+
+        return code.Trim();
     }
 }

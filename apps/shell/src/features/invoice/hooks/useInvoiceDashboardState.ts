@@ -13,6 +13,7 @@ import type {
   PoDetection,
   ReferencePreviewSource,
   TaxRateOption,
+  GmailThreadPayload,
   XeroItemDefinition,
   XeroStateOption,
   XeroInvoiceStatus,
@@ -47,13 +48,13 @@ function createNewItem(nextId: number): InvoiceItem {
 }
 
 function getBaseAmount(item: InvoiceItem) {
-  return getLineAmount(item) - getTaxAmount(item);
+  return getLineAmount(item);
 }
 
 function getTaxAmount(item: InvoiceItem) {
   const rate = TAX_RATE_PERCENTAGE[item.taxRate];
   if (rate <= 0) return 0;
-  return getLineAmount(item) * (rate / (100 + rate));
+  return getLineAmount(item) * (rate / 100);
 }
 
 function getLineAmount(item: InvoiceItem) {
@@ -92,7 +93,7 @@ const initialInvoiceState: InvoiceDashboardState = {
   dueDate: "",
   invoiceNumber: "",
   reference: "",
-  amountsAre: "Tax Inclusive",
+  amountsAre: "Tax Exclusive",
   xeroInvoiceId: "",
   status: "Awaiting PO",
   xeroStatus: "UNKNOWN",
@@ -302,6 +303,11 @@ export function useInvoiceDashboardState({
   const [savedPoNumber, setSavedPoNumber] = useState(persistedPoNumber?.trim() || "");
   const [savedInvoiceReference, setSavedInvoiceReference] = useState(persistedInvoiceReference?.trim() || "");
   const blocker = useBlocker(draftDirty || itemsDirty);
+  const timelineRef = useRef<EmailTimelineEvent[]>([]);
+  const selectedDetectionIdRef = useRef<string | null>(null);
+  const poPanelInitializedRef = useRef(false);
+  const merchantRecipientsLoadingRef = useRef(true);
+  const savedPoNumberRef = useRef(savedPoNumber);
   const syncedSnapshotRef = useRef<InvoiceSnapshot>({
     invoice: initialInvoiceState,
     items: parsePersistedItems(persistedInvoice),
@@ -313,6 +319,27 @@ export function useInvoiceDashboardState({
   const totalAmount = useMemo(() => subtotal + taxTotal, [subtotal, taxTotal]);
   const poLocked = invoice.xeroStatus === "PAID";
   const poLockReason = poLocked ? "Invoice is already marked as Paid in Xero. PO Request data is locked and can no longer be changed." : "";
+
+  useEffect(() => {
+    timelineRef.current = timeline;
+  }, [timeline]);
+
+  useEffect(() => {
+    selectedDetectionIdRef.current = selectedDetectionId;
+  }, [selectedDetectionId]);
+
+  useEffect(() => {
+    poPanelInitializedRef.current = poPanelInitialized;
+  }, [poPanelInitialized]);
+
+  useEffect(() => {
+    merchantRecipientsLoadingRef.current = merchantRecipientsLoading;
+  }, [merchantRecipientsLoading]);
+
+  useEffect(() => {
+    savedPoNumberRef.current = savedPoNumber;
+  }, [savedPoNumber]);
+
   const referencePreview = useMemo<ReferencePreviewSource | null>(() => {
     const normalizedPo = savedPoNumber.trim().toUpperCase();
     if (!normalizedPo) return null;
@@ -340,7 +367,7 @@ export function useInvoiceDashboardState({
   }, [detections, savedPoNumber, timeline]);
 
   const buildDraftPayload = () => ({
-    lineAmountTypes: "Inclusive",
+    lineAmountTypes: "Exclusive",
     date: invoice.issueDate || new Date().toISOString().slice(0, 10),
     reference: invoice.reference,
     contactName: invoice.contact,
@@ -438,7 +465,7 @@ export function useInvoiceDashboardState({
     setDraftSaving(true);
     try {
       const res = await saveJobInvoiceDraft(jobId, {
-        lineAmountTypes: "Inclusive",
+        lineAmountTypes: "Exclusive",
         date: snapshot.invoice.issueDate || new Date().toISOString().slice(0, 10),
         reference: snapshot.invoice.reference,
         contactName: snapshot.invoice.contact,
@@ -1087,7 +1114,9 @@ export function useInvoiceDashboardState({
     let cancelled = false;
 
     const refreshThreadEvents = async () => {
-      if (!poPanelInitialized && merchantRecipientsLoading) {
+      const existingThreadEvents = timelineRef.current.filter((event) => ["sent", "reminder", "reply"].includes(event.type));
+
+      if (!poPanelInitializedRef.current && merchantRecipientsLoadingRef.current) {
         setPoPanelLoading(true);
         return;
       }
@@ -1101,53 +1130,41 @@ export function useInvoiceDashboardState({
         return;
       }
 
-      if (!poPanelInitialized) {
+      if (!poPanelInitializedRef.current) {
         setPoPanelLoading(true);
       } else {
         setPoPanelRefreshing(true);
       }
-      const res = await requestJson<{
-        events: EmailTimelineEvent[];
-        unreadReplyCount: number;
-        hasReply: boolean;
-        hasPo: boolean;
-        detectedPoNumber: string;
-        lastReplyTimestamp: string;
-      }>(
+      const res = await requestJson<GmailThreadPayload>(
         `/api/gmail/thread?counterpartyEmail=${encodeURIComponent(invoice.selectedMerchantEmail)}&correlationId=${encodeURIComponent(invoice.correlationId)}`
       );
 
       if (!res.ok || !res.data || !Array.isArray(res.data.events) || cancelled) {
-        setTimeline((prev) => prev.filter((event) => !["sent", "reminder", "reply"].includes(event.type)));
-        setDetections([]);
         setPoPanelLoading(false);
         setPoPanelInitialized(true);
         setPoPanelRefreshing(false);
         return;
       }
       const threadData = res.data;
-
-      const detectionRes = await requestJson<PoDetection[]>(
-        `/api/gmail/po-detections?counterpartyEmail=${encodeURIComponent(invoice.selectedMerchantEmail)}&correlationId=${encodeURIComponent(invoice.correlationId)}`
-      );
+      const effectiveThreadEvents = threadData.events.length > 0 ? threadData.events : existingThreadEvents;
       const nextDetections =
-        detectionRes.ok && Array.isArray(detectionRes.data)
-          ? detectionRes.data.map((item) => ({
+        Array.isArray(threadData.detections)
+          ? threadData.detections.map((item) => ({
               ...item,
               status: item.status ?? "pending",
             }))
           : [];
       const hasDetectedPo = Boolean(threadData.hasPo || nextDetections.length > 0);
       const resolvedSelectedDetectionId =
-        selectedDetectionId && nextDetections.some((item) => item.id === selectedDetectionId)
-          ? selectedDetectionId
-          : savedPoNumber
-            ? nextDetections.find((item) => item.poNumber.trim().toUpperCase() === savedPoNumber.toUpperCase())?.id ?? null
-          : null;
+        selectedDetectionIdRef.current && nextDetections.some((item) => item.id === selectedDetectionIdRef.current)
+          ? selectedDetectionIdRef.current
+          : savedPoNumberRef.current
+            ? nextDetections.find((item) => item.poNumber.trim().toUpperCase() === savedPoNumberRef.current.toUpperCase())?.id ?? null
+            : null;
 
       setTimeline((prev) => {
         const nonThreadEvents = prev.filter((event) => !["sent", "reminder", "reply"].includes(event.type));
-        return [...threadData.events, ...nonThreadEvents];
+        return [...effectiveThreadEvents, ...nonThreadEvents];
       });
       setSelectedDetectionId(resolvedSelectedDetectionId);
       setDetections(applyDetectionSelection(nextDetections, resolvedSelectedDetectionId));
@@ -1155,12 +1172,12 @@ export function useInvoiceDashboardState({
       setInvoice((prev) => ({
         ...prev,
         emailStates:
-          threadData.events.length === 0
+          effectiveThreadEvents.length === 0
             ? ["Draft"]
             : EMAIL_STATE_ORDER.filter((state) =>
                 [
                   "Email Sent",
-                  ...(threadData.events.some((event) => event.type === "reminder") ? (["Reminder Scheduled"] as const) : []),
+                  ...(effectiveThreadEvents.some((event) => event.type === "reminder") ? (["Reminder Scheduled"] as const) : []),
                   ...(threadData.hasReply ? (["Get Reply"] as const) : []),
                   ...(hasDetectedPo ? (["Get PO"] as const) : []),
                 ].includes(state)
@@ -1168,8 +1185,8 @@ export function useInvoiceDashboardState({
         lastReplyReceived: threadData.lastReplyTimestamp || prev.lastReplyReceived,
       }));
 
-      if (savedPoNumber) {
-        setManualPoNumber(savedPoNumber);
+      if (savedPoNumberRef.current) {
+        setManualPoNumber(savedPoNumberRef.current);
       } else if (threadData.detectedPoNumber) {
         setManualPoNumber(threadData.detectedPoNumber);
       } else if (nextDetections.length > 0) {
@@ -1196,10 +1213,7 @@ export function useInvoiceDashboardState({
   }, [
     invoice.selectedMerchantEmail,
     invoice.correlationId,
-    selectedDetectionId,
-    poPanelInitialized,
     merchantRecipientsLoading,
-    savedPoNumber,
   ]);
 
   const unreadReplyCount = timeline.filter((event) => event.type === "reply" && event.unread).length;
