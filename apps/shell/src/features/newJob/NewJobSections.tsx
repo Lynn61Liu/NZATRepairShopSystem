@@ -205,6 +205,7 @@ type CustomerSectionProps = {
   onBusinessChange: (value: string) => void;
   personalNameSuggestions: string[];
   onPersonalNameBlur?: () => void;
+  matchHint?: string;
 };
 
 export function CustomerSection({
@@ -225,6 +226,7 @@ export function CustomerSection({
   onBusinessChange,
   personalNameSuggestions,
   onPersonalNameBlur,
+  matchHint,
 }: CustomerSectionProps) {
   return (
     <SectionCard title="客户信息" titleIcon={<UserRound size={18} />} titleClassName="text-lg font-semibold">
@@ -235,6 +237,12 @@ export function CustomerSection({
           </label>
           <CustomerTypeToggle value={customerType} onChange={onCustomerTypeChange} />
         </div>
+
+        {matchHint ? (
+          <div className="rounded-[10px] border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+            {matchHint}
+          </div>
+        ) : null}
 
         {customerType === "personal" ? (
           <div className="grid grid-cols-2 gap-3">

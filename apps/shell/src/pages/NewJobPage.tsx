@@ -27,6 +27,9 @@ export function NewJobPage() {
     email: string;
     address: string;
   };
+  type CustomerMatchHint = {
+    message: string;
+  };
   type LinkedCustomerPayload = {
     source?: string;
     jobId?: number | null;
@@ -63,6 +66,7 @@ export function NewJobPage() {
   const [businessId, setBusinessId] = useState("");
   const [businessOptions, setBusinessOptions] = useState<BusinessOption[]>([]);
   const [personalCustomerOptions, setPersonalCustomerOptions] = useState<PersonalCustomerOption[]>([]);
+  const [customerMatchHint, setCustomerMatchHint] = useState<CustomerMatchHint | null>(null);
   const [notes, setNotes] = useState("");
   const [needsPo, setNeedsPo] = useState(true);
   const [paintPanels, setPaintPanels] = useState("1");
@@ -293,6 +297,10 @@ export function NewJobPage() {
     setVehicleInfo(null);
   };
 
+  const clearCustomerMatchHint = () => {
+    setCustomerMatchHint(null);
+  };
+
   const fetchVehicleFromDb = async (plate: string) => {
     const res = await fetch(withApiBase(`/api/vehicles/by-plate?plate=${encodeURIComponent(plate)}`));
     const data = await res.json().catch(() => null);
@@ -328,10 +336,22 @@ export function NewJobPage() {
       setPersonalPhone("");
       setPersonalEmail("");
       setCustomerAddress("");
+      setCustomerMatchHint({
+        message:
+          payload?.source === "job"
+            ? "已匹配历史工单里的商户客户信息。"
+            : "已匹配这台车之前绑定的商户客户信息。",
+      });
       return;
     }
 
     applyPersonalCustomer(customer);
+    setCustomerMatchHint({
+      message:
+        payload?.source === "job"
+          ? "已匹配历史工单里的客户信息。"
+          : "已匹配这台车之前绑定的客户信息。",
+    });
   };
 
   const handlePersonalNameBlur = () => {
@@ -342,6 +362,7 @@ export function NewJobPage() {
     if (!matched) return;
 
     applyPersonalCustomer(matched);
+    setCustomerMatchHint({ message: "已匹配现有客户资料并自动填充。"});
   };
 
   const importVehicle = async (plate: string) => {
@@ -414,6 +435,7 @@ export function NewJobPage() {
 
     setRego(normalized);
     resetImportState();
+    clearCustomerMatchHint();
   };
 
   const handleSave = async () => {
@@ -594,22 +616,41 @@ export function NewJobPage() {
 
           <CustomerSection
             customerType={customerType}
-            onCustomerTypeChange={setCustomerType}
+            onCustomerTypeChange={(next) => {
+              clearCustomerMatchHint();
+              setCustomerType(next);
+            }}
             personalName={personalName}
             personalPhone={personalPhone}
             // personalWechat={personalWechat}
             personalEmail={personalEmail}
-            onPersonalNameChange={setPersonalName}
-            onPersonalPhoneChange={setPersonalPhone}
+            onPersonalNameChange={(value) => {
+              clearCustomerMatchHint();
+              setPersonalName(value);
+            }}
+            onPersonalPhoneChange={(value) => {
+              clearCustomerMatchHint();
+              setPersonalPhone(value);
+            }}
             // onPersonalWechatChange={setPersonalWechat}
-            onPersonalEmailChange={setPersonalEmail}
+            onPersonalEmailChange={(value) => {
+              clearCustomerMatchHint();
+              setPersonalEmail(value);
+            }}
             customerAddress={customerAddress}
-            onCustomerAddressChange={setCustomerAddress}
+            onCustomerAddressChange={(value) => {
+              clearCustomerMatchHint();
+              setCustomerAddress(value);
+            }}
             businessId={businessId}
             businessOptions={businessOptions}
-            onBusinessChange={setBusinessId}
+            onBusinessChange={(value) => {
+              clearCustomerMatchHint();
+              setBusinessId(value);
+            }}
             personalNameSuggestions={personalNameSuggestions}
             onPersonalNameBlur={handlePersonalNameBlur}
+            matchHint={customerMatchHint?.message}
           />
           <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
             <ServicesSection
