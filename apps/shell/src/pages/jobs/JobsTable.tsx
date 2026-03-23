@@ -75,6 +75,25 @@ function formatCreatedAtDisplay(value?: string) {
   return formatNzDateTime(parsed).trim();
 }
 
+function getXeroInvoiceUrl(externalInvoiceId?: string) {
+  const invoiceId = externalInvoiceId?.trim();
+  return invoiceId
+    ? `https://go.xero.com/AccountsReceivable/View.aspx?invoiceID=${encodeURIComponent(invoiceId)}`
+    : "https://go.xero.com";
+}
+
+function XeroIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+      <circle cx="12" cy="12" r="10" fill="#13B5EA" />
+      <path
+        d="M8.1 8.4h2.2l1.7 2.5 1.7-2.5h2.2l-2.8 3.9 3 4.3h-2.2l-1.9-2.8-1.9 2.8H7.9l3-4.3-2.8-3.9z"
+        fill="#fff"
+      />
+    </svg>
+  );
+}
+
 export function JobsTable({
   rows,
   onToggleUrgent,
@@ -317,6 +336,15 @@ export function JobsTable({
                   >
                     喷漆
                   </button>
+                  {r.externalInvoiceId ? (
+                    <button
+                      className="inline-flex h-8 min-w-10 items-center justify-center rounded-[8px] border border-[rgba(19,181,234,0.22)] bg-[rgba(19,181,234,0.08)] px-2 text-[rgba(19,181,234,1)] hover:bg-[rgba(19,181,234,0.14)]"
+                      onClick={() => window.open(getXeroInvoiceUrl(r.externalInvoiceId), "_blank", "noopener,noreferrer")}
+                      title="Open in Xero"
+                    >
+                      <XeroIcon />
+                    </button>
+                  ) : null}
                   <button
                     className="text-[rgba(0,0,0,0.45)] hover:text-[rgba(0,0,0,0.70)]"
                     title="Archive"

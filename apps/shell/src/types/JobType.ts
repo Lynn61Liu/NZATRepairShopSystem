@@ -22,6 +22,7 @@ export type JobRow = {
   customerCode?: string;
   customerPhone: string;
   notes?: string;
+  externalInvoiceId?: string;
   createdAt: string; 
 };
 
