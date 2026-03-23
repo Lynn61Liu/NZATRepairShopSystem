@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Button, Card, EmptyState, Input, Textarea, useToast } from "@/components/ui";
+import { Alert, Button, Card, EmptyState, Input, Pagination, useToast } from "@/components/ui";
+import { XeroButton } from "@/components/common/XeroButton";
 import { requestJson } from "@/utils/api";
-import { Pencil, Plus, RefreshCcw } from "lucide-react";
+import { paginate } from "@/utils/pagination";
+import { RefreshCcw } from "lucide-react";
 
 type InventoryItemRow = {
   id: string;
@@ -41,42 +43,25 @@ type InventoryItemResponse = {
   inventoryType: string | null;
 };
 
-const blankDraft: InventoryItemRow = {
-  id: "",
-  itemCode: "",
-  itemName: "",
-  quantity: "",
-  purchasesDescription: "",
-  purchasesUnitPrice: "",
-  purchasesAccount: "",
-  purchasesTaxRate: "",
-  salesDescription: "",
-  salesUnitPrice: "",
-  salesAccount: "",
-  salesTaxRate: "",
-  inventoryAssetAccount: "",
-  costOfGoodsSoldAccount: "",
-  status: "ACTIVE",
-  inventoryType: "",
-};
-
 const columns: Array<{ key: keyof InventoryItemRow; label: string; width: string; multiline?: boolean }> = [
-  { key: "itemCode", label: "Item Code", width: "w-[140px]" },
-  { key: "itemName", label: "Item Name", width: "w-[220px]" },
+  { key: "itemCode", label: "Item Code", width: "w-[210px]" },
+  { key: "itemName", label: "Item Name", width: "w-[352px]" },
   { key: "quantity", label: "Quantity", width: "w-[110px]" },
-  { key: "purchasesDescription", label: "Purchases Description", width: "w-[240px]", multiline: true },
-  { key: "purchasesUnitPrice", label: "Purchases Unit Price", width: "w-[150px]" },
-  { key: "purchasesAccount", label: "Purchases Account", width: "w-[150px]" },
-  { key: "purchasesTaxRate", label: "Purchases Tax Rate", width: "w-[150px]" },
   { key: "salesDescription", label: "Sales Description", width: "w-[240px]", multiline: true },
   { key: "salesUnitPrice", label: "Sales Unit Price", width: "w-[140px]" },
   { key: "salesAccount", label: "Sales Account", width: "w-[140px]" },
   { key: "salesTaxRate", label: "Sales Tax Rate", width: "w-[140px]" },
+  { key: "purchasesDescription", label: "Purchases Description", width: "w-[240px]", multiline: true },
+  { key: "purchasesUnitPrice", label: "Purchases Unit Price", width: "w-[150px]" },
+  { key: "purchasesAccount", label: "Purchases Account", width: "w-[150px]" },
+  { key: "purchasesTaxRate", label: "Purchases Tax Rate", width: "w-[150px]" },
   { key: "inventoryAssetAccount", label: "Inventory Asset Account", width: "w-[180px]" },
   { key: "costOfGoodsSoldAccount", label: "COGS Account", width: "w-[160px]" },
   { key: "status", label: "Status", width: "w-[120px]" },
   { key: "inventoryType", label: "Inventory Type", width: "w-[140px]" },
 ];
+
+const alwaysVisibleColumns: Array<keyof InventoryItemRow> = ["itemCode", "itemName"];
 
 function mapRow(item: InventoryItemResponse): InventoryItemRow {
   return {
@@ -99,52 +84,17 @@ function mapRow(item: InventoryItemResponse): InventoryItemRow {
   };
 }
 
-function toPayload(row: InventoryItemRow) {
-  const toNullableNumber = (value: string) => {
-    const trimmed = value.trim();
-    if (!trimmed) return null;
-    const parsed = Number(trimmed);
-    return Number.isFinite(parsed) ? parsed : null;
-  };
-
-  const toNullableString = (value: string) => {
-    const trimmed = value.trim();
-    return trimmed ? trimmed : null;
-  };
-
-  return {
-    itemCode: row.itemCode.trim(),
-    itemName: row.itemName.trim(),
-    quantity: toNullableNumber(row.quantity),
-    purchasesDescription: toNullableString(row.purchasesDescription),
-    purchasesUnitPrice: toNullableNumber(row.purchasesUnitPrice),
-    purchasesAccount: toNullableString(row.purchasesAccount),
-    purchasesTaxRate: toNullableString(row.purchasesTaxRate),
-    salesDescription: toNullableString(row.salesDescription),
-    salesUnitPrice: toNullableNumber(row.salesUnitPrice),
-    salesAccount: toNullableString(row.salesAccount),
-    salesTaxRate: toNullableString(row.salesTaxRate),
-    inventoryAssetAccount: toNullableString(row.inventoryAssetAccount),
-    costOfGoodsSoldAccount: toNullableString(row.costOfGoodsSoldAccount),
-    status: row.status.trim(),
-    inventoryType: toNullableString(row.inventoryType),
-  };
-}
-
 export function XeroItemCodesPage() {
   const toast = useToast();
+  const pageSize = 18;
   const [rows, setRows] = useState<InventoryItemRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [purchasesOnly, setPurchasesOnly] = useState(false);
-  const [salesOnly, setSalesOnly] = useState(false);
-  const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState<InventoryItemRow>(blankDraft);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState<InventoryItemRow>(blankDraft);
-  const [saving, setSaving] = useState(false);
+  const [salesOnly, setSalesOnly] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
   const [syncingXero, setSyncingXero] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string>("");
 
@@ -179,6 +129,19 @@ export function XeroItemCodesPage() {
       return true;
     });
   }, [rows, search, purchasesOnly, salesOnly]);
+
+  const visibleColumns = useMemo(() => {
+    return columns.filter((column) => {
+      if (alwaysVisibleColumns.includes(column.key)) return true;
+      return rows.some((row) => {
+        const value = row[column.key];
+        return typeof value === "string" ? value.trim() !== "" && value.trim() !== "-" : Boolean(value);
+      });
+    });
+  }, [rows]);
+
+  const pagination = useMemo(() => paginate(filteredRows, currentPage, pageSize), [filteredRows, currentPage]);
+  const safePage = pagination.currentPage;
 
   const loadRows = async () => {
     setLoading(true);
@@ -221,76 +184,15 @@ export function XeroItemCodesPage() {
     void loadSyncStatus();
   }, []);
 
-  const startAdd = () => {
-    setAdding(true);
-    setEditingId(null);
-    setDraft(blankDraft);
-    setActionError(null);
-  };
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, purchasesOnly, salesOnly]);
 
-  const startEdit = (row: InventoryItemRow) => {
-    setEditingId(row.id);
-    setAdding(false);
-    setEditDraft({ ...row });
-    setActionError(null);
-  };
-
-  const cancelAdd = () => {
-    setAdding(false);
-    setDraft(blankDraft);
-  };
-
-  const cancelEdit = () => {
-    setEditingId(null);
-    setEditDraft(blankDraft);
-  };
-
-  const saveNew = async () => {
-    setSaving(true);
-    setActionError(null);
-    const res = await requestJson<InventoryItemResponse>("/api/inventory-items/manage", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(toPayload(draft)),
-    });
-    setSaving(false);
-
-    if (!res.ok) {
-      const message = res.error || "Failed to create item.";
-      setActionError(message);
-      toast.error(message);
-      return;
+  useEffect(() => {
+    if (safePage !== currentPage) {
+      setCurrentPage(safePage);
     }
-
-    setAdding(false);
-    setDraft(blankDraft);
-    await loadRows();
-    toast.success("Xero item code created");
-  };
-
-  const saveEdit = async () => {
-    if (!editingId) return;
-    setSaving(true);
-    setActionError(null);
-    const res = await requestJson<InventoryItemResponse>(`/api/inventory-items/manage/${editingId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(toPayload(editDraft)),
-    });
-    setSaving(false);
-
-    if (!res.ok) {
-      const message = res.error || "Failed to update item.";
-      setActionError(message);
-      toast.error(message);
-      return;
-    }
-
-    setEditingId(null);
-    setEditDraft(blankDraft);
-    await loadRows();
-    toast.success("Xero item code updated");
-  };
+  }, [safePage, currentPage]);
 
   const syncFromXero = async () => {
     setSyncingXero(true);
@@ -316,31 +218,8 @@ export function XeroItemCodesPage() {
     toast.success(`Synced ${res.data.syncedCount} item(s) from Xero`);
   };
 
-  const renderCellInput = (
-    row: InventoryItemRow,
-    setRow: React.Dispatch<React.SetStateAction<InventoryItemRow>>,
-    key: keyof InventoryItemRow,
-    multiline?: boolean
-  ) => {
-    const value = row[key];
-    if (multiline) {
-      return (
-        <Textarea
-          value={value}
-          rows={2}
-          className="min-h-[64px] text-xs"
-          onChange={(event) => setRow((prev) => ({ ...prev, [key]: event.target.value }))}
-        />
-      );
-    }
-
-    return (
-      <Input
-        value={value}
-        className="h-9 text-xs"
-        onChange={(event) => setRow((prev) => ({ ...prev, [key]: event.target.value }))}
-      />
-    );
+  const openInXero = () => {
+    window.open("https://go.xero.com/app/!!0zc-/products-and-services", "_blank", "noopener,noreferrer");
   };
 
   const Toggle = ({
@@ -356,7 +235,7 @@ export function XeroItemCodesPage() {
       type="button"
       onClick={() => onChange(!checked)}
       className={[
-        "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition",
+        "inline-flex min-w-[148px] items-center justify-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition",
         checked
           ? "border-[rgba(37,99,235,0.35)] bg-[rgba(37,99,235,0.08)] text-[rgba(37,99,235,0.95)]"
           : "border-[rgba(0,0,0,0.08)] bg-white text-[rgba(0,0,0,0.6)] hover:border-[rgba(0,0,0,0.16)]",
@@ -404,29 +283,28 @@ export function XeroItemCodesPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Toggle checked={purchasesOnly} label="Purchases only" onChange={setPurchasesOnly} />
-            <Toggle checked={salesOnly} label="Sales only" onChange={setSalesOnly} />
+            <Toggle checked={purchasesOnly} label="Has Purchases data" onChange={setPurchasesOnly} />
+            <Toggle checked={salesOnly} label="Has sales data" onChange={setSalesOnly} />
             <Input
               className="w-[260px]"
               placeholder="Search code, name, account, description..."
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
-            <Button variant="primary" leftIcon={<Plus size={16} />} onClick={startAdd}>
-              Add
-            </Button>
+            <XeroButton className="h-9 px-4 text-[11px]" label="Open" title="Open Xero Products & Services" onClick={openInXero} />
           </div>
         </div>
 
         {loading ? (
           <div className="py-10 text-center text-sm text-[var(--ds-muted)]">Loading...</div>
-        ) : filteredRows.length === 0 && !adding ? (
+        ) : pagination.totalItems === 0 ? (
           <EmptyState message="No Xero item codes yet" />
         ) : (
+          <>
           <div className="overflow-x-auto">
             <div className="min-w-[2440px]">
               <div className="flex border-b border-[rgba(0,0,0,0.06)] bg-[rgba(0,0,0,0.02)] px-4 py-3 text-[12px] font-semibold text-[rgba(0,0,0,0.55)]">
-                {columns.map((column) => (
+                {visibleColumns.map((column) => (
                   <div key={column.key} className={`${column.width} shrink-0 px-1`}>
                     {column.label}
                   </div>
@@ -434,66 +312,33 @@ export function XeroItemCodesPage() {
                 <div className="w-[140px] shrink-0 px-1 text-right">Actions</div>
               </div>
 
-              {adding ? (
-                <div className="flex border-b border-[rgba(0,0,0,0.05)] px-4 py-3 align-top">
-                  {columns.map((column) => (
-                    <div key={column.key} className={`${column.width} shrink-0 px-1`}>
-                      {renderCellInput(draft, setDraft, column.key, column.multiline)}
-                    </div>
-                  ))}
-                  <div className="flex w-[140px] shrink-0 items-start justify-end gap-2 px-1">
-                    <Button variant="primary" onClick={saveNew} disabled={saving}>
-                      Save
-                    </Button>
-                    <Button onClick={cancelAdd} disabled={saving}>
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-
-              {filteredRows.map((row) => {
-                const isEditing = editingId === row.id;
-                const current = isEditing ? editDraft : row;
+              {pagination.pageRows.map((row) => {
                 return (
                   <div key={row.id} className="flex border-b border-[rgba(0,0,0,0.05)] px-4 py-3 hover:bg-[rgba(0,0,0,0.015)]">
-                    {columns.map((column) => (
+                    {visibleColumns.map((column) => (
                       <div key={column.key} className={`${column.width} shrink-0 px-1`}>
-                        {isEditing ? (
-                          renderCellInput(current, setEditDraft, column.key, column.multiline)
-                        ) : (
-                          <div className={column.multiline ? "whitespace-pre-wrap text-xs leading-5 text-[var(--ds-text)]" : "text-xs text-[var(--ds-text)]"}>
-                            {current[column.key] || "-"}
-                          </div>
-                        )}
+                        <div className={column.multiline ? "whitespace-pre-wrap text-xs leading-5 text-[var(--ds-text)]" : "text-xs text-[var(--ds-text)]"}>
+                          {row[column.key] || "-"}
+                        </div>
                       </div>
                     ))}
 
-                    <div className="flex w-[140px] shrink-0 items-start justify-end gap-2 px-1">
-                      {isEditing ? (
-                        <>
-                          <Button variant="primary" onClick={saveEdit} disabled={saving}>
-                            Save
-                          </Button>
-                          <Button onClick={cancelEdit} disabled={saving}>
-                            Cancel
-                          </Button>
-                        </>
-                      ) : (
-                        <button
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-md text-[rgba(0,0,0,0.5)] transition hover:bg-[rgba(0,0,0,0.06)] hover:text-[rgba(0,0,0,0.78)]"
-                          onClick={() => startEdit(row)}
-                          title="Edit"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                      )}
+                    <div className="flex w-[140px] shrink-0 items-start justify-end px-1">
+                      <span className="text-xs text-[rgba(0,0,0,0.42)]">Sync only</span>
                     </div>
                   </div>
                 );
               })}
             </div>
           </div>
+          <Pagination
+            currentPage={safePage}
+            totalPages={pagination.totalPages}
+            pageSize={pageSize}
+            totalItems={pagination.totalItems}
+            onPageChange={setCurrentPage}
+          />
+          </>
         )}
       </Card>
     </div>
