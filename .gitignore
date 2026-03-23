@@ -18,3 +18,4 @@ coverage
 zic8STUb
 backend/Workshop.Api/appsettings.Development.json
 backend/Workshop.Api/appsettings.Development.json
+backend/Workshop.Api/appsettings.json
