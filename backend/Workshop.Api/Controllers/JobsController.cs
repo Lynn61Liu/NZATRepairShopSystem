@@ -599,6 +599,28 @@ public class JobsController : ControllerBase
         job.InvoiceReference = string.IsNullOrWhiteSpace(req?.InvoiceReference) ? null : req.InvoiceReference.Trim();
         job.UpdatedAt = DateTime.UtcNow;
 
+        var correlationId = BuildCorrelationId(job.Id);
+        if (!string.IsNullOrWhiteSpace(job.PoNumber))
+        {
+            var existingInactive = await _db.InactiveGmailCorrelations
+                .FirstOrDefaultAsync(x => x.CorrelationId == correlationId, ct);
+            if (existingInactive is null)
+            {
+                _db.InactiveGmailCorrelations.Add(new InactiveGmailCorrelation
+                {
+                    CorrelationId = correlationId,
+                    Reason = $"PO confirmed for job {job.Id}",
+                    CreatedAt = DateTime.UtcNow,
+                });
+            }
+        }
+        else
+        {
+            await _db.InactiveGmailCorrelations
+                .Where(x => x.CorrelationId == correlationId)
+                .ExecuteDeleteAsync(ct);
+        }
+
         await _db.SaveChangesAsync(ct);
         await _jobPoStateService.SyncStateForJobAsync(id, ct);
 

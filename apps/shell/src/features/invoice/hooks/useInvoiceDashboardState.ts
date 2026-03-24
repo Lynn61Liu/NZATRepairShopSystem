@@ -1129,6 +1129,13 @@ export function useInvoiceDashboardState({
         return;
       }
 
+      if (savedPoNumberRef.current.trim()) {
+        setPoPanelLoading(false);
+        setPoPanelInitialized(true);
+        setPoPanelRefreshing(false);
+        return;
+      }
+
       if (!invoice.selectedMerchantEmail || !invoice.correlationId) {
         setTimeline((prev) => prev.filter((event) => !["sent", "reminder", "reply"].includes(event.type)));
         setDetections([]);

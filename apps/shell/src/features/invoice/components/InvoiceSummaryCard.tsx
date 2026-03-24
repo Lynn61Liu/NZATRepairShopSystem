@@ -61,29 +61,13 @@ export function InvoiceSummaryCard({
   const [savingReference, setSavingReference] = useState(false);
   const [showReferencePreview, setShowReferencePreview] = useState(false);
   const [xeroState, setXeroState] = useState<XeroStateOption>("DRAFT");
-  const [epostReferenceId, setEpostReferenceId] = useState("");
   const [savedXeroState, setSavedXeroState] = useState<XeroStateOption>("DRAFT");
-  const [savedEpostReferenceId, setSavedEpostReferenceId] = useState("");
 
   useEffect(() => {
-    if (invoice.xeroStatus === "PAID") {
-      const method = invoice.latestPaymentMethod?.trim().toLowerCase();
-      const nextState = method === "cash" ? "PAID_CASH" : method === "epost" ? "PAID_EPOST" : "PAID_BANK_TRANSFER";
-      const nextReference = invoice.latestPaymentReference || "";
-      setXeroState(nextState);
-      setSavedXeroState(nextState);
-      setEpostReferenceId(nextReference);
-      setSavedEpostReferenceId(nextReference);
-      return;
-    }
-
-    const nextState = invoice.xeroStatus === "AUTHORISED" ? "AUTHORISED" : "DRAFT";
-    const nextReference = invoice.latestPaymentReference || "";
+    const nextState: XeroStateOption = invoice.xeroStatus === "AUTHORISED" ? "AUTHORISED" : "DRAFT";
     setXeroState(nextState);
     setSavedXeroState(nextState);
-    setEpostReferenceId(nextReference);
-    setSavedEpostReferenceId(nextReference);
-  }, [invoice.latestPaymentMethod, invoice.latestPaymentReference, invoice.xeroStatus]);
+  }, [invoice.xeroStatus]);
 
   useEffect(() => {
     setReferenceDraft(invoice.reference);
@@ -119,21 +103,17 @@ export function InvoiceSummaryCard({
 
   const handleApplyXeroState = async () => {
     if (!onUpdateXeroState) return;
-    const ok = await onUpdateXeroState(xeroState, epostReferenceId);
+    const ok = await onUpdateXeroState(xeroState);
     if (ok) {
       setSavedXeroState(xeroState);
-      setSavedEpostReferenceId(epostReferenceId);
     }
   };
 
   const handleCancelXeroStateChange = () => {
     setXeroState(savedXeroState);
-    setEpostReferenceId(savedEpostReferenceId);
   };
 
-  const xeroStateDirty =
-    xeroState !== savedXeroState || (xeroState === "PAID_EPOST" && epostReferenceId.trim() !== savedEpostReferenceId.trim());
-  const epostReferenceLocked = savedXeroState === "PAID_EPOST" && !xeroStateDirty;
+  const xeroStateDirty = xeroState !== savedXeroState;
 
   return (
     <Card className="rounded-[18px] p-6">
@@ -151,9 +131,6 @@ export function InvoiceSummaryCard({
               >
                 <option value="DRAFT">Draft</option>
                 <option value="AUTHORISED">Approve</option>
-                <option value="PAID_CASH">Payment (cash)</option>
-                <option value="PAID_EPOST">Payment (epost)</option>
-                <option value="PAID_BANK_TRANSFER">Payment (bank)</option>
               </Select>
               {xeroStateDirty ? (
                 <>
@@ -246,20 +223,6 @@ export function InvoiceSummaryCard({
         <SummaryField label="Last Sync Time" value={invoice.lastSyncTime} />
         <SummaryField label="Sync Direction" value={invoice.lastSyncDirection} className="text-[var(--ds-primary)]" />
       </div>
-
-      {xeroState === "PAID_EPOST" ? (
-        <div className="mt-4">
-          <div className="text-sm text-[var(--ds-muted)]">ePost Ref ID</div>
-          <Input
-            placeholder="Optional ePost ref ID"
-            value={epostReferenceId}
-            onChange={(event) => setEpostReferenceId(event.target.value)}
-            className="mt-1 h-9 max-w-[320px]"
-            readOnly={isReadOnly || epostReferenceLocked}
-            disabled={isReadOnly}
-          />
-        </div>
-      ) : null}
 
       {hasInvoice ? (
         children
