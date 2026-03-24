@@ -64,9 +64,17 @@ function getLineAmount(item: InvoiceItem) {
 function buildReference(currentReference: string, poNumber: string) {
   const trimmedPo = poNumber.trim();
   if (!trimmedPo) return currentReference;
-  const slashIndex = currentReference.indexOf("/");
-  if (slashIndex === -1) return trimmedPo;
-  return `${trimmedPo} ${currentReference.slice(slashIndex)}`;
+
+  const trimmedReference = currentReference.trim();
+  if (!trimmedReference) return trimmedPo;
+
+  if (trimmedReference.includes("[PO]")) {
+    return trimmedReference.replace("[PO]", trimmedPo).replace(/\s+/g, " ").trim();
+  }
+
+  const parts = trimmedReference.split(/\s+/);
+  if (parts.length <= 1) return trimmedPo;
+  return `${trimmedPo} ${parts.slice(1).join(" ")}`.trim();
 }
 
 function extractPoFromReference(reference: string) {
@@ -873,8 +881,8 @@ export function useInvoiceDashboardState({
       toast.error("Please enter a PO number");
       return false;
     }
-    const nextReference = buildReference(invoice.reference, nextPo);
-    const persistedPo = extractPoFromReference(nextReference) || nextPo;
+  const nextReference = buildReference(invoice.reference, nextPo);
+  const persistedPo = nextPo;
     const now = new Date().toLocaleString("zh-CN", { hour12: false }).replace(/\//g, "-");
     const persisted = await persistPoSelection(persistedPo, nextReference);
     if (!persisted) {
