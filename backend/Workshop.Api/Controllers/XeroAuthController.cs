@@ -38,7 +38,7 @@ public class XeroAuthController : ControllerBase
     }
 
     [HttpGet("connect")]
-    public IActionResult Connect([FromQuery] bool redirect = false, [FromQuery] string? scopes = null)
+    public IActionResult Connect([FromQuery] bool redirect = false, [FromQuery] string? scopes = null, [FromQuery] string? returnUrl = null)
     {
         var validationError = ValidateConfiguration();
         if (validationError is not null)
@@ -46,7 +46,7 @@ public class XeroAuthController : ControllerBase
 
         var resolvedScopes = ResolveScopes(scopes);
         var state = Guid.NewGuid().ToString("N");
-        _cache.Set(StateCachePrefix + state, true, TimeSpan.FromMinutes(15));
+        _cache.Set(StateCachePrefix + state, new OAuthStateEntry { ReturnUrl = NormalizeReturnUrl(returnUrl) }, TimeSpan.FromMinutes(15));
 
         var authUrl = BuildAuthorizeUrl(state, resolvedScopes);
         if (redirect)
@@ -69,8 +69,14 @@ public class XeroAuthController : ControllerBase
         [FromQuery(Name = "error_description")] string? errorDescription,
         CancellationToken ct)
     {
+        OAuthStateEntry? stateEntry = null;
+        if (!string.IsNullOrWhiteSpace(state))
+            _cache.TryGetValue(StateCachePrefix + state, out stateEntry);
+
         if (!string.IsNullOrWhiteSpace(error))
         {
+            if (!string.IsNullOrWhiteSpace(stateEntry?.ReturnUrl))
+                return Redirect(BuildReturnUrl(stateEntry.ReturnUrl, "xero", "error", errorDescription ?? error));
             return BadRequest(new
             {
                 error,
@@ -81,18 +87,24 @@ public class XeroAuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(code))
             return BadRequest(new { error = "Missing authorization code." });
 
-        if (string.IsNullOrWhiteSpace(state) || !_cache.TryGetValue(StateCachePrefix + state, out _))
+        if (string.IsNullOrWhiteSpace(state) || stateEntry is null)
             return BadRequest(new { error = "Missing or invalid OAuth state." });
 
         _cache.Remove(StateCachePrefix + state);
 
         var tokenResult = await ExchangeCodeForTokenAsync(code, ct);
         if (!tokenResult.ok)
+        {
+            if (!string.IsNullOrWhiteSpace(stateEntry.ReturnUrl))
+                return Redirect(BuildReturnUrl(stateEntry.ReturnUrl, "xero", "error", tokenResult.error ?? "Xero authorization failed."));
             return StatusCode(tokenResult.statusCode, new { error = tokenResult.error });
+        }
 
         var connectionsResult = await LoadConnectionsAsync(tokenResult.accessToken!, ct);
         if (!connectionsResult.ok)
         {
+            if (!string.IsNullOrWhiteSpace(stateEntry.ReturnUrl))
+                return Redirect(BuildReturnUrl(stateEntry.ReturnUrl, "xero", "error", connectionsResult.error ?? "Failed to load Xero connections."));
             return StatusCode(connectionsResult.statusCode, new
             {
                 error = connectionsResult.error,
@@ -102,7 +114,9 @@ public class XeroAuthController : ControllerBase
         }
 
         var hasOfflineAccess = SplitScopes(tokenResult.scope).Contains("offline_access", StringComparer.Ordinal);
-        var effectiveTenantId = connectionsResult.connections?.FirstOrDefault()?.TenantId;
+        var effectiveConnection = connectionsResult.connections?.FirstOrDefault();
+        var effectiveTenantId = effectiveConnection?.TenantId;
+        var effectiveTenantName = effectiveConnection?.TenantName;
 
         if (hasOfflineAccess && !string.IsNullOrWhiteSpace(tokenResult.refreshToken))
         {
@@ -112,7 +126,14 @@ public class XeroAuthController : ControllerBase
                 tokenResult.expiresIn,
                 tokenResult.scope,
                 effectiveTenantId,
+                effectiveTenantName,
                 ct);
+        }
+
+        if (!string.IsNullOrWhiteSpace(stateEntry.ReturnUrl))
+        {
+            var connectionLabel = effectiveTenantName ?? effectiveTenantId ?? "Xero tenant";
+            return Redirect(BuildReturnUrl(stateEntry.ReturnUrl, "xero", "connected", $"Connected {connectionLabel}."));
         }
 
         return Ok(new
@@ -129,8 +150,9 @@ public class XeroAuthController : ControllerBase
                 Xero__ClientId = _options.ClientId,
                 Xero__ClientSecret = "<already configured>",
                 Xero__RedirectUri = _options.RedirectUri,
-                Xero__RefreshToken = hasOfflineAccess ? tokenResult.refreshToken : "<add offline_access before persisting a refresh token>",
-                Xero__TenantId = effectiveTenantId,
+                nextStep = hasOfflineAccess
+                    ? "Refresh token and tenant were saved in xero_tokens. Set only OAuth client settings via environment variables."
+                    : "Reconnect with offline_access to save a reusable refresh token in xero_tokens.",
             },
         });
     }
@@ -147,6 +169,7 @@ public class XeroAuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(state.RefreshToken)) apiMissing.Add("Xero:RefreshToken");
         if (string.IsNullOrWhiteSpace(state.TenantId)) apiMissing.Add("Xero:TenantId");
         var resolvedScopes = ResolveScopes(scopes);
+        var accounts = await _xeroTokenStore.GetAccountsAsync(ct);
 
         return Ok(new
         {
@@ -154,12 +177,14 @@ public class XeroAuthController : ControllerBase
             missing,
             apiReady = missing.Count == 0 && apiMissing.Count == 0,
             apiMissing,
-            tokenSource = state.FromDatabase ? "database" : "configuration",
+            tokenSource = state.FromDatabase ? "database" : "unconfigured",
             tenantId = state.TenantId,
+            tenantName = state.TenantName,
             suggestedLocalCallback = "http://localhost:5227/api/xero/callback",
             currentRedirectUri = _options.RedirectUri,
             scopes = SplitScopes(resolvedScopes),
             scopesSource = string.IsNullOrWhiteSpace(scopes) ? "configuration" : "query",
+            accounts = accounts.Select(MapAccount).ToList(),
             recommendedScopeOrder = new
             {
                 granularApps = new[]
@@ -183,6 +208,47 @@ public class XeroAuthController : ControllerBase
                     "Apps created on or after 2 March 2026 use granular scopes.",
                 },
             },
+        });
+    }
+
+    [HttpGet("accounts")]
+    public async Task<IActionResult> GetAccounts(CancellationToken ct)
+    {
+        var accounts = await _xeroTokenStore.GetAccountsAsync(ct);
+        return Ok(new
+        {
+            items = accounts.Select(MapAccount).ToList(),
+            total = accounts.Count,
+        });
+    }
+
+    [HttpPut("accounts/{id:long}/default")]
+    public async Task<IActionResult> SetDefaultAccount(long id, CancellationToken ct)
+    {
+        var updated = await _xeroTokenStore.SetDefaultAccountAsync(id, ct);
+        if (!updated)
+            return NotFound(new { error = "Xero account not found." });
+
+        var accounts = await _xeroTokenStore.GetAccountsAsync(ct);
+        return Ok(new
+        {
+            message = "Default Xero account updated.",
+            items = accounts.Select(MapAccount).ToList(),
+        });
+    }
+
+    [HttpPut("accounts/{id:long}/disable")]
+    public async Task<IActionResult> DisableAccount(long id, CancellationToken ct)
+    {
+        var updated = await _xeroTokenStore.DisableAccountAsync(id, ct);
+        if (!updated)
+            return NotFound(new { error = "Xero account not found." });
+
+        var accounts = await _xeroTokenStore.GetAccountsAsync(ct);
+        return Ok(new
+        {
+            message = "Xero account disabled.",
+            items = accounts.Select(MapAccount).ToList(),
         });
     }
 
@@ -253,9 +319,45 @@ public class XeroAuthController : ControllerBase
             accessTokenExpiresIn = tokenResult.ExpiresIn,
             refreshTokenUpdated = tokenResult.RefreshTokenUpdated,
             latestRefreshToken = tokenResult.RefreshToken,
-            tokenSource = state.FromDatabase ? "database" : "configuration",
+            tokenSource = state.FromDatabase ? "database" : "unconfigured",
             invoices = invoicesPayload,
         });
+    }
+
+    private static object MapAccount(Workshop.Api.Models.XeroTokenRecord account) => new
+    {
+        id = account.Id,
+        provider = account.Provider,
+        tenantId = account.TenantId,
+        tenantName = account.TenantName,
+        isActive = account.IsActive,
+        isDefault = account.IsDefault,
+        hasRefreshToken = !string.IsNullOrWhiteSpace(account.RefreshToken),
+        scope = SplitScopes(account.Scope),
+        updatedAt = account.UpdatedAt,
+    };
+
+    private static string? NormalizeReturnUrl(string? returnUrl)
+    {
+        if (string.IsNullOrWhiteSpace(returnUrl))
+            return null;
+
+        if (Uri.TryCreate(returnUrl, UriKind.Absolute, out var absolute)
+            && (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps))
+            return absolute.ToString();
+
+        return null;
+    }
+
+    private static string BuildReturnUrl(string returnUrl, string integration, string status, string message)
+    {
+        var separator = returnUrl.Contains('?') ? "&" : "?";
+        return $"{returnUrl}{separator}integration={Uri.EscapeDataString(integration)}&status={Uri.EscapeDataString(status)}&message={Uri.EscapeDataString(message)}";
+    }
+
+    private sealed class OAuthStateEntry
+    {
+        public string? ReturnUrl { get; init; }
     }
 
     private string? ValidateConfiguration()

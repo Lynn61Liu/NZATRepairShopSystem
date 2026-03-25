@@ -27,6 +27,8 @@ export function PoDashboard({ model }: PoDashboardProps) {
           hasConfirmedPo={model.invoice.status === "PO Received"}
           readOnly={model.poLocked}
           readOnlyReason={model.poLockReason}
+          externalSendDetected={model.hasExternalDraftSend}
+          draftSendBlockedReason={model.draftSendBlockedReason}
           onSendRequest={model.sendPoRequest}
           onSelectDetection={model.setSelectedDetectionId}
           onConfirmDetection={model.confirmPo}

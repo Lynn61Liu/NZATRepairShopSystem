@@ -6,6 +6,40 @@ import { PoDetectionPanel } from "./PoDetectionPanel";
 import { StatusBadge } from "./StatusBadge";
 import type { EmailState, EmailTimelineEvent, InvoiceItem, MerchantEmailRecipient, PoDetection } from "../types";
 
+const PO_REQUEST_SEND_LOCK_PREFIX = "po-request-send-lock:";
+
+function getPoRequestSendLockKey(correlationId: string) {
+  return `${PO_REQUEST_SEND_LOCK_PREFIX}${correlationId.trim()}`;
+}
+
+function getPoRequestSendLockExpiration(correlationId: string) {
+  if (typeof window === "undefined") return null;
+  const normalizedCorrelationId = correlationId.trim();
+  if (!normalizedCorrelationId) return null;
+
+  try {
+    const raw = window.localStorage.getItem(getPoRequestSendLockKey(normalizedCorrelationId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { expiresAt?: string };
+    const expiresAtMs = parsed.expiresAt ? Date.parse(parsed.expiresAt) : Number.NaN;
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+      window.localStorage.removeItem(getPoRequestSendLockKey(normalizedCorrelationId));
+      return null;
+    }
+    return expiresAtMs;
+  } catch {
+    window.localStorage.removeItem(getPoRequestSendLockKey(normalizedCorrelationId));
+    return null;
+  }
+}
+
+function formatSendLockRemaining(expiresAtMs: number | null) {
+  if (!expiresAtMs) return "";
+  const remainingMs = Math.max(0, expiresAtMs - Date.now());
+  const totalMinutes = Math.ceil(remainingMs / 60000);
+  return totalMinutes <= 1 ? "1 minute" : `${totalMinutes} minutes`;
+}
+
 type Props = {
   merchantEmailRecipients: MerchantEmailRecipient[];
   selectedMerchantEmail: string;
@@ -24,6 +58,8 @@ type Props = {
   hasConfirmedPo: boolean;
   readOnly: boolean;
   readOnlyReason?: string;
+  externalSendDetected?: boolean;
+  draftSendBlockedReason?: string;
   onSendRequest: (payload: { to: string; subject: string; body: string }) => Promise<void>;
   onSelectDetection: (id: string) => void;
   onConfirmDetection: (id: string) => void;
@@ -48,6 +84,8 @@ export function PoRequestPanel({
   hasConfirmedPo,
   readOnly,
   readOnlyReason,
+  externalSendDetected,
+  draftSendBlockedReason,
   onSendRequest,
   onSelectDetection,
   onConfirmDetection,
@@ -135,6 +173,7 @@ export function PoRequestPanel({
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<{ fileName: string; mimeType: string; url: string } | null>(null);
+  const [sendLockExpiresAt, setSendLockExpiresAt] = useState<number | null>(() => getPoRequestSendLockExpiration(correlationId));
 
   const threadEvents = useMemo(
     () => timelineEvents.filter((event) => ["sent", "reminder", "reply"].includes(event.type)),
@@ -255,20 +294,48 @@ export function PoRequestPanel({
     setBody(defaultBody);
   }, [defaultBody]);
 
+  useEffect(() => {
+    setSendLockExpiresAt(getPoRequestSendLockExpiration(correlationId));
+
+    if (typeof window === "undefined") return;
+
+    const syncLock = (event?: StorageEvent) => {
+      if (event?.key && event.key !== getPoRequestSendLockKey(correlationId)) return;
+      setSendLockExpiresAt(getPoRequestSendLockExpiration(correlationId));
+    };
+
+    window.addEventListener("storage", syncLock);
+    const intervalId = window.setInterval(() => {
+      setSendLockExpiresAt(getPoRequestSendLockExpiration(correlationId));
+    }, 30000);
+
+    return () => {
+      window.removeEventListener("storage", syncLock);
+      window.clearInterval(intervalId);
+    };
+  }, [correlationId]);
+
   const isModified = to !== selectedMerchantEmail || subject !== defaultSubject || body !== defaultBody;
   const isCurrentPayloadSent =
     lastSentPayload?.to === to && lastSentPayload?.subject === subject && lastSentPayload?.body === body;
+  const draftSendLocked = isDraftRound && sendLockExpiresAt !== null;
+  const sendLockHint = formatSendLockRemaining(sendLockExpiresAt);
+  const draftSendBlocked = isDraftRound && !readOnly && Boolean(draftSendBlockedReason);
 
-  const sendDisabled = readOnly || sending || Boolean(isCurrentPayloadSent && !isModified);
+  const sendDisabled = readOnly || sending || draftSendLocked || draftSendBlocked || Boolean(isCurrentPayloadSent && !isModified);
 
   const handleSend = async () => {
     const payload = { to: normalizedToValue, subject, body };
     setSending(true);
     try {
       await onSendRequest(payload);
+      setSendLockExpiresAt(getPoRequestSendLockExpiration(correlationId));
       setLastSentPayload(payload);
       setTo(normalizedToValue);
       setBody("");
+    } catch (error) {
+      setSendLockExpiresAt(getPoRequestSendLockExpiration(correlationId));
+      throw error;
     } finally {
       setSending(false);
     }
@@ -361,6 +428,11 @@ export function PoRequestPanel({
       {readOnly ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           {readOnlyReason || "PO Request is locked for this job."}
+        </div>
+      ) : null}
+      {!readOnly && externalSendDetected ? (
+        <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Detected external send from Gmail. System draft send is disabled for this PO thread.
         </div>
       ) : null}
 
@@ -515,9 +587,27 @@ export function PoRequestPanel({
                   onClick={handleSend}
                   disabled={sendDisabled}
                 >
-                  {sending ? "Sending..." : sendDisabled ? "PO Request Sent" : "Send PO Request"}
+                  {sending
+                    ? "Sending..."
+                    : draftSendBlocked
+                      ? "External Send Detected"
+                    : draftSendLocked
+                      ? "PO Request Locked"
+                      : sendDisabled
+                        ? "PO Request Sent"
+                        : "Send PO Request"}
                 </Button>
               </div>
+              {draftSendBlocked ? (
+                <div className="text-right text-xs text-amber-700">
+                  {draftSendBlockedReason}
+                </div>
+              ) : null}
+              {draftSendLocked ? (
+                <div className="text-right text-xs text-slate-500">
+                  Same PO request was sent recently. Retry is blocked for another {sendLockHint}.
+                </div>
+              ) : null}
             </div>
           ) : null}
 

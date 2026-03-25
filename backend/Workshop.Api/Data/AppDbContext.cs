@@ -189,6 +189,7 @@ public class AppDbContext : DbContext
         gm.Property(x => x.IsRead).HasColumnName("is_read").HasDefaultValue(false);
         gm.Property(x => x.ReadAt).HasColumnName("read_at");
         gm.Property(x => x.DetectedPoNumber).HasColumnName("detected_po_number");
+        gm.Property(x => x.IsSystemInitiated).HasColumnName("is_system_initiated").HasDefaultValue(false);
         gm.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         gm.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         gm.HasIndex(x => new { x.GmailAccountId, x.GmailMessageId }).IsUnique().HasDatabaseName("ux_gmail_message_logs_account_message_id");
@@ -276,9 +277,13 @@ public class AppDbContext : DbContext
         xt.Property(x => x.AccessTokenExpiresAt).HasColumnName("access_token_expires_at");
         xt.Property(x => x.Scope).HasColumnName("scope");
         xt.Property(x => x.TenantId).HasColumnName("tenant_id");
+        xt.Property(x => x.TenantName).HasColumnName("tenant_name");
+        xt.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true);
+        xt.Property(x => x.IsDefault).HasColumnName("is_default").HasDefaultValue(false);
         xt.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         xt.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
-        xt.HasIndex(x => x.Provider).IsUnique().HasDatabaseName("ux_xero_tokens_provider");
+        xt.HasIndex(x => new { x.Provider, x.TenantId }).IsUnique().HasDatabaseName("ux_xero_tokens_provider_tenant_id");
+        xt.HasIndex(x => x.IsDefault).HasDatabaseName("ix_xero_tokens_is_default");
 
         var ii = modelBuilder.Entity<InventoryItem>();
         ii.ToTable("inventory_items");

@@ -22,7 +22,7 @@ public sealed class PoAutoFollowUpBackgroundService : BackgroundService
         {
             using var scope = _scopeFactory.CreateScope();
             var service = scope.ServiceProvider.GetRequiredService<PoAutoFollowUpService>();
-            var delay = TimeSpan.FromSeconds(service.PollIntervalSeconds);
+            var delay = TimeSpan.FromSeconds(service.CheckIntervalSeconds);
 
             if (!service.Enabled)
             {

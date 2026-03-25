@@ -309,6 +309,7 @@ public sealed class GmailThreadSyncService
             rfcMessageId,
             referencesHeader,
             attachments,
+            isSystemInitiated: false,
             ct);
         return true;
     }
@@ -369,6 +370,7 @@ public sealed class GmailThreadSyncService
         string? rfcMessageId,
         string? referencesHeader,
         List<GmailAttachmentDescriptor> attachments,
+        bool isSystemInitiated,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(gmailMessageId))
@@ -411,6 +413,7 @@ public sealed class GmailThreadSyncService
             ? JsonSerializer.Serialize(MergeAttachmentMetadata(existing.AttachmentsJson, attachments), JsonOptions)
             : null;
         existing.DetectedPoNumber = ExtractPoNumber(correlationId, subject, body, snippet);
+        existing.IsSystemInitiated = isSystemInitiated || existing.IsSystemInitiated;
         if (existing.Id == 0)
         {
             existing.IsRead = !string.Equals(direction, "reply", StringComparison.OrdinalIgnoreCase);

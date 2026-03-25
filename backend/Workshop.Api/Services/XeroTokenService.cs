@@ -75,11 +75,13 @@ public sealed class XeroTokenService
                 return XeroTokenRefreshResult.Fail(502, "Refresh token response was empty or invalid.");
 
             await _xeroTokenStore.SaveRefreshResultAsync(
+                state.RecordId,
                 token.RefreshToken,
                 token.AccessToken,
                 token.ExpiresIn,
                 token.Scope,
                 state.TenantId,
+                state.TenantName,
                 ct);
 
             return XeroTokenRefreshResult.Success(

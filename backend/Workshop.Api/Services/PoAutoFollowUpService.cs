@@ -31,7 +31,7 @@ public sealed class PoAutoFollowUpService
         _logger = logger;
     }
 
-    public int PollIntervalSeconds => Math.Max(30, _options.PollIntervalSeconds);
+    public int CheckIntervalSeconds => _options.EffectiveCheckIntervalSeconds;
     public bool Enabled => _options.Enabled;
 
     public async Task RunCycleAsync(CancellationToken ct)

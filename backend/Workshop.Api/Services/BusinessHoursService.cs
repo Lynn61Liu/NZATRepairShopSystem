@@ -14,12 +14,12 @@ public sealed class BusinessHoursService
 
     public DateTime CalculateNextFollowUpDueAtUtc(DateTime fromUtc)
     {
-        if (_options.IntervalMinutesOverride.HasValue && _options.IntervalMinutesOverride.Value > 0)
-            return DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc).AddMinutes(_options.IntervalMinutesOverride.Value);
+        if (_options.EffectiveFollowUpDelayMinutesOverride.HasValue)
+            return DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc).AddMinutes(_options.EffectiveFollowUpDelayMinutesOverride.Value);
 
         var zone = ResolveTimeZone();
         var local = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc), zone);
-        var remainingHours = Math.Max(1, _options.WorkingHoursPerFollowUp);
+        var remainingHours = _options.EffectiveFollowUpDelayWorkingHours;
 
         var cursor = AlignToWorkingWindow(local);
         while (remainingHours > 0)

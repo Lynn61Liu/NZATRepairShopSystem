@@ -69,9 +69,13 @@ public sealed class GmailBackgroundSyncService : BackgroundService
                 }
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
+        }
+        catch (OperationCanceledException ex)
+        {
+            _logger.LogWarning(ex, "Background Gmail sync cycle timed out.");
         }
         catch (Exception ex)
         {

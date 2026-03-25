@@ -63,6 +63,7 @@ public sealed class GmailFollowUpSenderService
             .Where(x => x.CorrelationId == correlationId)
             .Select(x => new
             {
+                x.Direction,
                 x.GmailThreadId,
                 x.RfcMessageId,
                 x.ReferencesHeader,
@@ -77,6 +78,29 @@ public sealed class GmailFollowUpSenderService
             .OrderByDescending(x => GetEventOccurredAtUtc(x.InternalDateMs, x.UpdatedAt, x.CreatedAt))
             .ThenByDescending(x => x.Id)
             .FirstOrDefault();
+        DateTime? latestSentAt = null;
+        foreach (var log in threadLogs.Where(x => string.Equals(x.Direction, "sent", StringComparison.OrdinalIgnoreCase)))
+        {
+            var occurredAt = GetEventOccurredAtUtc(log.InternalDateMs, log.UpdatedAt, log.CreatedAt);
+            if (!latestSentAt.HasValue || occurredAt > latestSentAt.Value)
+                latestSentAt = occurredAt;
+        }
+
+        DateTime? latestReplyAfterLatestSentAt = null;
+        if (latestSentAt.HasValue)
+        {
+            foreach (var log in threadLogs.Where(x => string.Equals(x.Direction, "reply", StringComparison.OrdinalIgnoreCase)))
+            {
+                var occurredAt = GetEventOccurredAtUtc(log.InternalDateMs, log.UpdatedAt, log.CreatedAt);
+                if (occurredAt <= latestSentAt.Value)
+                    continue;
+
+                if (!latestReplyAfterLatestSentAt.HasValue || occurredAt > latestReplyAfterLatestSentAt.Value)
+                    latestReplyAfterLatestSentAt = occurredAt;
+            }
+        }
+        if (latestReplyAfterLatestSentAt.HasValue)
+            return false;
 
         var rootSubjectCandidates = await FilterLogsByAccount(_db.GmailMessageLogs.AsNoTracking(), tokenResult.AccountId)
             .Where(x => x.CorrelationId == correlationId)
@@ -197,6 +221,7 @@ public sealed class GmailFollowUpSenderService
         existing.HasAttachments = false;
         existing.AttachmentsJson = null;
         existing.DetectedPoNumber = null;
+        existing.IsSystemInitiated = true;
         existing.IsRead = true;
         existing.ReadAt = DateTime.UtcNow;
         existing.UpdatedAt = DateTime.UtcNow;

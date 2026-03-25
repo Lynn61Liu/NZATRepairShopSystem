@@ -185,6 +185,14 @@ export function Sidebar() {
             >
               Xero Item Code
             </NavLink>
+            <NavLink
+              to="/integrations"
+              className={({ isActive }) =>
+                `${linkBase} ${isActive ? linkActive : linkIdle}`
+              }
+            >
+              Account Switch
+            </NavLink>
           </div>
         </div>
       </nav>

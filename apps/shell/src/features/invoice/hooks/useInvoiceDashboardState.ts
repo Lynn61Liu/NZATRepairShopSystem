@@ -93,6 +93,26 @@ function getLegacyPoFromReference(reference: string) {
 }
 
 const EMAIL_STATE_ORDER: EmailState[] = ["Draft", "Email Sent", "Get Reply", "Reminder Scheduled", "Get PO"];
+const PO_REQUEST_SEND_LOCK_WINDOW_MS = 5 * 60 * 1000;
+const PO_REQUEST_SEND_LOCK_PREFIX = "po-request-send-lock:";
+
+function getPoRequestSendLockKey(correlationId: string) {
+  return `${PO_REQUEST_SEND_LOCK_PREFIX}${correlationId.trim()}`;
+}
+
+function setPoRequestSendLock(correlationId: string, sentAtIso: string) {
+  if (typeof window === "undefined") return;
+  const normalizedCorrelationId = correlationId.trim();
+  if (!normalizedCorrelationId) return;
+
+  window.localStorage.setItem(
+    getPoRequestSendLockKey(normalizedCorrelationId),
+    JSON.stringify({
+      sentAt: sentAtIso,
+      expiresAt: new Date(new Date(sentAtIso).getTime() + PO_REQUEST_SEND_LOCK_WINDOW_MS).toISOString(),
+    })
+  );
+}
 
 const initialInvoiceState: InvoiceDashboardState = {
   contact: "",
@@ -292,6 +312,7 @@ export function useInvoiceDashboardState({
   const [timeline, setTimeline] = useState<EmailTimelineEvent[]>([]);
   const [detections, setDetections] = useState<PoDetection[]>([]);
   const [selectedDetectionId, setSelectedDetectionId] = useState<string | null>(null);
+  const [hasExternalDraftSend, setHasExternalDraftSend] = useState(false);
   const [nextItemId, setNextItemId] = useState(parsePersistedItems(persistedInvoice).length + 1);
   const [itemCatalogSyncState, setItemCatalogSyncState] = useState<"idle" | "syncing" | "success" | "error">("idle");
   const [itemCatalogFeedback, setItemCatalogFeedback] = useState<string | null>(null);
@@ -327,6 +348,10 @@ export function useInvoiceDashboardState({
   const totalAmount = useMemo(() => subtotal + taxTotal, [subtotal, taxTotal]);
   const poLocked = invoice.xeroStatus === "PAID";
   const poLockReason = poLocked ? "Invoice is already marked as Paid in Xero. PO Request data is locked and can no longer be changed." : "";
+  const draftSendBlockedReason =
+    !poLocked && hasExternalDraftSend
+      ? "Detected external send from Gmail. System draft send is disabled for this PO thread."
+      : "";
 
   useEffect(() => {
     timelineRef.current = timeline;
@@ -772,6 +797,9 @@ export function useInvoiceDashboardState({
     if (poLocked) {
       throw new Error(poLockReason);
     }
+    if (hasExternalDraftSend && !timeline.some((event) => ["sent", "reminder", "reply"].includes(event.type))) {
+      throw new Error("Detected external send from Gmail. System draft send is disabled for this PO thread.");
+    }
 
     const draftSaved = await persistDraftToDb();
     if (!draftSaved) {
@@ -800,7 +828,14 @@ export function useInvoiceDashboardState({
     });
 
     if (!result.ok) {
+      if (result.status === 409 && invoice.correlationId.trim()) {
+        setPoRequestSendLock(invoice.correlationId, new Date().toISOString());
+      }
       throw new Error(result.error || "Failed to send PO request email");
+    }
+
+    if (invoice.correlationId.trim()) {
+      setPoRequestSendLock(invoice.correlationId, new Date().toISOString());
     }
 
     const now = new Date().toLocaleString("zh-CN", { hour12: false }).replace(/\//g, "-");
@@ -825,6 +860,7 @@ export function useInvoiceDashboardState({
         rfcMessageId: result.data?.rfcMessageId || "",
         referencesHeader: result.data?.referencesHeader || "",
         attachments: [],
+        isSystemInitiated: true,
       },
       ...prev,
     ]);
@@ -1058,6 +1094,7 @@ export function useInvoiceDashboardState({
     setTimeline([]);
     setDetections([]);
     setSelectedDetectionId(null);
+    setHasExternalDraftSend(false);
     setManualPoNumber((persistedPoNumber?.trim() || "") || (!persistedInvoice ? getLegacyPoFromReference(persistedInvoiceReference?.trim() || "") : ""));
     setPoPanelLoading(true);
     setPoPanelInitialized(false);
@@ -1140,6 +1177,7 @@ export function useInvoiceDashboardState({
       if (!invoice.selectedMerchantEmail || !invoice.correlationId) {
         setTimeline((prev) => prev.filter((event) => !["sent", "reminder", "reply"].includes(event.type)));
         setDetections([]);
+        setHasExternalDraftSend(false);
         setPoPanelLoading(false);
         setPoPanelInitialized(true);
         setPoPanelRefreshing(false);
@@ -1182,6 +1220,7 @@ export function useInvoiceDashboardState({
         const nonThreadEvents = prev.filter((event) => !["sent", "reminder", "reply"].includes(event.type));
         return [...effectiveThreadEvents, ...nonThreadEvents];
       });
+      setHasExternalDraftSend(Boolean(threadData.hasExternalDraftSend));
       setSelectedDetectionId(resolvedSelectedDetectionId);
       setDetections(applyDetectionSelection(nextDetections, resolvedSelectedDetectionId));
 
@@ -1450,6 +1489,8 @@ export function useInvoiceDashboardState({
     poPanelRefreshing,
     poLocked,
     poLockReason,
+    hasExternalDraftSend,
+    draftSendBlockedReason,
     unreadReplyCount,
     subtotal,
     taxTotal,

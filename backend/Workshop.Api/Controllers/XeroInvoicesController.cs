@@ -49,7 +49,7 @@ public class XeroInvoicesController : ControllerBase
                 tenantId = result.TenantId,
                 refreshTokenUpdated = result.RefreshTokenUpdated,
                 latestRefreshToken = result.RefreshToken,
-                nextAction = "Update Xero__RefreshToken in your environment if latestRefreshToken differs from the configured one.",
+                nextAction = "Reconnect or switch the default Xero account stored in xero_tokens if token refresh keeps failing.",
                 xero = result.Payload,
             });
         }

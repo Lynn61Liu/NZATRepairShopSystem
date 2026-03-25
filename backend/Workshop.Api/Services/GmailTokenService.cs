@@ -50,9 +50,6 @@ public sealed class GmailTokenService
         }
 
         var refreshToken = account?.RefreshToken;
-        if (string.IsNullOrWhiteSpace(refreshToken))
-            refreshToken = _options.RefreshToken;
-
         if (string.IsNullOrWhiteSpace(refreshToken)) missing.Add("Gmail:RefreshToken");
 
         if (missing.Count > 0)
@@ -72,8 +69,18 @@ public sealed class GmailTokenService
             ["grant_type"] = "refresh_token",
         });
 
-        using var response = await client.SendAsync(request, ct);
-        var payload = await response.Content.ReadAsStringAsync(ct);
+        HttpResponseMessage response;
+        string payload;
+        try
+        {
+            response = await client.SendAsync(request, ct);
+            payload = await response.Content.ReadAsStringAsync(ct);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return GmailTokenRefreshResult.Fail(504, "Gmail token refresh timed out.");
+        }
+
         if (!response.IsSuccessStatusCode)
             return GmailTokenRefreshResult.Fail((int)response.StatusCode, payload);
 
@@ -97,7 +104,7 @@ public sealed class GmailTokenService
             token.Scope ?? "",
             account?.Id,
             account?.Email,
-            account is not null ? "account" : "config");
+            "account");
     }
 
     private sealed class RefreshTokenResponse

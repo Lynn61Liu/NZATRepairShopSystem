@@ -34,24 +34,32 @@ public sealed class JobPoStateService
             })
             .ToListAsync(ct);
 
+        var jobIds = jobs.Select(x => x.Id).ToArray();
+        var existingJobIds = jobIds.Length == 0
+            ? new HashSet<long>()
+            : (await _db.JobPoStates.AsNoTracking()
+                .Where(x => jobIds.Contains(x.JobId))
+                .Select(x => x.JobId)
+                .ToListAsync(ct))
+                .ToHashSet();
+
         foreach (var job in jobs)
         {
+            if (existingJobIds.Contains(job.Id))
+                continue;
+
             var correlationId = BuildCorrelationId(job.Id);
-            var state = await _db.JobPoStates.FirstOrDefaultAsync(x => x.JobId == job.Id, ct);
-            if (state is null)
+            _db.JobPoStates.Add(new JobPoState
             {
-                _db.JobPoStates.Add(new JobPoState
-                {
-                    JobId = job.Id,
-                    CorrelationId = correlationId,
-                    Status = string.IsNullOrWhiteSpace(job.PoNumber) ? JobPoStateStatus.Draft : JobPoStateStatus.PoConfirmed,
-                    ConfirmedPoNumber = string.IsNullOrWhiteSpace(job.PoNumber) ? null : job.PoNumber.Trim(),
-                    FollowUpEnabled = true,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow,
-                    LastSyncedAt = DateTime.UtcNow,
-                });
-            }
+                JobId = job.Id,
+                CorrelationId = correlationId,
+                Status = string.IsNullOrWhiteSpace(job.PoNumber) ? JobPoStateStatus.Draft : JobPoStateStatus.PoConfirmed,
+                ConfirmedPoNumber = string.IsNullOrWhiteSpace(job.PoNumber) ? null : job.PoNumber.Trim(),
+                FollowUpEnabled = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                LastSyncedAt = DateTime.UtcNow,
+            });
         }
 
         await _db.SaveChangesAsync(ct);
@@ -180,11 +188,14 @@ public sealed class JobPoStateService
         {
             if (lastReplyAfterLatestSentAt.HasValue)
             {
+                // Once the supplier has replied in the current round, stop scheduling
+                // automatic follow-ups until a new first-send round is started explicitly.
+                state.Status = JobPoStateStatus.AwaitingReply;
                 state.FollowUpCount = 0;
                 state.LastFollowUpSentAt = null;
+                state.NextFollowUpDueAt = null;
             }
-
-            if (state.FollowUpCount >= Math.Max(1, _options.MaxFollowUps))
+            else if (state.FollowUpCount >= Math.Max(1, _options.MaxFollowUps))
             {
                 state.Status = JobPoStateStatus.EscalationRequired;
                 state.RequiresAdminAttention = true;

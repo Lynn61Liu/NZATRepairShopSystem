@@ -73,6 +73,7 @@ export type EmailTimelineEvent = {
   rfcMessageId?: string;
   referencesHeader?: string;
   attachments?: EmailAttachment[];
+  isSystemInitiated?: boolean;
 };
 
 export type PoSource = "email" | "pdf" | "image" | "ocr";
@@ -101,6 +102,7 @@ export type GmailThreadPayload = {
   lastReplyTimestamp: string;
   syncWarning: string;
   detections: PoDetection[];
+  hasExternalDraftSend: boolean;
 };
 
 export type WorkflowStep = {

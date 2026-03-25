@@ -23,6 +23,7 @@ public class GmailMessageLog
     public bool IsRead { get; set; }
     public DateTime? ReadAt { get; set; }
     public string? DetectedPoNumber { get; set; }
+    public bool IsSystemInitiated { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

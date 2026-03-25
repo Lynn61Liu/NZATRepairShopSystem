@@ -22,6 +22,7 @@ namespace Workshop.Api.Controllers;
 public class GmailAuthController : ControllerBase
 {
     private const string StateCachePrefix = "gmail-oauth-state:";
+    private static readonly TimeSpan DuplicateSendWindow = TimeSpan.FromMinutes(5);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IHttpClientFactory _httpClientFactory;
@@ -60,7 +61,7 @@ public class GmailAuthController : ControllerBase
     }
 
     [HttpGet("connect")]
-    public IActionResult Connect([FromQuery] bool redirect = false, [FromQuery] string? scopes = null)
+    public IActionResult Connect([FromQuery] bool redirect = false, [FromQuery] string? scopes = null, [FromQuery] string? returnUrl = null)
     {
         var validationError = ValidateConfiguration();
         if (validationError is not null)
@@ -68,7 +69,7 @@ public class GmailAuthController : ControllerBase
 
         var resolvedScopes = ResolveScopes(scopes);
         var state = Guid.NewGuid().ToString("N");
-        _cache.Set(StateCachePrefix + state, true, TimeSpan.FromMinutes(15));
+        _cache.Set(StateCachePrefix + state, new OAuthStateEntry { ReturnUrl = NormalizeReturnUrl(returnUrl) }, TimeSpan.FromMinutes(15));
 
         var authUrl = BuildAuthorizeUrl(state, resolvedScopes);
         if (redirect)
@@ -84,8 +85,8 @@ public class GmailAuthController : ControllerBase
     }
 
     [HttpGet("oauth/url")]
-    public IActionResult OAuthUrl([FromQuery] string? scopes = null) =>
-        Connect(redirect: false, scopes: scopes);
+    public IActionResult OAuthUrl([FromQuery] string? scopes = null, [FromQuery] string? returnUrl = null) =>
+        Connect(redirect: false, scopes: scopes, returnUrl: returnUrl);
 
     [HttpGet("callback")]
     [HttpGet("oauth/callback")]
@@ -96,8 +97,15 @@ public class GmailAuthController : ControllerBase
         [FromQuery(Name = "error_description")] string? errorDescription,
         CancellationToken ct)
     {
+        OAuthStateEntry? stateEntry = null;
+        if (!string.IsNullOrWhiteSpace(state))
+            _cache.TryGetValue(StateCachePrefix + state, out stateEntry);
+
         if (!string.IsNullOrWhiteSpace(error))
         {
+            if (!string.IsNullOrWhiteSpace(stateEntry?.ReturnUrl))
+                return Redirect(BuildReturnUrl(stateEntry.ReturnUrl, "gmail", "error", errorDescription ?? error));
+
             return BadRequest(new
             {
                 error,
@@ -108,18 +116,24 @@ public class GmailAuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(code))
             return BadRequest(new { error = "Missing authorization code." });
 
-        if (string.IsNullOrWhiteSpace(state) || !_cache.TryGetValue(StateCachePrefix + state, out _))
+        if (string.IsNullOrWhiteSpace(state) || stateEntry is null)
             return BadRequest(new { error = "Missing or invalid OAuth state." });
 
         _cache.Remove(StateCachePrefix + state);
 
         var tokenResult = await ExchangeCodeForTokenAsync(code, ct);
         if (!tokenResult.Ok)
+        {
+            if (!string.IsNullOrWhiteSpace(stateEntry.ReturnUrl))
+                return Redirect(BuildReturnUrl(stateEntry.ReturnUrl, "gmail", "error", tokenResult.Error ?? "Gmail authorization failed."));
             return StatusCode(tokenResult.StatusCode, new { error = tokenResult.Error });
+        }
 
         var profileResult = await LoadProfileAsync(tokenResult.AccessToken, ct);
         if (!profileResult.Ok)
         {
+            if (!string.IsNullOrWhiteSpace(stateEntry.ReturnUrl))
+                return Redirect(BuildReturnUrl(stateEntry.ReturnUrl, "gmail", "error", profileResult.Error ?? "Failed to load Gmail profile."));
             return StatusCode(profileResult.StatusCode, new
             {
                 error = profileResult.Error,
@@ -137,6 +151,9 @@ public class GmailAuthController : ControllerBase
             tokenResult.Scope,
             ct);
 
+        if (!string.IsNullOrWhiteSpace(stateEntry.ReturnUrl))
+            return Redirect(BuildReturnUrl(stateEntry.ReturnUrl, "gmail", "connected", $"Connected {profileResult.Email}."));
+
         return Ok(new
         {
             message = "Gmail authorization completed. Account saved in database.",
@@ -151,7 +168,7 @@ public class GmailAuthController : ControllerBase
                 Gmail__ClientId = _options.ClientId,
                 Gmail__ClientSecret = "<already configured>",
                 Gmail__RedirectUri = _options.RedirectUri,
-                Gmail__RefreshToken = tokenResult.RefreshToken,
+                nextStep = "Refresh token is stored in gmail_accounts. Set only OAuth client settings via environment variables.",
             },
         });
     }
@@ -166,7 +183,7 @@ public class GmailAuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(_options.RedirectUri)) missing.Add("Gmail:RedirectUri");
         var apiMissing = new List<string>();
         var accounts = await _gmailAccountService.GetAccountsAsync(ct);
-        if (string.IsNullOrWhiteSpace(_options.RefreshToken) && accounts.Count == 0) apiMissing.Add("Gmail:RefreshToken or GmailAccounts");
+        if (accounts.Count == 0) apiMissing.Add("GmailAccounts");
         var resolvedScopes = ResolveScopes(scopes);
 
         string? authorizedEmail = null;
@@ -229,6 +246,21 @@ public class GmailAuthController : ControllerBase
         });
     }
 
+    [HttpPut("accounts/{id:long}/disable")]
+    public async Task<IActionResult> DisableAccount(long id, CancellationToken ct)
+    {
+        var updated = await _gmailAccountService.DisableAccountAsync(id, ct);
+        if (!updated)
+            return NotFound(new { error = "Gmail account not found." });
+
+        var accounts = await _gmailAccountService.GetAccountsAsync(ct);
+        return Ok(new
+        {
+            message = "Gmail account disabled.",
+            items = accounts.Select(MapAccount).ToList(),
+        });
+    }
+
     [HttpPost("send")]
     public async Task<IActionResult> Send([FromBody] GmailSendRequest req, CancellationToken ct)
     {
@@ -249,6 +281,36 @@ public class GmailAuthController : ControllerBase
         var recipients = NormalizeRecipientAddresses(req.To);
         if (recipients.Length == 0)
             return BadRequest(new { error = "At least one valid recipient email is required." });
+
+        var normalizedCorrelationId = req.CorrelationId?.Trim();
+        var normalizedSubject = req.Subject.Trim();
+        var normalizedRecipientList = NormalizeRecipientListForComparison(recipients);
+        if (!string.IsNullOrWhiteSpace(normalizedCorrelationId))
+        {
+            var duplicateThreshold = DateTime.UtcNow.Subtract(DuplicateSendWindow);
+            var recentSentLogs = await _db.GmailMessageLogs.AsNoTracking()
+                .Where(x => x.Direction == "sent")
+                .Where(x => x.CorrelationId == normalizedCorrelationId)
+                .Where(x => x.CreatedAt >= duplicateThreshold)
+                .Select(x => new
+                {
+                    x.Subject,
+                    x.ToAddress,
+                    x.CreatedAt,
+                })
+                .ToListAsync(ct);
+
+            var recentDuplicate = recentSentLogs.FirstOrDefault(x =>
+                string.Equals((x.Subject ?? "").Trim(), normalizedSubject, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(NormalizeRecipientListForComparison(x.ToAddress), normalizedRecipientList, StringComparison.OrdinalIgnoreCase));
+            if (recentDuplicate is not null)
+            {
+                return Conflict(new
+                {
+                    error = $"Duplicate PO request blocked. The same email was already sent at {recentDuplicate.CreatedAt:yyyy-MM-dd HH:mm:ss} UTC.",
+                });
+            }
+        }
 
         var tokenResult = await _gmailTokenService.RefreshAccessTokenAsync(req.GmailAccountId, ct);
         if (!tokenResult.Ok)
@@ -297,16 +359,17 @@ public class GmailAuthController : ControllerBase
                 counterpartyEmail: string.Join(", ", recipients),
                 fromAddress: null,
                 toAddress: string.Join(", ", recipients),
-                subject: subject,
+                subject: normalizedSubject,
                 body: body,
                 snippet: body.Length > 240 ? body[..240] : body,
-                correlationId: req.CorrelationId?.Trim(),
+                correlationId: normalizedCorrelationId,
                 rfcMessageId: sentRfcMessageId,
                 referencesHeader: sentReferencesHeader,
                 attachments: [],
+                isSystemInitiated: true,
                 ct: ct);
 
-            await _jobPoStateService.SyncStateByCorrelationAsync(req.CorrelationId?.Trim(), ct);
+            await _jobPoStateService.SyncStateByCorrelationAsync(normalizedCorrelationId, ct);
         }
 
         return Ok(new
@@ -364,7 +427,8 @@ public class GmailAuthController : ControllerBase
                 "",
                 "",
                 syncWarning ?? "Correlation is inactive. Gmail sync skipped.",
-                []
+                [],
+                false
             ));
         }
 
@@ -385,7 +449,8 @@ public class GmailAuthController : ControllerBase
             log.DetectedPoNumber ?? "",
             log.RfcMessageId ?? "",
             log.ReferencesHeader ?? "",
-            DeserializeAttachments(log.AttachmentsJson)
+            DeserializeAttachments(log.AttachmentsJson),
+            log.IsSystemInitiated
         )).ToList();
 
         var unreadReplyCount = logs.Count(x =>
@@ -395,6 +460,9 @@ public class GmailAuthController : ControllerBase
             .OrderByDescending(x => x.InternalDateMs ?? 0)
             .Select(x => x.DetectedPoNumber!)
             .FirstOrDefault();
+        var hasExternalDraftSend = logs.Any(x =>
+            string.Equals(x.Direction, "sent", StringComparison.OrdinalIgnoreCase) &&
+            !x.IsSystemInitiated);
 
         return Ok(new GmailThreadResponse(
             events,
@@ -406,7 +474,8 @@ public class GmailAuthController : ControllerBase
                 ? NormalizeInternalDate(latestReply.InternalDateMs)
                 : "",
             syncWarning ?? "",
-            detections
+            detections,
+            hasExternalDraftSend
         ));
     }
 
@@ -1091,6 +1160,7 @@ public class GmailAuthController : ControllerBase
         string? rfcMessageId,
         string? referencesHeader,
         List<GmailAttachmentDescriptor> attachments,
+        bool isSystemInitiated,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(gmailMessageId))
@@ -1128,6 +1198,7 @@ public class GmailAuthController : ControllerBase
             ? JsonSerializer.Serialize(MergeAttachmentMetadata(existing.AttachmentsJson, attachments), JsonOptions)
             : null;
         existing.DetectedPoNumber = ExtractPoNumber(correlationId, subject, body, snippet);
+        existing.IsSystemInitiated = isSystemInitiated || existing.IsSystemInitiated;
         if (existing.Id == 0)
         {
             existing.IsRead = !string.Equals(direction, "reply", StringComparison.OrdinalIgnoreCase);
@@ -1188,6 +1259,29 @@ public class GmailAuthController : ControllerBase
         createdAt = account.CreatedAt,
         updatedAt = account.UpdatedAt,
     };
+
+    private static string? NormalizeReturnUrl(string? returnUrl)
+    {
+        if (string.IsNullOrWhiteSpace(returnUrl))
+            return null;
+
+        if (Uri.TryCreate(returnUrl, UriKind.Absolute, out var absolute)
+            && (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps))
+            return absolute.ToString();
+
+        return null;
+    }
+
+    private static string BuildReturnUrl(string returnUrl, string integration, string status, string message)
+    {
+        var separator = returnUrl.Contains('?') ? "&" : "?";
+        return $"{returnUrl}{separator}integration={Uri.EscapeDataString(integration)}&status={Uri.EscapeDataString(status)}&message={Uri.EscapeDataString(message)}";
+    }
+
+    private sealed class OAuthStateEntry
+    {
+        public string? ReturnUrl { get; init; }
+    }
 
     private string? ValidateConfiguration()
     {
@@ -1300,6 +1394,18 @@ public class GmailAuthController : ControllerBase
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+
+    private static string NormalizeRecipientListForComparison(IEnumerable<string> recipients) =>
+        string.Join(
+            ",",
+            recipients
+                .Select(item => item.Trim().ToLowerInvariant())
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(item => item, StringComparer.OrdinalIgnoreCase));
+
+    private static string NormalizeRecipientListForComparison(string? value) =>
+        NormalizeRecipientListForComparison(NormalizeRecipientAddresses(value));
 
     private static string BuildRawMessage(
         string to,
@@ -1694,7 +1800,8 @@ public class GmailAuthController : ControllerBase
         string DetectedPoNumber,
         string RfcMessageId,
         string ReferencesHeader,
-        List<GmailAttachmentDescriptor> Attachments
+        List<GmailAttachmentDescriptor> Attachments,
+        bool IsSystemInitiated
     );
 
     public sealed record GmailThreadResponse(
@@ -1705,7 +1812,8 @@ public class GmailAuthController : ControllerBase
         string DetectedPoNumber,
         string LastReplyTimestamp,
         string SyncWarning,
-        List<PoDetectionResponse> Detections
+        List<PoDetectionResponse> Detections,
+        bool HasExternalDraftSend
     );
 
     private sealed class GmailTokenResponse

@@ -7,7 +7,6 @@ public sealed class GmailOptions
     public string ClientId { get; set; } = "";
     public string ClientSecret { get; set; } = "";
     public string RedirectUri { get; set; } = "";
-    public string RefreshToken { get; set; } = "";
     public string Scopes { get; set; } =
         "openid email https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly";
 }

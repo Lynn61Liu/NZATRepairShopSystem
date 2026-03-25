@@ -92,6 +92,35 @@ public sealed class GmailAccountService
         return true;
     }
 
+    public async Task<bool> DisableAccountAsync(long id, CancellationToken ct)
+    {
+        var account = await _db.GmailAccounts.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (account is null)
+            return false;
+
+        var accounts = await _db.GmailAccounts
+            .OrderBy(x => x.Id)
+            .ToListAsync(ct);
+
+        var otherActive = accounts
+            .Where(x => x.Id != id && x.IsActive)
+            .ToList();
+
+        account.IsActive = false;
+        account.IsDefault = false;
+        account.UpdatedAt = DateTime.UtcNow;
+
+        var nextDefault = otherActive.FirstOrDefault();
+        if (nextDefault is not null)
+        {
+            nextDefault.IsDefault = true;
+            nextDefault.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
     public async Task TouchAccessTokenAsync(long id, string? accessToken, int? expiresIn, string? scope, CancellationToken ct)
     {
         var account = await _db.GmailAccounts.FirstOrDefaultAsync(x => x.Id == id, ct);
