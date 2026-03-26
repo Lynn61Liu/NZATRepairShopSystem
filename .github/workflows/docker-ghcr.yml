@@ -68,6 +68,9 @@ jobs:
           port: ${{ secrets.SERVER_A_PORT }}
           script: |
             mkdir -p /www/wwwroot/NZAT.NET
+            rm -f /www/wwwroot/NZAT.NET/docker-compose.yml
+            rm -f /www/wwwroot/NZAT.NET/deploy.sh
+            rm -f /www/wwwroot/NZAT.NET/env.example
 
       - name: Upload deployment files to server A
         uses: appleboy/scp-action@v0.1.7
@@ -79,6 +82,7 @@ jobs:
           source: "deploy/primary-linux/docker-compose.yml,deploy/primary-linux/deploy.sh,deploy/primary-linux/env.example"
           target: /www/wwwroot/NZAT.NET/
           strip_components: 2
+          overwrite: true
 
       - name: Deploy to server A via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -107,6 +111,9 @@ jobs:
           port: ${{ secrets.SERVER_B_PORT }}
           script: |
             mkdir -p /Users/lynn/www/wwwroot/NZAT.NET
+            rm -f /Users/lynn/www/wwwroot/NZAT.NET/docker-compose.yml
+            rm -f /Users/lynn/www/wwwroot/NZAT.NET/deploy.sh
+            rm -f /Users/lynn/www/wwwroot/NZAT.NET/env.example
 
       - name: Upload deployment files to server B
         uses: appleboy/scp-action@v0.1.7
@@ -118,6 +125,7 @@ jobs:
           source: "deploy/secondary-mac/docker-compose.yml,deploy/secondary-mac/deploy.sh,deploy/secondary-mac/env.example"
           target: /Users/lynn/www/wwwroot/NZAT.NET/
           strip_components: 2
+          overwrite: true
 
       - name: Deploy to server B via SSH
         uses: appleboy/ssh-action@v1.0.3
