@@ -82,7 +82,6 @@ jobs:
           source: "deploy/primary-linux/docker-compose.yml,deploy/primary-linux/deploy.sh,deploy/primary-linux/env.example"
           target: /www/wwwroot/NZAT.NET/
           strip_components: 2
-          overwrite: true
 
       - name: Deploy to server A via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -125,7 +124,6 @@ jobs:
           source: "deploy/secondary-mac/docker-compose.yml,deploy/secondary-mac/deploy.sh,deploy/secondary-mac/env.example"
           target: /Users/lynn/www/wwwroot/NZAT.NET/
           strip_components: 2
-          overwrite: true
 
       - name: Deploy to server B via SSH
         uses: appleboy/ssh-action@v1.0.3
