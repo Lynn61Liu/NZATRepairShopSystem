@@ -694,7 +694,7 @@ public sealed class JobInvoiceService
                 requestedCodes.Add(resolvedCode);
         }
         if (partsServices.Any(x => !string.IsNullOrWhiteSpace(x.Description)))
-            requestedCodes.Add(PartsItemCode);
+            requestedCodes.Add(JobInvoicePartsLineItemBuilder.DefaultItemCode);
 
         var inventoryByCode = requestedCodes.Count == 0
             ? new Dictionary<string, InventoryItem>(StringComparer.OrdinalIgnoreCase)
@@ -713,16 +713,8 @@ public sealed class JobInvoiceService
             lineItems.Add(BuildConfiguredLineItem(itemCode, description, inventoryItem, fallbackUnitAmount: 0m, useInventoryPrice: true));
         }
 
-        foreach (var part in partsServices.Where(x => !string.IsNullOrWhiteSpace(x.Description)))
-        {
-            inventoryByCode.TryGetValue(PartsItemCode, out var partsInventoryItem);
-            lineItems.Add(BuildConfiguredLineItem(
-                PartsItemCode,
-                part.Description.Trim(),
-                partsInventoryItem,
-                fallbackUnitAmount: 0m,
-                useInventoryPrice: false));
-        }
+        inventoryByCode.TryGetValue(JobInvoicePartsLineItemBuilder.DefaultItemCode, out var partsInventoryItem);
+        lineItems.AddRange(JobInvoicePartsLineItemBuilder.Build(partsServices, partsInventoryItem));
 
         if (lineItems.Count == 0)
         {
@@ -808,8 +800,6 @@ public sealed class JobInvoiceService
             })
             .ToList();
     }
-
-    private const string PartsItemCode = "333Parts";
 
     private static string? ResolveCatalogItemCode(
         Customer customer,
