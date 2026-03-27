@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -20,17 +21,20 @@ public sealed class XeroInvoiceService
     private readonly XeroTokenConfiguration _configuration;
     private readonly XeroTokenService _xeroTokenService;
     private readonly XeroTokenStore _xeroTokenStore;
+    private readonly ILogger<XeroInvoiceService> _logger;
 
     public XeroInvoiceService(
         IHttpClientFactory httpClientFactory,
         XeroTokenConfiguration configuration,
         XeroTokenService xeroTokenService,
-        XeroTokenStore xeroTokenStore)
+        XeroTokenStore xeroTokenStore,
+        ILogger<XeroInvoiceService> logger)
     {
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
         _xeroTokenService = xeroTokenService;
         _xeroTokenStore = xeroTokenStore;
+        _logger = logger;
     }
 
     public async Task<XeroInvoiceCreateResult> CreateInvoiceAsync(
@@ -38,6 +42,7 @@ public sealed class XeroInvoiceService
         XeroInvoiceCreateOptions? options,
         CancellationToken ct)
     {
+        var totalStopwatch = Stopwatch.StartNew();
         var state = await _xeroTokenStore.GetEffectiveAsync(ct);
         var missing = new List<string>();
         if (string.IsNullOrWhiteSpace(_configuration.ClientId)) missing.Add("Xero:ClientId");
@@ -46,6 +51,13 @@ public sealed class XeroInvoiceService
         if (string.IsNullOrWhiteSpace(state.TenantId)) missing.Add("Xero:TenantId");
         if (missing.Count > 0)
         {
+            totalStopwatch.Stop();
+            _logger.LogInformation(
+                "Xero invoice create completed in {ElapsedMs} ms (ok: {Ok}, statusCode: {StatusCode}, reason: {Reason})",
+                totalStopwatch.Elapsed.TotalMilliseconds,
+                false,
+                400,
+                "missing_configuration");
             return XeroInvoiceCreateResult.Fail(
                 400,
                 "Missing Xero configuration for invoice create.",
@@ -53,9 +65,22 @@ public sealed class XeroInvoiceService
                 state.TenantId ?? "");
         }
 
+        var tokenRefreshStopwatch = Stopwatch.StartNew();
         var tokenResult = await _xeroTokenService.RefreshAccessTokenAsync(ct);
+        tokenRefreshStopwatch.Stop();
+        _logger.LogInformation(
+            "Xero invoice segment {Segment} completed in {ElapsedMs} ms",
+            "refresh_access_token",
+            tokenRefreshStopwatch.Elapsed.TotalMilliseconds);
         if (!tokenResult.Ok)
         {
+            totalStopwatch.Stop();
+            _logger.LogInformation(
+                "Xero invoice create completed in {ElapsedMs} ms (ok: {Ok}, statusCode: {StatusCode}, reason: {Reason})",
+                totalStopwatch.Elapsed.TotalMilliseconds,
+                false,
+                tokenResult.StatusCode,
+                "refresh_access_token_failed");
             return XeroInvoiceCreateResult.Fail(
                 tokenResult.StatusCode,
                 tokenResult.Error ?? "Failed to refresh Xero access token.",
@@ -76,12 +101,26 @@ public sealed class XeroInvoiceService
             httpRequest.Headers.Add("Idempotency-Key", options.IdempotencyKey);
         httpRequest.Content = new StringContent(payload, Encoding.UTF8, "application/json");
 
+        var apiCallStopwatch = Stopwatch.StartNew();
         using var response = await client.SendAsync(httpRequest, ct);
+        apiCallStopwatch.Stop();
+        _logger.LogInformation(
+            "Xero invoice segment {Segment} completed in {ElapsedMs} ms with status {StatusCode}",
+            "send_invoice_request",
+            apiCallStopwatch.Elapsed.TotalMilliseconds,
+            (int)response.StatusCode);
         var responseBody = await response.Content.ReadAsStringAsync(ct);
         var parsedResponse = DeserializePayload(responseBody);
 
         if (!response.IsSuccessStatusCode)
         {
+            totalStopwatch.Stop();
+            _logger.LogInformation(
+                "Xero invoice create completed in {ElapsedMs} ms (ok: {Ok}, statusCode: {StatusCode}, reason: {Reason})",
+                totalStopwatch.Elapsed.TotalMilliseconds,
+                false,
+                (int)response.StatusCode,
+                "xero_api_error");
             return XeroInvoiceCreateResult.Fail(
                 (int)response.StatusCode,
                 responseBody,
@@ -93,6 +132,13 @@ public sealed class XeroInvoiceService
                 tokenResult.ExpiresIn);
         }
 
+        totalStopwatch.Stop();
+        _logger.LogInformation(
+            "Xero invoice create completed in {ElapsedMs} ms (ok: {Ok}, statusCode: {StatusCode}, reason: {Reason})",
+            totalStopwatch.Elapsed.TotalMilliseconds,
+            true,
+            (int)response.StatusCode,
+            "success");
         return XeroInvoiceCreateResult.Success(
             parsedResponse,
             state.TenantId ?? "",

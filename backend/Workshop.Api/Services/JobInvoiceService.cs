@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Workshop.Api.Data;
@@ -15,113 +16,204 @@ public sealed class JobInvoiceService
     private readonly XeroInvoiceService _xeroInvoiceService;
     private readonly XeroPaymentService _xeroPaymentService;
     private readonly XeroPaymentOptions _xeroPaymentOptions;
+    private readonly ILogger<JobInvoiceService> _logger;
 
     public JobInvoiceService(
         AppDbContext db,
         XeroInvoiceService xeroInvoiceService,
         XeroPaymentService xeroPaymentService,
-        Microsoft.Extensions.Options.IOptions<XeroPaymentOptions> xeroPaymentOptions)
+        Microsoft.Extensions.Options.IOptions<XeroPaymentOptions> xeroPaymentOptions,
+        ILogger<JobInvoiceService> logger)
     {
         _db = db;
         _xeroInvoiceService = xeroInvoiceService;
         _xeroPaymentService = xeroPaymentService;
         _xeroPaymentOptions = xeroPaymentOptions.Value;
+        _logger = logger;
     }
 
     public async Task<JobInvoiceCreateResult> CreateDraftForJobAsync(long jobId, CancellationToken ct)
     {
-        var existing = await _db.JobInvoices.AsNoTracking().FirstOrDefaultAsync(x => x.JobId == jobId, ct);
-        if (existing is not null)
-        {
-            return JobInvoiceCreateResult.Success(existing, alreadyExists: true);
-        }
-
-        var row = await (
-                from j in _db.Jobs.AsNoTracking()
-                join v in _db.Vehicles.AsNoTracking() on j.VehicleId equals v.Id
-                join c in _db.Customers.AsNoTracking() on j.CustomerId equals c.Id
-                where j.Id == jobId
-                select new
-                {
-                    Job = j,
-                    Vehicle = v,
-                    Customer = c,
-                }
-            )
-            .FirstOrDefaultAsync(ct);
-
-        if (row is null)
-            return JobInvoiceCreateResult.Fail(404, "Job not found.");
-
-        var mechServices = await _db.JobMechServices.AsNoTracking()
-            .Where(x => x.JobId == jobId)
-            .OrderBy(x => x.CreatedAt)
-            .ToListAsync(ct);
-        var partsServices = await _db.JobPartsServices.AsNoTracking()
-            .Where(x => x.JobId == jobId)
-            .OrderBy(x => x.CreatedAt)
-            .ToListAsync(ct);
-        var paintService = await _db.JobPaintServices.AsNoTracking()
-            .Where(x => x.JobId == jobId)
-            .OrderBy(x => x.CreatedAt)
-            .FirstOrDefaultAsync(ct);
-        var hasWofRecord = await _db.JobWofRecords.AsNoTracking()
-            .AnyAsync(x => x.JobId == jobId, ct);
-        var serviceSelections = row.Job.UseServiceCatalogMapping
-            ? await _db.JobServiceSelections.AsNoTracking()
-                .Where(x => x.JobId == jobId)
-                .OrderBy(x => x.CreatedAt)
-                .ThenBy(x => x.Id)
-                .ToListAsync(ct)
-            : [];
-
-        CreateXeroInvoiceRequest request;
         try
         {
-            request = row.Job.UseServiceCatalogMapping
-                ? await BuildCatalogMappedCreateRequestAsync(row.Job, row.Customer, row.Vehicle, serviceSelections, partsServices, paintService, ct)
-                : await BuildLegacyCreateRequestAsync(row.Job, row.Customer, row.Vehicle, mechServices, partsServices, paintService, hasWofRecord, ct);
-            request.LineItems = await SanitizeLineItemsAsync(request.LineItems, ct);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return JobInvoiceCreateResult.Fail(400, ex.Message);
-        }
+            var totalStopwatch = Stopwatch.StartNew();
 
-        var createResult = await _xeroInvoiceService.CreateInvoiceAsync(
-            request,
-            new XeroInvoiceCreateOptions
+            var existingLookupStopwatch = Stopwatch.StartNew();
+            var existing = await _db.JobInvoices.AsNoTracking().FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+            existingLookupStopwatch.Stop();
+            _logger.LogInformation(
+                "Job invoice segment {Segment} completed in {ElapsedMs} ms for job {JobId}",
+                "existing_lookup",
+                existingLookupStopwatch.Elapsed.TotalMilliseconds,
+                jobId);
+            if (existing is not null)
             {
-                SummarizeErrors = true,
-            },
-            ct);
+                totalStopwatch.Stop();
+                _logger.LogInformation(
+                    "Job invoice draft creation completed in {ElapsedMs} ms for job {JobId} (ok: {Ok}, alreadyExists: {AlreadyExists})",
+                    totalStopwatch.Elapsed.TotalMilliseconds,
+                    jobId,
+                    true,
+                    true);
+                return JobInvoiceCreateResult.Success(existing, alreadyExists: true);
+            }
 
-        if (!createResult.Ok)
-        {
-            return JobInvoiceCreateResult.Fail(
-                createResult.StatusCode,
-                createResult.Error ?? "Failed to create Xero draft invoice.",
-                createResult.Payload,
+            var dataLoadStopwatch = Stopwatch.StartNew();
+            var row = await (
+                    from j in _db.Jobs.AsNoTracking()
+                    join v in _db.Vehicles.AsNoTracking() on j.VehicleId equals v.Id
+                    join c in _db.Customers.AsNoTracking() on j.CustomerId equals c.Id
+                    where j.Id == jobId
+                    select new
+                    {
+                        Job = j,
+                        Vehicle = v,
+                        Customer = c,
+                    }
+                )
+                .FirstOrDefaultAsync(ct);
+
+            if (row is null)
+            {
+                totalStopwatch.Stop();
+                _logger.LogInformation(
+                    "Job invoice draft creation completed in {ElapsedMs} ms for job {JobId} (ok: {Ok}, alreadyExists: {AlreadyExists})",
+                    totalStopwatch.Elapsed.TotalMilliseconds,
+                    jobId,
+                    false,
+                    false);
+                return JobInvoiceCreateResult.Fail(404, "Job not found.");
+            }
+
+            var mechServices = await _db.JobMechServices.AsNoTracking()
+                .Where(x => x.JobId == jobId)
+                .OrderBy(x => x.CreatedAt)
+                .ToListAsync(ct);
+            var partsServices = await _db.JobPartsServices.AsNoTracking()
+                .Where(x => x.JobId == jobId)
+                .OrderBy(x => x.CreatedAt)
+                .ToListAsync(ct);
+            var paintService = await _db.JobPaintServices.AsNoTracking()
+                .Where(x => x.JobId == jobId)
+                .OrderBy(x => x.CreatedAt)
+                .FirstOrDefaultAsync(ct);
+            var hasWofRecord = await _db.JobWofRecords.AsNoTracking()
+                .AnyAsync(x => x.JobId == jobId, ct);
+            var serviceSelections = row.Job.UseServiceCatalogMapping
+                ? await _db.JobServiceSelections.AsNoTracking()
+                    .Where(x => x.JobId == jobId)
+                    .OrderBy(x => x.CreatedAt)
+                    .ThenBy(x => x.Id)
+                    .ToListAsync(ct)
+                : [];
+            dataLoadStopwatch.Stop();
+            _logger.LogInformation(
+                "Job invoice segment {Segment} completed in {ElapsedMs} ms for job {JobId}",
+                "load_job_data",
+                dataLoadStopwatch.Elapsed.TotalMilliseconds,
+                jobId);
+
+            CreateXeroInvoiceRequest request;
+            var requestBuildStopwatch = Stopwatch.StartNew();
+            try
+            {
+                request = row.Job.UseServiceCatalogMapping
+                    ? await BuildCatalogMappedCreateRequestAsync(row.Job, row.Customer, row.Vehicle, serviceSelections, partsServices, paintService, ct)
+                    : await BuildLegacyCreateRequestAsync(row.Job, row.Customer, row.Vehicle, mechServices, partsServices, paintService, hasWofRecord, ct);
+                request.LineItems = await SanitizeLineItemsAsync(request.LineItems, ct);
+            }
+            catch (InvalidOperationException ex)
+            {
+                totalStopwatch.Stop();
+                _logger.LogInformation(
+                    "Job invoice draft creation completed in {ElapsedMs} ms for job {JobId} (ok: {Ok}, alreadyExists: {AlreadyExists})",
+                    totalStopwatch.Elapsed.TotalMilliseconds,
+                    jobId,
+                    false,
+                    false);
+                return JobInvoiceCreateResult.Fail(400, ex.Message);
+            }
+
+            requestBuildStopwatch.Stop();
+            _logger.LogInformation(
+                "Job invoice segment {Segment} completed in {ElapsedMs} ms for job {JobId}",
+                "build_request",
+                requestBuildStopwatch.Elapsed.TotalMilliseconds,
+                jobId);
+
+            var xeroCreateStopwatch = Stopwatch.StartNew();
+            var createResult = await _xeroInvoiceService.CreateInvoiceAsync(
                 request,
-                createResult.RefreshToken,
-                createResult.RefreshTokenUpdated,
-                createResult.Scope,
-                createResult.ExpiresIn);
+                new XeroInvoiceCreateOptions
+                {
+                    SummarizeErrors = true,
+                },
+                ct);
+            xeroCreateStopwatch.Stop();
+            _logger.LogInformation(
+                "Job invoice segment {Segment} completed in {ElapsedMs} ms for job {JobId} (ok: {Ok}, statusCode: {StatusCode})",
+                "xero_create_invoice",
+                xeroCreateStopwatch.Elapsed.TotalMilliseconds,
+                jobId,
+                createResult.Ok,
+                createResult.StatusCode);
+
+            if (!createResult.Ok)
+            {
+                totalStopwatch.Stop();
+                _logger.LogInformation(
+                    "Job invoice draft creation completed in {ElapsedMs} ms for job {JobId} (ok: {Ok}, alreadyExists: {AlreadyExists})",
+                    totalStopwatch.Elapsed.TotalMilliseconds,
+                    jobId,
+                    false,
+                    false);
+                return JobInvoiceCreateResult.Fail(
+                    createResult.StatusCode,
+                    createResult.Error ?? "Failed to create Xero draft invoice.",
+                    createResult.Payload,
+                    request,
+                    createResult.RefreshToken,
+                    createResult.RefreshTokenUpdated,
+                    createResult.Scope,
+                    createResult.ExpiresIn);
+            }
+
+            var persistStopwatch = Stopwatch.StartNew();
+            var jobInvoice = BuildJobInvoice(jobId, request, createResult.Payload, createResult.TenantId);
+            _db.JobInvoices.Add(jobInvoice);
+            await _db.SaveChangesAsync(ct);
+            persistStopwatch.Stop();
+            _logger.LogInformation(
+                "Job invoice segment {Segment} completed in {ElapsedMs} ms for job {JobId}",
+                "persist_invoice",
+                persistStopwatch.Elapsed.TotalMilliseconds,
+                jobId);
+
+            totalStopwatch.Stop();
+            _logger.LogInformation(
+                "Job invoice draft creation completed in {ElapsedMs} ms for job {JobId} (ok: {Ok}, alreadyExists: {AlreadyExists})",
+                totalStopwatch.Elapsed.TotalMilliseconds,
+                jobId,
+                true,
+                false);
+
+            return JobInvoiceCreateResult.Success(
+                jobInvoice,
+                alreadyExists: false,
+                payload: createResult.Payload,
+                requestBody: request,
+                refreshToken: createResult.RefreshToken,
+                refreshTokenUpdated: createResult.RefreshTokenUpdated,
+                scope: createResult.Scope,
+                expiresIn: createResult.ExpiresIn);
         }
-
-        var jobInvoice = BuildJobInvoice(jobId, request, createResult.Payload, createResult.TenantId);
-        _db.JobInvoices.Add(jobInvoice);
-        await _db.SaveChangesAsync(ct);
-
-        return JobInvoiceCreateResult.Success(
-            jobInvoice,
-            alreadyExists: false,
-            payload: createResult.Payload,
-            requestBody: request,
-            refreshToken: createResult.RefreshToken,
-            refreshTokenUpdated: createResult.RefreshTokenUpdated,
-            scope: createResult.Scope,
-            expiresIn: createResult.ExpiresIn);
+        catch
+        {
+            _logger.LogWarning(
+                "Job invoice draft creation threw an exception for job {JobId}",
+                jobId);
+            throw;
+        }
     }
 
     public async Task<JobInvoiceCreateResult> SyncDraftForJobAsync(long jobId, SyncJobInvoiceDraftRequest payload, CancellationToken ct)

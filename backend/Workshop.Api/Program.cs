@@ -7,6 +7,7 @@ using CarjamImporter.Persistence;
 using CarjamImporter.Playwright;
 using QuestPDF.Infrastructure;
 using Workshop.Api.Data;
+using Workshop.Api.Middleware;
 using Workshop.Api.Models;
 using Workshop.Api.Options;
 using Workshop.Api.Services;
@@ -212,6 +213,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("AppCors");
 app.UseHttpsRedirection();
+app.UseMiddleware<RequestTimingMiddleware>();
 app.MapControllers();
 
 app.Run();

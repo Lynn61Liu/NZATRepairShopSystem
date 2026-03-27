@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Workshop.Api.Data;
@@ -14,17 +15,25 @@ public class NewJobController : ControllerBase
     private readonly AppDbContext _db;
     private readonly JobPoStateService _jobPoStateService;
     private readonly JobInvoiceService _jobInvoiceService;
+    private readonly ILogger<NewJobController> _logger;
 
-    public NewJobController(AppDbContext db, JobPoStateService jobPoStateService, JobInvoiceService jobInvoiceService)
+    public NewJobController(
+        AppDbContext db,
+        JobPoStateService jobPoStateService,
+        JobInvoiceService jobInvoiceService,
+        ILogger<NewJobController> logger)
     {
         _db = db;
         _jobPoStateService = jobPoStateService;
         _jobInvoiceService = jobInvoiceService;
+        _logger = logger;
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] NewJobRequest req, CancellationToken ct)
     {
+        var totalStopwatch = Stopwatch.StartNew();
+
         if (req is null)
             return BadRequest(new { error = "Request body is required." });
 
@@ -39,6 +48,7 @@ public class NewJobController : ControllerBase
         var isBusiness = string.Equals(req.Customer.Type, "Business", StringComparison.Ordinal);
         var customerNotes = req.Customer.Notes?.Trim();
         SelectedServiceCatalogItems selectedCatalogItems;
+        var resolveServicesStopwatch = Stopwatch.StartNew();
         try
         {
             selectedCatalogItems = await ResolveSelectedServiceCatalogItemsAsync(req, ct);
@@ -47,8 +57,18 @@ public class NewJobController : ControllerBase
         {
             return BadRequest(new { error = ex.Message });
         }
+        finally
+        {
+            resolveServicesStopwatch.Stop();
+            _logger.LogInformation(
+                "New job segment {Segment} completed in {ElapsedMs} ms for plate {Plate}",
+                "resolve_service_catalog",
+                resolveServicesStopwatch.Elapsed.TotalMilliseconds,
+                req.Plate);
+        }
 
         var now = DateTime.UtcNow;
+        var transactionStopwatch = Stopwatch.StartNew();
         using var tx = await _db.Database.BeginTransactionAsync(ct);
 
         Customer? customer = null;
@@ -228,11 +248,43 @@ catch (Exception ex)
         }
 
         await tx.CommitAsync(ct);
+        transactionStopwatch.Stop();
+        _logger.LogInformation(
+            "New job segment {Segment} completed in {ElapsedMs} ms for job {JobId}",
+            "db_transaction",
+            transactionStopwatch.Elapsed.TotalMilliseconds,
+            job.Id);
 
         if (job.NeedsPo)
+        {
+            var poSyncStopwatch = Stopwatch.StartNew();
             await _jobPoStateService.SyncStateForJobAsync(job.Id, ct);
+            poSyncStopwatch.Stop();
+            _logger.LogInformation(
+                "New job segment {Segment} completed in {ElapsedMs} ms for job {JobId}",
+                "po_state_sync",
+                poSyncStopwatch.Elapsed.TotalMilliseconds,
+                job.Id);
+        }
 
+        var invoiceStopwatch = Stopwatch.StartNew();
         var invoiceResult = await _jobInvoiceService.CreateDraftForJobAsync(job.Id, ct);
+        invoiceStopwatch.Stop();
+        _logger.LogInformation(
+            "New job segment {Segment} completed in {ElapsedMs} ms for job {JobId} (ok: {Ok}, alreadyExists: {AlreadyExists})",
+            "invoice_draft_create",
+            invoiceStopwatch.Elapsed.TotalMilliseconds,
+            job.Id,
+            invoiceResult.Ok,
+            invoiceResult.AlreadyExists);
+
+        totalStopwatch.Stop();
+        _logger.LogInformation(
+            "New job request completed in {ElapsedMs} ms for job {JobId}, vehicle {VehicleId}, customer {CustomerId}",
+            totalStopwatch.Elapsed.TotalMilliseconds,
+            job.Id,
+            vehicle.Id,
+            jobCustomerId);
 
         return Ok(new
         {
