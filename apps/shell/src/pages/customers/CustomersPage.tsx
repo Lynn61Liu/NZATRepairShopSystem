@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, Button, EmptyState, Alert, Input, useToast } from "@/components/ui";
+import {
+  loadCustomerListCacheFirst,
+  removeCustomerCaches,
+  syncCustomerListCache,
+  type CachedCustomerListRow,
+} from "@/features/lookups/lookupCache";
 import { withApiBase } from "@/utils/api";
 import { Plus, Trash2, Pencil } from "lucide-react";
 
@@ -10,19 +16,7 @@ type CustomerStaff = {
   email: string;
 };
 
-type CustomerRow = {
-  id: string;
-  type: string;
-  name: string;
-  phone: string;
-  email: string;
-  address: string;
-  businessCode: string;
-  notes: string;
-  staffMembers: CustomerStaff[];
-  servicePriceCount: number;
-  currentYearJobCount: number;
-};
+type CustomerRow = CachedCustomerListRow;
 
 type CustomerDraft = Omit<CustomerRow, "id" | "servicePriceCount" | "currentYearJobCount">;
 
@@ -70,36 +64,20 @@ export function CustomersPage() {
     });
   }, [rows, search, viewType]);
 
-  const loadCustomers = async () => {
+  const loadCustomers = async (forceRefresh = false) => {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch(withApiBase("/api/customers"));
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || "加载客户失败");
+      let mapped: CustomerRow[];
 
-      const mapped: CustomerRow[] = (Array.isArray(data) ? data : []).map((row) => ({
-        id: String(row?.id ?? ""),
-        type: String(row?.type ?? ""),
-        name: String(row?.name ?? ""),
-        phone: String(row?.phone ?? ""),
-        email: String(row?.email ?? ""),
-        address: String(row?.address ?? ""),
-        businessCode: String(row?.businessCode ?? ""),
-        notes: String(row?.notes ?? ""),
-        servicePriceCount: Number(row?.servicePriceCount ?? 0) || 0,
-        currentYearJobCount: Number(row?.currentYearJobCount ?? 0) || 0,
-        staffMembers: Array.isArray(row?.staffMembers)
-          ? row.staffMembers.map((item: unknown) => {
-              const member = (item ?? {}) as Record<string, unknown>;
-              return {
-                name: String(member.name ?? ""),
-                title: String(member.title ?? ""),
-                email: String(member.email ?? ""),
-              };
-            })
-          : [],
-      }));
+      if (forceRefresh) {
+        const res = await fetch(withApiBase("/api/customers"));
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || "加载客户失败");
+        mapped = syncCustomerListCache(Array.isArray(data) ? data : []);
+      } else {
+        mapped = await loadCustomerListCacheFirst();
+      }
 
       setRows(mapped);
     } catch (err) {
@@ -113,7 +91,7 @@ export function CustomersPage() {
   };
 
   useEffect(() => {
-    loadCustomers();
+    void loadCustomers();
   }, []);
 
   const csvEscape = (v: string) => {
@@ -257,7 +235,7 @@ export function CustomersPage() {
       }
 
       setPreviewRows(null);
-      await loadCustomers();
+      await loadCustomers(true);
       toast.success(`导入完成：${importedCount} 条`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "导入失败";
@@ -276,7 +254,8 @@ export function CustomersPage() {
       const res = await fetch(withApiBase(`/api/customers/${encodeURIComponent(row.id)}`), { method: "DELETE" });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || "删除失败");
-      await loadCustomers();
+      removeCustomerCaches(row.id);
+      await loadCustomers(true);
       toast.success("客户已删除");
     } catch (err) {
       const message = err instanceof Error ? err.message : "删除失败";

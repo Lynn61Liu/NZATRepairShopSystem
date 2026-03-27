@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { Alert, Button, Card, EmptyState, Input, Pagination, useToast } from "@/components/ui";
+import {
+  setCachedInventoryItems,
+  setCachedServiceCatalog,
+} from "@/features/lookups/lookupCache";
 import { requestJson } from "@/utils/api";
 import { paginate } from "@/utils/pagination";
 import { Pencil, Plus, Trash2 } from "lucide-react";
@@ -326,6 +330,15 @@ export function ServiceCatalogPage() {
         status: item.status ?? "",
       }))
     );
+    setCachedInventoryItems(
+      res.data.map((item) => ({
+        id: String(item.id),
+        itemCode: item.itemCode ?? "",
+        itemName: item.itemName ?? "",
+        salesUnitPrice: typeof item.salesUnitPrice === "number" ? item.salesUnitPrice : null,
+        status: item.status ?? "",
+      }))
+    );
   };
 
   const loadRows = async () => {
@@ -345,6 +358,28 @@ export function ServiceCatalogPage() {
 
     const root = Array.isArray(res.data.rootServices) ? res.data.rootServices : [];
     const child = Array.isArray(res.data.childServices) ? res.data.childServices : [];
+    setCachedServiceCatalog({
+      rootServices: root.map((item) => ({
+        id: item.id,
+        serviceType: item.serviceType,
+        category: item.category,
+        name: item.name,
+        personalLinkCode: item.personalLinkCode ?? null,
+        dealershipLinkCode: item.dealershipLinkCode ?? null,
+        isActive: item.isActive,
+        sortOrder: item.sortOrder ?? 0,
+      })),
+      childServices: child.map((item) => ({
+        id: item.id,
+        serviceType: item.serviceType,
+        category: item.category,
+        name: item.name,
+        personalLinkCode: item.personalLinkCode ?? null,
+        dealershipLinkCode: item.dealershipLinkCode ?? null,
+        isActive: item.isActive,
+        sortOrder: item.sortOrder ?? 0,
+      })),
+    });
     setRows([...root, ...child].map(mapRow));
     setLoading(false);
   };
@@ -464,7 +499,7 @@ export function ServiceCatalogPage() {
       return;
     }
 
-    setRows((prev) => prev.filter((item) => item.id !== row.id));
+    await loadRows();
     toast.success("子服务已删除");
   };
 

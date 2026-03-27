@@ -3,6 +3,12 @@ import { createPortal } from "react-dom";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Alert, Button, Card, Input, useToast } from "@/components/ui";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
+import {
+  loadCustomerProfileCacheFirst,
+  loadInventoryItemsCacheFirst,
+  loadServiceCatalogCacheFirst,
+  upsertCustomerCaches,
+} from "@/features/lookups/lookupCache";
 import { requestJson } from "@/utils/api";
 import { JobsTable } from "@/pages/jobs/JobsTable";
 import type { JobRow } from "@/types/JobType";
@@ -36,23 +42,6 @@ type CustomerProfile = {
   servicePrices: CustomerServicePrice[];
   currentYearJobCount: number;
   jobs: JobRow[];
-};
-
-type ServiceCatalogResponse = {
-  rootServices?: Array<{
-    id: number | string;
-    serviceType: string;
-    category: string;
-    name: string;
-    isActive: boolean;
-  }>;
-  childServices?: Array<{
-    id: number | string;
-    serviceType: string;
-    category: string;
-    name: string;
-    isActive: boolean;
-  }>;
 };
 
 type ServiceOption = {
@@ -290,16 +279,13 @@ export function CustomerProfilePage() {
   const [error, setError] = useState<string | null>(null);
 
   const loadDependencies = async () => {
-    const [serviceRes, inventoryRes] = await Promise.all([
-      requestJson<ServiceCatalogResponse>("/api/service-catalog/manage"),
-      requestJson<InventoryItemOption[]>("/api/inventory-items/manage"),
+    const [serviceCatalog, inventoryItems] = await Promise.all([
+      loadServiceCatalogCacheFirst(),
+      loadInventoryItemsCacheFirst(),
     ]);
 
-    if (!serviceRes.ok) throw new Error(serviceRes.error || "加载服务失败");
-    if (!inventoryRes.ok) throw new Error(inventoryRes.error || "加载 Xero item code 失败");
-
     setServiceOptions(
-      [...(serviceRes.data?.rootServices ?? []), ...(serviceRes.data?.childServices ?? [])]
+      [...(serviceCatalog.rootServices ?? []), ...(serviceCatalog.childServices ?? [])]
         .filter((item) => item.isActive)
         .map((item) => ({
           id: String(item.id),
@@ -309,7 +295,7 @@ export function CustomerProfilePage() {
         }))
     );
     setInventoryOptions(
-      (inventoryRes.data ?? []).filter(
+      inventoryItems.filter(
         (item) => String(item.status ?? "").toUpperCase() !== "DELETED" && item.salesUnitPrice != null
       )
     );
@@ -321,9 +307,8 @@ export function CustomerProfilePage() {
       return;
     }
 
-    const res = await requestJson<CustomerProfile>(`/api/customers/${id}`);
-    if (!res.ok || !res.data) throw new Error(res.error || "加载客户失败");
-    setProfile(res.data);
+    const data = await loadCustomerProfileCacheFirst(id);
+    setProfile(data);
   };
 
   useEffect(() => {
@@ -479,6 +464,7 @@ export function CustomerProfilePage() {
       return;
     }
 
+    upsertCustomerCaches(res.data);
     toast.success(isNew ? "客户已创建" : "客户已更新");
     if (isNew) {
       navigate(`/customers/${res.data.id}`);

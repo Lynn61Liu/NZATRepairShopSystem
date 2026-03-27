@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Button, Card, EmptyState, Input, Pagination, useToast } from "@/components/ui";
 import { XeroButton } from "@/components/common/XeroButton";
+import { refreshInventoryItemsCache } from "@/features/lookups/lookupCache";
 import { requestJson } from "@/utils/api";
 import { paginate } from "@/utils/pagination";
 import { RefreshCcw } from "lucide-react";
@@ -213,6 +214,7 @@ export function XeroItemCodesPage() {
     }
 
     setLastSyncedAt(new Date(res.data.syncedAtUtc).toLocaleString("zh-CN", { hour12: false }).replace(/\//g, "-"));
+    await refreshInventoryItemsCache();
     await loadSyncStatus();
     await loadRows();
     toast.success(`Synced ${res.data.syncedCount} item(s) from Xero`);

@@ -8,7 +8,6 @@ import {
   NotesSection,
   ServicesSection,
   VehicleSection,
-  type ServiceCatalogItem,
   type ServiceOption,
   extractVehicleInfo,
   normalizePlateInput,
@@ -19,16 +18,24 @@ import {
   type ServiceType,
   type VehicleInfo,
 } from "@/features/newJob";
-import { requestJson, withApiBase } from "@/utils/api";
+import {
+  getCachedBusinessCustomers,
+  getCachedCustomerProfile,
+  getCachedInventoryItems,
+  getCachedPersonalCustomers,
+  getCachedServiceCatalog,
+  loadBusinessCustomersCacheFirst,
+  loadCustomerProfileCacheFirst,
+  loadInventoryItemsCacheFirst,
+  loadPersonalCustomersCacheFirst,
+  loadServiceCatalogCacheFirst,
+  type CachedPersonalCustomer,
+  type CachedServiceCatalog,
+} from "@/features/lookups/lookupCache";
+import { withApiBase } from "@/utils/api";
 
 export function NewJobPage() {
-  type PersonalCustomerOption = {
-    id: string;
-    name: string;
-    phone: string;
-    email: string;
-    address: string;
-  };
+  type PersonalCustomerOption = CachedPersonalCustomer;
   type CustomerMatchHint = {
     message: string;
   };
@@ -188,46 +195,88 @@ export function NewJobPage() {
     selectedPaintOptionLabels,
   ]);
 
+  const applyServiceCatalog = (catalog: CachedServiceCatalog) => {
+    const roots = Array.isArray(catalog.rootServices) ? catalog.rootServices : [];
+    const children = Array.isArray(catalog.childServices) ? catalog.childServices : [];
+
+    const nextRootOptions = roots
+      .filter((item) => item.isActive)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map<ServiceOption | null>((item) => {
+        const fallback = defaultServiceOptions.find((opt) => opt.id === item.serviceType);
+        return fallback
+          ? {
+              ...fallback,
+              label: item.name,
+              catalogItemId: String(item.id),
+            }
+          : null;
+      })
+      .filter((item): item is ServiceOption => Boolean(item));
+
+    if (nextRootOptions.length) {
+      setServiceOptions(nextRootOptions);
+    }
+
+    setMechOptionChoices(
+      children
+        .filter((item) => item.isActive && item.serviceType === "mech")
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((item) => ({
+          id: String(item.id),
+          label: item.name,
+          personalLinkCode: item.personalLinkCode,
+          dealershipLinkCode: item.dealershipLinkCode,
+        }))
+    );
+
+    setPaintOptionChoices(
+      children
+        .filter((item) => item.isActive && item.serviceType === "paint")
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((item) => ({
+          id: String(item.id),
+          label: item.name,
+          personalLinkCode: item.personalLinkCode,
+          dealershipLinkCode: item.dealershipLinkCode,
+        }))
+    );
+  };
+
   useEffect(() => {
     let cancelled = false;
-    const loadBusinesses = async () => {
+    const loadCustomers = async () => {
+      const cachedBusinesses = getCachedBusinessCustomers();
+      const cachedPersonals = getCachedPersonalCustomers();
+
+      if (!cancelled) {
+        setBusinessOptions(cachedBusinesses ?? []);
+        setPersonalCustomerOptions(cachedPersonals ?? []);
+      }
+
+      if (cachedBusinesses && cachedPersonals) {
+        return;
+      }
+
       try {
-        const res = await fetch(withApiBase("/api/customers"));
-        const data = await res.json().catch(() => null);
-        if (!res.ok) {
-          throw new Error(data?.error || "加载商户失败");
-        }
+        const [businesses, personals] = await Promise.all([
+          loadBusinessCustomersCacheFirst(),
+          loadPersonalCustomersCacheFirst(),
+        ]);
+
         if (!cancelled) {
-          const list = Array.isArray(data) ? data : [];
-          const personalCustomers = list
-            .filter((item) => String(item?.type || "").toLowerCase() === "personal")
-            .map((item) => ({
-              id: String(item.id),
-              name: String(item.name || "").trim(),
-              phone: String(item.phone || ""),
-              email: String(item.email || ""),
-              address: String(item.address || ""),
-            }))
-            .filter((item) => item.name);
-          setPersonalCustomerOptions(personalCustomers);
-          const businesses = list
-            .filter((item) => String(item?.type || "").toLowerCase() === "business")
-            .map((item) => ({
-              id: String(item.id),
-              label: String(item.name || ""),
-              businessCode: item.businessCode ? String(item.businessCode) : undefined,
-            }))
-            .filter((item) => item.label);
           setBusinessOptions(businesses);
+          setPersonalCustomerOptions(personals);
         }
       } catch {
         if (!cancelled) {
-          setPersonalCustomerOptions([]);
-          setBusinessOptions([]);
+          setPersonalCustomerOptions(cachedPersonals ?? []);
+          setBusinessOptions(cachedBusinesses ?? []);
         }
       }
     };
-    loadBusinesses();
+
+    void loadCustomers();
     return () => {
       cancelled = true;
     };
@@ -236,58 +285,20 @@ export function NewJobPage() {
   useEffect(() => {
     let cancelled = false;
     const loadServiceCatalog = async () => {
-      const res = await requestJson<{
-        rootServices?: ServiceCatalogItem[];
-        childServices?: ServiceCatalogItem[];
-      }>("/api/service-catalog");
-
-      if (!res.ok || !res.data || cancelled) return;
-
-      const roots = Array.isArray(res.data.rootServices) ? res.data.rootServices : [];
-      const children = Array.isArray(res.data.childServices) ? res.data.childServices : [];
-
-      const nextRootOptions = roots
-        .filter((item) => item.isActive)
-        .sort((a, b) => a.sortOrder - b.sortOrder)
-        .map<ServiceOption | null>((item) => {
-          const fallback = defaultServiceOptions.find((opt) => opt.id === item.serviceType);
-          return fallback
-            ? {
-                ...fallback,
-                label: item.name,
-                catalogItemId: String(item.id),
-              }
-            : null;
-        })
-        .filter((item): item is ServiceOption => Boolean(item));
-
-      if (nextRootOptions.length) {
-        setServiceOptions(nextRootOptions);
+      const cachedCatalog = getCachedServiceCatalog();
+      if (cachedCatalog && !cancelled) {
+        applyServiceCatalog(cachedCatalog);
+        return;
       }
 
-      setMechOptionChoices(
-        children
-          .filter((item) => item.isActive && item.serviceType === "mech")
-          .sort((a, b) => a.sortOrder - b.sortOrder)
-          .map((item) => ({
-            id: String(item.id),
-            label: item.name,
-            personalLinkCode: item.personalLinkCode,
-            dealershipLinkCode: item.dealershipLinkCode,
-          }))
-      );
-
-      setPaintOptionChoices(
-        children
-          .filter((item) => item.isActive && item.serviceType === "paint")
-          .sort((a, b) => a.sortOrder - b.sortOrder)
-          .map((item) => ({
-            id: String(item.id),
-            label: item.name,
-            personalLinkCode: item.personalLinkCode,
-            dealershipLinkCode: item.dealershipLinkCode,
-          }))
-      );
+      try {
+        const catalog = await loadServiceCatalogCacheFirst();
+        if (!cancelled) {
+          applyServiceCatalog(catalog);
+        }
+      } catch {
+        // Keep the built-in fallback service options when the cache cannot be loaded.
+      }
     };
 
     void loadServiceCatalog();
@@ -295,6 +306,26 @@ export function NewJobPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (getCachedInventoryItems()) {
+      return;
+    }
+
+    void loadInventoryItemsCacheFirst().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (customerType !== "business" || !businessId) {
+      return;
+    }
+
+    if (getCachedCustomerProfile(businessId)) {
+      return;
+    }
+
+    void loadCustomerProfileCacheFirst(businessId).catch(() => undefined);
+  }, [customerType, businessId]);
 
   useEffect(() => {
     if (showNeedsPo) {
