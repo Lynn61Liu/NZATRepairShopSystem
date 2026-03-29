@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Workshop.Api.Data;
+using Workshop.Api.Utils;
 
 namespace Workshop.Api.Controllers;
 
@@ -58,11 +59,11 @@ public class InvoicePaymentsController : ControllerBase
                 row.reference,
                 row.paymentWay,
                 paymentDate = row.paymentDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                paymentDateTime = row.paymentDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                paymentDateTime = DateTimeHelper.FormatNz(row.paymentDateTime),
                 row.amount,
                 row.note,
                 row.externalStatus,
-                createdAt = row.createdAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                createdAt = DateTimeHelper.FormatNz(row.createdAt),
             }),
         });
     }

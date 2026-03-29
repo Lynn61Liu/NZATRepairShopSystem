@@ -6,6 +6,7 @@ using Workshop.Api.Data;
 using Workshop.Api.Models;
 using Workshop.Api.Services;
 using Workshop.Api.Utils;
+using Workshop.Api.Utils;
 
 namespace Workshop.Api.Controllers;
 
@@ -769,7 +770,7 @@ public class JobsController : ControllerBase
 
         try
         {
-            return DateTimeOffset.FromUnixTimeMilliseconds(value.Value).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+            return DateTimeHelper.FormatNz(DateTimeOffset.FromUnixTimeMilliseconds(value.Value).UtcDateTime);
         }
         catch
         {

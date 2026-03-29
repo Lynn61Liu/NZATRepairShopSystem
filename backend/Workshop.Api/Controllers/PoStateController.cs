@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Workshop.Api.Data;
 using Workshop.Api.Models;
 using Workshop.Api.Services;
+using Workshop.Api.Utils;
 
 namespace Workshop.Api.Controllers;
 
@@ -329,7 +330,7 @@ public class PoStateController : ControllerBase
         };
 
     private static string FormatDateTime(DateTime? value) =>
-        value.HasValue ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "-";
+        DateTimeHelper.FormatNz(value, "yyyy-MM-dd HH:mm", "-");
 
     private Task<bool> HasPaidInvoiceAsync(long jobId, CancellationToken ct) =>
         _db.JobInvoices.AsNoTracking()

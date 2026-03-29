@@ -13,6 +13,7 @@ using UglyToad.PdfPig;
 using Workshop.Api.Data;
 using Workshop.Api.Options;
 using Workshop.Api.Services;
+using Workshop.Api.Utils;
 using Workshop.Api.Models;
 
 namespace Workshop.Api.Controllers;
@@ -1617,7 +1618,7 @@ public class GmailAuthController : ControllerBase
     private static string NormalizeDateHeader(string value)
     {
         if (DateTimeOffset.TryParse(value, out var parsed))
-            return parsed.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+            return DateTimeHelper.FormatNz(parsed.UtcDateTime);
         return value;
     }
 
@@ -1626,7 +1627,7 @@ public class GmailAuthController : ControllerBase
         if (!value.HasValue || value.Value <= 0) return "";
         try
         {
-            return DateTimeOffset.FromUnixTimeMilliseconds(value.Value).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+            return DateTimeHelper.FormatNz(DateTimeOffset.FromUnixTimeMilliseconds(value.Value).UtcDateTime);
         }
         catch
         {
