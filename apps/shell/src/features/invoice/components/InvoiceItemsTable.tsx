@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, GripVertical, Loader2, Plus, RefreshCcw, Trash2 } from "lucide-react";
 import { Button, Input, Select } from "@/components/ui";
-import type { InvoiceItem, TaxRateOption, XeroItemDefinition } from "../types";
+import type { AmountsAre, InvoiceItem, TaxRateOption, XeroItemDefinition } from "../types";
 import { useInvoiceDisplay } from "./InvoiceDisplayContext";
 
 type ItemCatalogSyncState = "idle" | "syncing" | "success" | "error";
 
 type Props = {
   items: InvoiceItem[];
+  amountsAre: AmountsAre;
   readOnly?: boolean;
   synced: boolean;
   subtotal: number;
@@ -43,18 +44,67 @@ const TAX_RATE_PERCENTAGE: Record<TaxRateOption, number> = {
   "Zero Rated - Exp": 0,
 };
 
-function getTaxAmount(item: InvoiceItem) {
-  const rate = TAX_RATE_PERCENTAGE[item.taxRate];
-  if (rate <= 0) return 0;
-  return getLineAmount(item) * (rate / 100);
+function getEnteredAmount(item: InvoiceItem) {
+  return item.quantity * item.unitPrice * (1 - item.discount / 100);
 }
 
-function getLineAmount(item: InvoiceItem) {
-  return item.quantity * item.unitPrice * (1 - item.discount / 100);
+function getBaseAmount(item: InvoiceItem, amountsAre: AmountsAre) {
+  if (typeof item.xeroLineAmount === "number" && Number.isFinite(item.xeroLineAmount)) {
+    if (amountsAre === "Tax Inclusive" && typeof item.xeroTaxAmount === "number" && Number.isFinite(item.xeroTaxAmount)) {
+      return item.xeroLineAmount - item.xeroTaxAmount;
+    }
+    return item.xeroLineAmount;
+  }
+
+  const entered = getEnteredAmount(item);
+  const rate = TAX_RATE_PERCENTAGE[item.taxRate];
+  if (amountsAre !== "Tax Inclusive" || rate <= 0) {
+    return entered;
+  }
+
+  return entered / (1 + rate / 100);
+}
+
+function getTaxAmount(item: InvoiceItem, amountsAre: AmountsAre) {
+  if (typeof item.xeroTaxAmount === "number" && Number.isFinite(item.xeroTaxAmount)) {
+    return item.xeroTaxAmount;
+  }
+
+  if (amountsAre === "No Tax") return 0;
+
+  const entered = getEnteredAmount(item);
+  const rate = TAX_RATE_PERCENTAGE[item.taxRate];
+  if (rate <= 0) return 0;
+
+  if (amountsAre === "Tax Inclusive") {
+    return entered - getBaseAmount(item, amountsAre);
+  }
+
+  return entered * (rate / 100);
+}
+
+function getLineAmount(item: InvoiceItem, amountsAre: AmountsAre) {
+  if (typeof item.xeroLineAmount === "number" && Number.isFinite(item.xeroLineAmount)) {
+    if (amountsAre === "Tax Exclusive" && typeof item.xeroTaxAmount === "number" && Number.isFinite(item.xeroTaxAmount)) {
+      return item.xeroLineAmount + item.xeroTaxAmount;
+    }
+    return item.xeroLineAmount;
+  }
+
+  if (amountsAre === "No Tax") {
+    return getBaseAmount(item, amountsAre);
+  }
+
+  if (amountsAre === "Tax Inclusive") {
+    return getEnteredAmount(item);
+  }
+
+  return getBaseAmount(item, amountsAre) + getTaxAmount(item, amountsAre);
 }
 
 export function InvoiceItemsTable({
   items,
+  amountsAre,
   readOnly = false,
   synced,
   subtotal,
@@ -199,8 +249,8 @@ export function InvoiceItemsTable({
           </thead>
           <tbody>
             {items.map((item) => {
-              const taxAmount = isCashPaymentSelected ? 0 : getTaxAmount(item);
-              const lineAmount = getLineAmount(item);
+              const taxAmount = isCashPaymentSelected ? 0 : getTaxAmount(item, amountsAre);
+              const lineAmount = getLineAmount(item, amountsAre);
               return (
                 <tr key={item.id} className="border-b border-[var(--ds-border)] last:border-b-0">
                   <td className="px-2 py-2 text-[var(--ds-muted)] align-top">
