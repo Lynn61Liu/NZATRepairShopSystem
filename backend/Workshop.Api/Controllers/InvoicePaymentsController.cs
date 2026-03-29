@@ -37,6 +37,7 @@ public class InvoicePaymentsController : ControllerBase
                     paymentDate = payment.PaymentDate,
                     paymentDateTime = payment.CreatedAt,
                     amount = payment.Amount,
+                    note = payment.Reference ?? "",
                     externalStatus = payment.ExternalStatus ?? "",
                     createdAt = payment.CreatedAt,
                 }
@@ -59,6 +60,7 @@ public class InvoicePaymentsController : ControllerBase
                 paymentDate = row.paymentDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 paymentDateTime = row.paymentDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
                 row.amount,
+                row.note,
                 row.externalStatus,
                 createdAt = row.createdAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
             }),

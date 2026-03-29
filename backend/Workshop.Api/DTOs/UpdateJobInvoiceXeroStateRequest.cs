@@ -8,5 +8,7 @@ public sealed class UpdateJobInvoiceXeroStateRequest
     public string State { get; set; } = "";
 
     public string? EpostReferenceId { get; set; }
+    public string? Reference { get; set; }
+    public decimal? Amount { get; set; }
     public DateOnly? PaymentDate { get; set; }
 }

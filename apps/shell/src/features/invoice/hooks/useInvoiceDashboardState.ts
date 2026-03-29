@@ -1663,21 +1663,35 @@ export function useInvoiceDashboardState({
     };
   }, [blocker]);
 
-  const updateXeroState = async (state: XeroStateOption, epostReferenceId?: string) => {
-    if (!jobId) return false;
+  const updateXeroState = async (
+    state: XeroStateOption,
+    options?: {
+      epostReferenceId?: string;
+      reference?: string;
+      amount?: number;
+    }
+  ) => {
+    if (!jobId) return { success: false, message: "Missing job id." };
 
     setUpdatingXeroState(true);
     try {
       const shouldPersistPaymentDate = state === "PAID_CASH" || state === "PAID_EPOST" || state === "PAID_BANK_TRANSFER";
       const res = await updateJobInvoiceXeroState(jobId, {
         state,
-        epostReferenceId: epostReferenceId?.trim() || undefined,
+        epostReferenceId: options?.epostReferenceId?.trim() || undefined,
+        reference: options?.reference?.trim() || undefined,
+        amount: typeof options?.amount === "number" && Number.isFinite(options.amount) ? options.amount : undefined,
         paymentDate: shouldPersistPaymentDate ? new Date().toISOString().slice(0, 10) : undefined,
       });
 
       if (!res.ok) {
-        toast.error(res.error || "Failed to update Xero invoice status");
-        return false;
+        const message = res.error || "Failed to update Xero invoice status";
+        if (res.status === 400 || res.status === 409) {
+          toast.info(message);
+        } else {
+          toast.error(message);
+        }
+        return { success: false, message };
       }
 
       const updatedInvoice = res.data?.invoice;
@@ -1703,8 +1717,8 @@ export function useInvoiceDashboardState({
         setItemsDirty(false);
         setDraftDirty(false);
       }
-      toast.success("Xero invoice status updated");
-      return true;
+      toast.success("Payment saved");
+      return { success: true, message: "Payment saved" };
     } finally {
       setUpdatingXeroState(false);
     }

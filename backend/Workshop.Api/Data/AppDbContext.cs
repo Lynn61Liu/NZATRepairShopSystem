@@ -266,7 +266,7 @@ public class AppDbContext : DbContext
         jpay.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         jpay.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         jpay.HasIndex(x => x.JobId).HasDatabaseName("ix_job_payments_job_id");
-        jpay.HasIndex(x => x.JobInvoiceId).HasDatabaseName("ix_job_payments_job_invoice_id");
+        jpay.HasIndex(x => x.JobInvoiceId).IsUnique().HasDatabaseName("ux_job_payments_job_invoice_id");
         jpay.HasOne<Job>().WithMany().HasForeignKey(x => x.JobId).OnDelete(DeleteBehavior.Cascade);
         jpay.HasOne<JobInvoice>().WithMany().HasForeignKey(x => x.JobInvoiceId).OnDelete(DeleteBehavior.Cascade);
 

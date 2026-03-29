@@ -285,9 +285,7 @@ export function XeroReadOnlyInvoiceView({ model, hasInvoice = true }: Props) {
   if (!hasInvoice) {
     return (
       <Card className="rounded-[18px] p-6">
-        <div className="rounded-[14px] border border-dashed border-[var(--ds-border)] px-5 py-8 text-sm text-[var(--ds-muted)]">
-          This job does not have a linked Xero invoice yet.
-        </div>
+        <div className="rounded-[14px] border border-dashed border-[var(--ds-border)] px-5 py-8" />
       </Card>
     );
   }

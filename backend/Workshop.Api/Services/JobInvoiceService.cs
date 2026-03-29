@@ -532,13 +532,22 @@ public sealed class JobInvoiceService
             };
 
             var paymentDate = payload.PaymentDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var amount = ExtractAmountDue(jobInvoice.ResponsePayloadJson)
+            var amount = payload.Amount is > 0
+                ? payload.Amount.Value
+                : ExtractAmountDue(jobInvoice.ResponsePayloadJson)
                 ?? ExtractInvoiceTotal(jobInvoice.ResponsePayloadJson)
                 ?? ExtractInvoiceTotal(jobInvoice.RequestPayloadJson);
             if (amount is null || amount <= 0)
                 return JobInvoiceStateUpdateResult.Fail(400, "Unable to determine invoice payment amount.");
 
             var targetInvoiceStatus = paymentMethod == "cash" ? "DELETED" : "AUTHORISED";
+            if (paymentMethod == "cash"
+                && !string.Equals(jobInvoice.ExternalStatus, "DRAFT", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(jobInvoice.ExternalStatus, "DELETED", StringComparison.OrdinalIgnoreCase))
+            {
+                return JobInvoiceStateUpdateResult.Fail(409, "Cash can only be saved while the Xero invoice is still Draft.");
+            }
+
             if (!string.Equals(jobInvoice.ExternalStatus, targetInvoiceStatus, StringComparison.OrdinalIgnoreCase))
             {
                 var statusSyncResult = await SyncInvoiceStatusAsync(jobInvoice, targetInvoiceStatus, ct);
@@ -554,14 +563,33 @@ public sealed class JobInvoiceService
                 job.UpdatedAt = DateTime.UtcNow;
             }
 
-            var jobPayment = BuildJobPayment(
-                jobInvoice,
-                paymentMethod,
-                amount.Value,
-                paymentDate,
-                paymentMethod == "epost" ? payload.EpostReferenceId?.Trim() : null,
-                paymentMethod == "cash" ? "DELETED" : "AUTHORISED");
-            _db.JobPayments.Add(jobPayment);
+            var latestExistingPayment = await _db.JobPayments
+                .Where(x => x.JobInvoiceId == jobInvoice.Id)
+                .OrderByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync(ct);
+
+            var paymentReference = FirstNonEmpty(payload.Reference, paymentMethod == "epost" ? payload.EpostReferenceId : null);
+            if (latestExistingPayment is null)
+            {
+                var jobPayment = BuildJobPayment(
+                    jobInvoice,
+                    paymentMethod,
+                    amount.Value,
+                    paymentDate,
+                    paymentReference,
+                    paymentMethod == "cash" ? "DELETED" : "AUTHORISED");
+                _db.JobPayments.Add(jobPayment);
+            }
+            else
+            {
+                latestExistingPayment.Method = paymentMethod;
+                latestExistingPayment.Amount = amount.Value;
+                latestExistingPayment.PaymentDate = paymentDate;
+                latestExistingPayment.Reference = paymentReference;
+                latestExistingPayment.ExternalStatus = paymentMethod == "cash" ? "DELETED" : "AUTHORISED";
+                latestExistingPayment.UpdatedAt = DateTime.UtcNow;
+            }
+
             await _db.SaveChangesAsync(ct);
 
             return await BuildStateUpdateResultAsync(jobInvoice, ct);

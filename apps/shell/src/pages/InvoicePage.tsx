@@ -17,6 +17,7 @@ type InvoicePaymentRow = {
   paymentDate: string;
   paymentDateTime: string;
   amount: number;
+  note: string;
   externalStatus: string;
   createdAt: string;
 };
@@ -267,7 +268,7 @@ export function InvoicePage() {
 
                 {isExpanded ? (
                   <div className="border-t border-[var(--ds-border)]">
-                    <div className="grid grid-cols-[110px_150px_1fr_120px_1.2fr_140px_170px] gap-3 bg-[rgba(0,0,0,0.03)] px-5 py-3 text-xs font-semibold uppercase tracking-[0.04em] text-[var(--ds-muted)]">
+                    <div className="grid grid-cols-[110px_150px_1fr_120px_1fr_140px_170px_1fr] gap-3 bg-[rgba(0,0,0,0.03)] px-5 py-3 text-xs font-semibold uppercase tracking-[0.04em] text-[var(--ds-muted)]">
                       <div>Job ID</div>
                       <div>Invoice Number</div>
                       <div>Contact</div>
@@ -275,6 +276,7 @@ export function InvoicePage() {
                       <div>Reference</div>
                       <div>Payment Way</div>
                       <div>Payment Datetime</div>
+                      <div>Note</div>
                     </div>
                     <div>
                       {visibleItems.length === 0 ? (
@@ -283,7 +285,7 @@ export function InvoicePage() {
                         visibleItems.map((row) => (
                           <div
                             key={row.id}
-                            className="grid grid-cols-[110px_150px_1fr_120px_1.2fr_140px_170px] gap-3 border-t border-[var(--ds-border)] px-5 py-4 text-sm text-[var(--ds-text)] first:border-t-0"
+                            className="grid grid-cols-[110px_150px_1fr_120px_1fr_140px_170px_1fr] gap-3 border-t border-[var(--ds-border)] px-5 py-4 text-sm text-[var(--ds-text)] first:border-t-0"
                           >
                             <div>
                               <Link
@@ -306,6 +308,7 @@ export function InvoicePage() {
                             <div className="break-words">{row.reference || "-"}</div>
                             <div>{formatPaymentWay(row.paymentWay)}</div>
                             <div>{row.paymentDateTime || row.paymentDate || "-"}</div>
+                            <div className="break-words">{row.note || "-"}</div>
                           </div>
                         ))
                       )}
