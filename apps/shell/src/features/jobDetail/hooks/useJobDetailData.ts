@@ -20,6 +20,8 @@ import {
   updateVehicleInfo,
   deleteJob as apiDeleteJob,
   createJobXeroDraftInvoice as apiCreateJobXeroDraftInvoice,
+  attachJobXeroInvoice as apiAttachJobXeroInvoice,
+  detachJobXeroInvoice as apiDetachJobXeroInvoice,
 } from "../api/jobDetailApi";
 import { notifyPaintBoardRefresh } from "@/utils/refreshSignals";
 import {
@@ -84,6 +86,8 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
   const [deletingJob, setDeletingJob] = useState(false);
   const [archivingJob, setArchivingJob] = useState(false);
   const [creatingXeroInvoice, setCreatingXeroInvoice] = useState(false);
+  const [attachingXeroInvoice, setAttachingXeroInvoice] = useState(false);
+  const [detachingXeroInvoice, setDetachingXeroInvoice] = useState(false);
   const [hasWofRecord, setHasWofRecord] = useState(false);
 
   const refreshWofServer = useCallback(async () => {
@@ -607,6 +611,20 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
     }
   }, [jobData?.status, jobId, toast]);
 
+  const refreshJobSummary = useCallback(async () => {
+    if (!jobId) return;
+
+    const jobRes = await fetchJob(jobId);
+    if (jobRes.ok) {
+      const data = jobRes.data as any;
+      const job = data?.job ?? data;
+      setJobData(job ?? null);
+      if (typeof data?.hasWofRecord === "boolean") {
+        setHasWofRecord(data.hasWofRecord);
+      }
+    }
+  }, [jobId]);
+
   const createJobXeroDraftInvoice = useCallback(async () => {
     if (!jobId || !jobData) {
       return { success: false, message: "缺少工单数据" };
@@ -621,22 +639,63 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
         return { success: false, message };
       }
 
-      const jobRes = await fetchJob(jobId);
-      if (jobRes.ok) {
-        const data = jobRes.data as any;
-        const job = data?.job ?? data;
-        setJobData(job ?? null);
-        if (typeof data?.hasWofRecord === "boolean") {
-          setHasWofRecord(data.hasWofRecord);
-        }
-      }
+      await refreshJobSummary();
 
       toast.success(res.data?.alreadyExists ? "Xero invoice 已存在" : "Xero invoice 已创建");
       return { success: true, message: "Xero invoice 已创建" };
     } finally {
       setCreatingXeroInvoice(false);
     }
-  }, [jobData, jobId, toast]);
+  }, [jobData, jobId, refreshJobSummary, toast]);
+
+  const attachJobXeroInvoice = useCallback(async (invoiceNumber: string) => {
+    if (!jobId) {
+      return { success: false, message: "缺少工单 ID" };
+    }
+
+    const normalizedInvoiceNumber = invoiceNumber.trim();
+    if (!normalizedInvoiceNumber) {
+      return { success: false, message: "Invoice Number 为必填" };
+    }
+
+    setAttachingXeroInvoice(true);
+    try {
+      const res = await apiAttachJobXeroInvoice(jobId, normalizedInvoiceNumber);
+      if (!res.ok) {
+        const message = res.error || "关联 Xero invoice 失败";
+        toast.error(message);
+        return { success: false, message };
+      }
+
+      await refreshJobSummary();
+      toast.success("已关联现有 Xero invoice");
+      return { success: true, message: "已关联现有 Xero invoice" };
+    } finally {
+      setAttachingXeroInvoice(false);
+    }
+  }, [jobId, refreshJobSummary, toast]);
+
+  const detachJobXeroInvoice = useCallback(async () => {
+    if (!jobId) {
+      return { success: false, message: "缺少工单 ID" };
+    }
+
+    setDetachingXeroInvoice(true);
+    try {
+      const res = await apiDetachJobXeroInvoice(jobId);
+      if (!res.ok) {
+        const message = res.error || "解除 Invoice 绑定失败";
+        toast.error(message);
+        return { success: false, message };
+      }
+
+      await refreshJobSummary();
+      toast.success("Invoice 绑定已解除");
+      return { success: true, message: "Invoice 绑定已解除" };
+    } finally {
+      setDetachingXeroInvoice(false);
+    }
+  }, [jobId, refreshJobSummary, toast]);
 
   const saveTags = useCallback(
     async (tagIds: string[]) => {
@@ -825,6 +884,8 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
     deletingJob,
     archivingJob,
     creatingXeroInvoice,
+    attachingXeroInvoice,
+    detachingXeroInvoice,
     hasWofRecord,
     wofRecords,
     wofCheckItems,
@@ -859,6 +920,8 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
     archiveJob,
     deleteJob,
     createJobXeroDraftInvoice,
+    attachJobXeroInvoice,
+    detachJobXeroInvoice,
     saveTags,
     saveJobNotes,
     createPaintService: createPaintServiceRow,

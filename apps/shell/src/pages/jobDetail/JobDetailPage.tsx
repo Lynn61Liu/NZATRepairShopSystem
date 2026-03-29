@@ -20,6 +20,8 @@ export function JobDetailPage() {
     deletingJob,
     archivingJob,
     creatingXeroInvoice,
+    attachingXeroInvoice,
+    detachingXeroInvoice,
     hasWofRecord,
     wofRecords,
     wofCheckItems,
@@ -51,6 +53,8 @@ export function JobDetailPage() {
     deleteJob,
     archiveJob,
     createJobXeroDraftInvoice,
+    attachJobXeroInvoice,
+    detachJobXeroInvoice,
     saveTags,
     saveJobNotes,
     createPaintService,
@@ -120,6 +124,10 @@ export function JobDetailPage() {
         onRefreshPaintService={refreshPaintService}
         onCreateXeroInvoice={createJobXeroDraftInvoice}
         isCreatingXeroInvoice={creatingXeroInvoice}
+        onAttachXeroInvoice={attachJobXeroInvoice}
+        isAttachingXeroInvoice={attachingXeroInvoice}
+        onDetachXeroInvoice={detachJobXeroInvoice}
+        isDetachingXeroInvoice={detachingXeroInvoice}
         onArchiveJob={archiveJob}
         isArchivingJob={archivingJob}
         onDeleteJob={deleteJob}

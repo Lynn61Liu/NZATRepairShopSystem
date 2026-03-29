@@ -90,6 +90,10 @@ type MainColumnProps = {
   }) => Promise<{ success: boolean; message?: string }>;
   onCreateXeroInvoice?: () => Promise<{ success: boolean; message?: string }>;
   isCreatingXeroInvoice?: boolean;
+  onAttachXeroInvoice?: (invoiceNumber: string) => Promise<{ success: boolean; message?: string }>;
+  isAttachingXeroInvoice?: boolean;
+  onDetachXeroInvoice?: () => Promise<{ success: boolean; message?: string }>;
+  isDetachingXeroInvoice?: boolean;
   onArchiveJob?: () => Promise<{ success: boolean; message?: string }>;
   isArchivingJob?: boolean;
   onDeleteJob?: () => void;
@@ -137,6 +141,10 @@ export function MainColumn({
   onSaveVehicle,
   onCreateXeroInvoice,
   isCreatingXeroInvoice,
+  onAttachXeroInvoice,
+  isAttachingXeroInvoice,
+  onDetachXeroInvoice,
+  isDetachingXeroInvoice,
   onArchiveJob,
   isArchivingJob,
   onDeleteJob,
@@ -358,6 +366,10 @@ export function MainColumn({
             hasInvoice={Boolean(jobData.invoice)}
             onCreateInvoice={onCreateXeroInvoice}
             isCreatingInvoice={isCreatingXeroInvoice}
+            onAttachInvoice={onAttachXeroInvoice}
+            isAttachingInvoice={isAttachingXeroInvoice}
+            onDetachInvoice={onDetachXeroInvoice}
+            isDetachingInvoice={isDetachingXeroInvoice}
             needsPo={needsPo}
           />
         ) : null}

@@ -43,6 +43,8 @@ public class NewJobController : ControllerBase
         var normalizedCustomerType = NormalizeCustomerType(req.Customer.Type);
         if (!IsValidCustomerType(normalizedCustomerType))
             return BadRequest(new { error = "Customer type must be Personal or Business." });
+        if (!req.CreateNewInvoice && string.IsNullOrWhiteSpace(req.ExistingInvoiceNumber))
+            return BadRequest(new { error = "Invoice number is required when linking an existing invoice." });
 
         req.Customer.Type = normalizedCustomerType;
         var isBusiness = string.Equals(req.Customer.Type, "Business", StringComparison.Ordinal);
@@ -255,7 +257,9 @@ public class NewJobController : ControllerBase
         }
 
         var invoiceStopwatch = Stopwatch.StartNew();
-        var invoiceResult = await _jobInvoiceService.CreateDraftForJobAsync(job.Id, ct);
+        var invoiceResult = req.CreateNewInvoice
+            ? await _jobInvoiceService.CreateDraftForJobAsync(job.Id, ct)
+            : await _jobInvoiceService.AttachExistingXeroInvoiceAsync(job.Id, req.ExistingInvoiceNumber!, ct);
         invoiceStopwatch.Stop();
         _logger.LogInformation(
             "New job segment {Segment} completed in {ElapsedMs} ms for job {JobId} (ok: {Ok}, alreadyExists: {AlreadyExists})",
@@ -279,7 +283,8 @@ public class NewJobController : ControllerBase
             customerId = jobCustomerId,
             vehicleId = vehicle.Id,
             wofCreated,
-            invoiceCreated = invoiceResult.Ok,
+            invoiceCreated = req.CreateNewInvoice && invoiceResult.Ok,
+            invoiceLinked = !req.CreateNewInvoice && invoiceResult.Ok,
             invoiceAlreadyExists = invoiceResult.AlreadyExists,
             invoiceError = invoiceResult.Ok ? null : invoiceResult.Error,
         });

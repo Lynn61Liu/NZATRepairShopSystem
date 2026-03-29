@@ -337,6 +337,85 @@ public sealed class JobInvoiceService
         return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true, requestBody: request);
     }
 
+    public async Task<JobInvoiceCreateResult> AttachExistingXeroInvoiceAsync(long jobId, string invoiceNumber, CancellationToken ct)
+    {
+        var normalizedInvoiceNumber = invoiceNumber?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedInvoiceNumber))
+            return JobInvoiceCreateResult.Fail(400, "Invoice number is required.");
+
+        var existing = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (existing is not null)
+            return JobInvoiceCreateResult.Fail(409, "This job already has a linked invoice.");
+
+        var jobExists = await _db.Jobs.AsNoTracking().AnyAsync(x => x.Id == jobId, ct);
+        if (!jobExists)
+            return JobInvoiceCreateResult.Fail(404, "Job not found.");
+
+        var xeroLookup = await _xeroInvoiceService.GetInvoicesByNumberAsync(normalizedInvoiceNumber, ct);
+        if (!xeroLookup.Ok)
+        {
+            return JobInvoiceCreateResult.Fail(
+                xeroLookup.StatusCode,
+                xeroLookup.Error ?? "Failed to find invoice in Xero.",
+                xeroLookup.Payload);
+        }
+
+        var matchedInvoices = ExtractInvoiceSummaries(xeroLookup.Payload)
+            .Where(x => string.Equals(x.InvoiceNumber, normalizedInvoiceNumber, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (matchedInvoices.Count == 0)
+            return JobInvoiceCreateResult.Fail(404, $"Invoice '{normalizedInvoiceNumber}' was not found in Xero.");
+
+        if (matchedInvoices.Count > 1)
+            return JobInvoiceCreateResult.Fail(409, $"Multiple Xero invoices matched '{normalizedInvoiceNumber}'.");
+
+        var matchedInvoice = matchedInvoices[0];
+        if (string.IsNullOrWhiteSpace(matchedInvoice.InvoiceId) || !Guid.TryParse(matchedInvoice.InvoiceId, out var invoiceId))
+        {
+            return JobInvoiceCreateResult.Fail(502, "Xero returned an invoice without a valid InvoiceID.", xeroLookup.Payload);
+        }
+
+        var linkedInvoice = await _db.JobInvoices.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.ExternalInvoiceId == invoiceId.ToString(), ct);
+        if (linkedInvoice is not null && linkedInvoice.JobId != jobId)
+        {
+            return JobInvoiceCreateResult.Fail(
+                409,
+                $"Invoice '{normalizedInvoiceNumber}' is already linked to job {linkedInvoice.JobId}.");
+        }
+
+        var now = DateTime.UtcNow;
+        var jobInvoice = new JobInvoice
+        {
+            JobId = jobId,
+            Provider = "xero",
+            ExternalInvoiceId = invoiceId.ToString(),
+            ExternalInvoiceNumber = matchedInvoice.InvoiceNumber,
+            ExternalStatus = matchedInvoice.Status,
+            Reference = matchedInvoice.Reference,
+            ContactName = matchedInvoice.ContactName,
+            InvoiceDate = matchedInvoice.Date,
+            LineAmountTypes = "Exclusive",
+            TenantId = xeroLookup.TenantId,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+
+        _db.JobInvoices.Add(jobInvoice);
+        await _db.SaveChangesAsync(ct);
+
+        var syncResult = await SyncFromXeroInvoiceIdAsync(invoiceId, ct);
+        if (!syncResult.Ok)
+        {
+            _db.JobInvoices.Remove(jobInvoice);
+            await _db.SaveChangesAsync(ct);
+            return syncResult;
+        }
+
+        return syncResult;
+    }
+
     public async Task<JobInvoiceCreateResult> SyncFromXeroAsync(long jobId, CancellationToken ct)
     {
         var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
@@ -375,6 +454,24 @@ public sealed class JobInvoiceService
         await _db.SaveChangesAsync(ct);
 
         return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true, payload: xeroResult.Payload, requestBody: request);
+    }
+
+    public async Task<JobInvoiceUnlinkResult> UnlinkInvoiceAsync(long jobId, CancellationToken ct)
+    {
+        var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (jobInvoice is null)
+            return JobInvoiceUnlinkResult.Fail(404, "Job invoice not found.");
+
+        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == jobId, ct);
+        if (job is null)
+            return JobInvoiceUnlinkResult.Fail(404, "Job not found.");
+
+        _db.JobInvoices.Remove(jobInvoice);
+        job.InvoiceReference = null;
+        job.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return JobInvoiceUnlinkResult.Success();
     }
 
     public async Task<JobInvoiceStateUpdateResult> UpdateXeroStateAsync(long jobId, UpdateJobInvoiceXeroStateRequest payload, CancellationToken ct)
@@ -1630,55 +1727,59 @@ public sealed class JobInvoiceService
         jobInvoice.UpdatedAt = DateTime.UtcNow;
     }
 
-    private static ExtractedInvoiceSummary ExtractInvoiceSummary(object? payload)
+    private static ExtractedInvoiceSummary ExtractInvoiceSummary(object? payload) =>
+        ExtractInvoiceSummaries(payload).FirstOrDefault() ?? new ExtractedInvoiceSummary();
+
+    private static List<ExtractedInvoiceSummary> ExtractInvoiceSummaries(object? payload)
     {
         if (payload is null)
-            return new ExtractedInvoiceSummary();
+            return [];
 
         var json = JsonSerializer.Serialize(payload, JsonOptions);
         if (string.IsNullOrWhiteSpace(json))
-            return new ExtractedInvoiceSummary();
+            return [];
 
         try
         {
             using var document = JsonDocument.Parse(json);
             if (!document.RootElement.TryGetProperty("Invoices", out var invoices) || invoices.ValueKind != JsonValueKind.Array)
-                return new ExtractedInvoiceSummary();
+                return [];
 
-            var invoice = invoices.EnumerateArray().FirstOrDefault();
-            if (invoice.ValueKind == JsonValueKind.Undefined)
-                return new ExtractedInvoiceSummary();
+            return invoices.EnumerateArray()
+                .Select(invoice =>
+                {
+                    var contactName = invoice.TryGetProperty("Contact", out var contact) && contact.ValueKind == JsonValueKind.Object &&
+                                      contact.TryGetProperty("Name", out var nameElement)
+                        ? nameElement.GetString()
+                        : null;
 
-            var contactName = invoice.TryGetProperty("Contact", out var contact) && contact.ValueKind == JsonValueKind.Object &&
-                              contact.TryGetProperty("Name", out var nameElement)
-                ? nameElement.GetString()
-                : null;
+                    DateOnly? date = null;
+                    if (invoice.TryGetProperty("DateString", out var dateStringElement) && dateStringElement.ValueKind == JsonValueKind.String &&
+                        DateOnly.TryParse(dateStringElement.GetString(), out var parsedDateString))
+                    {
+                        date = parsedDateString;
+                    }
+                    else if (invoice.TryGetProperty("Date", out var dateElement) && dateElement.ValueKind == JsonValueKind.String &&
+                             DateTime.TryParse(dateElement.GetString(), out var parsedDateTime))
+                    {
+                        date = DateOnly.FromDateTime(parsedDateTime);
+                    }
 
-            DateOnly? date = null;
-            if (invoice.TryGetProperty("DateString", out var dateStringElement) && dateStringElement.ValueKind == JsonValueKind.String &&
-                DateOnly.TryParse(dateStringElement.GetString(), out var parsedDateString))
-            {
-                date = parsedDateString;
-            }
-            else if (invoice.TryGetProperty("Date", out var dateElement) && dateElement.ValueKind == JsonValueKind.String &&
-                     DateTime.TryParse(dateElement.GetString(), out var parsedDateTime))
-            {
-                date = DateOnly.FromDateTime(parsedDateTime);
-            }
-
-            return new ExtractedInvoiceSummary
-            {
-                InvoiceId = TryGetString(invoice, "InvoiceID"),
-                InvoiceNumber = TryGetString(invoice, "InvoiceNumber"),
-                Status = TryGetString(invoice, "Status"),
-                Reference = TryGetString(invoice, "Reference"),
-                ContactName = contactName,
-                Date = date,
-            };
+                    return new ExtractedInvoiceSummary
+                    {
+                        InvoiceId = TryGetString(invoice, "InvoiceID"),
+                        InvoiceNumber = TryGetString(invoice, "InvoiceNumber"),
+                        Status = TryGetString(invoice, "Status"),
+                        Reference = TryGetString(invoice, "Reference"),
+                        ContactName = contactName,
+                        Date = date,
+                    };
+                })
+                .ToList();
         }
         catch (JsonException)
         {
-            return new ExtractedInvoiceSummary();
+            return [];
         }
     }
 
@@ -1812,5 +1913,27 @@ public sealed class JobInvoiceDeleteResult
             StatusCode = statusCode,
             Error = error,
             Payload = payload,
+        };
+}
+
+public sealed class JobInvoiceUnlinkResult
+{
+    public bool Ok { get; private init; }
+    public int StatusCode { get; private init; }
+    public string? Error { get; private init; }
+
+    public static JobInvoiceUnlinkResult Success() =>
+        new()
+        {
+            Ok = true,
+            StatusCode = 200,
+        };
+
+    public static JobInvoiceUnlinkResult Fail(int statusCode, string error) =>
+        new()
+        {
+            Ok = false,
+            StatusCode = statusCode,
+            Error = error,
         };
 }

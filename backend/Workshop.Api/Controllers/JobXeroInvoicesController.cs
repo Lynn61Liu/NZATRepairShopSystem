@@ -15,6 +15,11 @@ public class JobXeroInvoicesController : ControllerBase
         _jobInvoiceService = jobInvoiceService;
     }
 
+    public sealed class AttachExistingInvoiceRequest
+    {
+        public string InvoiceNumber { get; set; } = "";
+    }
+
     [HttpPost]
     public async Task<IActionResult> CreateDraftInvoice(long id, CancellationToken ct)
     {
@@ -84,6 +89,38 @@ public class JobXeroInvoicesController : ControllerBase
             invoice = MapInvoice(result.Invoice),
             xero = result.Payload,
         });
+    }
+
+    [HttpPost("attach")]
+    public async Task<IActionResult> AttachExistingInvoice(long id, [FromBody] AttachExistingInvoiceRequest request, CancellationToken ct)
+    {
+        var result = await _jobInvoiceService.AttachExistingXeroInvoiceAsync(id, request.InvoiceNumber, ct);
+        if (!result.Ok)
+        {
+            return StatusCode(result.StatusCode, new
+            {
+                error = result.Error,
+                request = result.RequestBody,
+                xero = result.Payload,
+            });
+        }
+
+        return StatusCode(result.StatusCode, new
+        {
+            alreadyExists = result.AlreadyExists,
+            invoice = MapInvoice(result.Invoice),
+            xero = result.Payload,
+        });
+    }
+
+    [HttpDelete]
+    public async Task<IActionResult> UnlinkInvoice(long id, CancellationToken ct)
+    {
+        var result = await _jobInvoiceService.UnlinkInvoiceAsync(id, ct);
+        if (!result.Ok)
+            return StatusCode(result.StatusCode, new { error = result.Error });
+
+        return Ok(new { ok = true });
     }
 
     [HttpPut("/api/jobs/{id:long}/invoice-draft")]

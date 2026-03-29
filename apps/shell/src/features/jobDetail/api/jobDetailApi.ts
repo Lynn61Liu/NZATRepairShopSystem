@@ -69,6 +69,20 @@ export function createJobXeroDraftInvoice(jobId: string) {
   });
 }
 
+export function attachJobXeroInvoice(jobId: string, invoiceNumber: string) {
+  return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}/xero-draft-invoice/attach`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ invoiceNumber }),
+  });
+}
+
+export function detachJobXeroInvoice(jobId: string) {
+  return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}/xero-draft-invoice`, {
+    method: "DELETE",
+  });
+}
+
 export function syncJobXeroDraftInvoice(jobId: string, payload: unknown) {
   return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}/xero-draft-invoice`, {
     method: "PUT",

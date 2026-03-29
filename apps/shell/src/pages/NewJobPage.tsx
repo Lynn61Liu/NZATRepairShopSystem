@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { AlertCircle, ArrowLeft, Boxes, FileText, Loader2, Plus, ReceiptText, X } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { Alert, Button, SectionCard, Textarea, useToast } from "@/components/ui";
+import { Alert, Button, Input, SectionCard, Textarea, useToast } from "@/components/ui";
 import {
   type ChildServiceOption,
   CustomerSection,
@@ -81,6 +81,8 @@ export function NewJobPage() {
   const [customerMatchHint, setCustomerMatchHint] = useState<CustomerMatchHint | null>(null);
   const [notes, setNotes] = useState("");
   const [needsPo, setNeedsPo] = useState(true);
+  const [createNewInvoice, setCreateNewInvoice] = useState(true);
+  const [existingInvoiceNumber, setExistingInvoiceNumber] = useState("");
   const [paintPanels, setPaintPanels] = useState("1");
   const [partsDescriptions, setPartsDescriptions] = useState<string[]>([""]);
   const [mechOptions, setMechOptions] = useState<string[]>([]);
@@ -551,6 +553,10 @@ export function NewJobPage() {
       setFormAlert({ variant: "error", message: "请输入车牌号" });
       return;
     }
+    if (!createNewInvoice && !existingInvoiceNumber.trim()) {
+      setFormAlert({ variant: "error", message: "关闭新建 Invoice 后，Invoice Number 为必填。" });
+      return;
+    }
 
     const hasMech = selectedServices.includes("mech");
     const personalHasInfo = [
@@ -627,6 +633,8 @@ export function NewJobPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           plate: rego,
+          createNewInvoice,
+          existingInvoiceNumber: createNewInvoice ? undefined : existingInvoiceNumber.trim(),
           useServiceCatalogMapping: true,
           services: selectedServices,
           rootServiceCatalogItemIds,
@@ -652,12 +660,14 @@ export function NewJobPage() {
 
      
       const invoiceCreated = data?.invoiceCreated === true;
+      const invoiceLinked = data?.invoiceLinked === true;
       const invoiceError = typeof data?.invoiceError === "string" ? data.invoiceError : "";
       const createdId = data?.jobId ? String(data.jobId) : "";
 
-      if (invoiceCreated) {
-        setFormAlert({ variant: "success", message: "工单和 Invoice 已创建成功！" });
-        toast.success("工单和 Invoice 已创建成功！");
+      if (invoiceCreated || invoiceLinked) {
+        const successMessage = invoiceLinked ? "工单已创建，并已关联现有 Invoice！" : "工单和 Invoice 已创建成功！";
+        setFormAlert({ variant: "success", message: successMessage });
+        toast.success(successMessage);
         if (createdId) {
           navigate(`/jobs/${createdId}`);
         } else {
@@ -852,6 +862,45 @@ export function NewJobPage() {
                   {null}
                 </SectionCard>
               ) : null}
+
+              <SectionCard
+                title="Invoice"
+                titleIcon={<ReceiptText size={18} />}
+                titleClassName="text-lg font-semibold"
+                actions={
+                  <label className="inline-flex cursor-pointer items-center gap-3 text-sm text-[rgba(0,0,0,0.70)]">
+                    <span>{createNewInvoice ? "Create New Invoice" : "Use Existing Invoice"}</span>
+                    <input
+                      type="checkbox"
+                      checked={createNewInvoice}
+                      onChange={(event) => setCreateNewInvoice(event.target.checked)}
+                      className="peer sr-only"
+                    />
+                    <span className="relative h-7 w-12 rounded-full bg-[rgba(0,0,0,0.20)] transition peer-checked:bg-[#dc2626]">
+                      <span className="absolute left-1 top-1 h-5 w-5 rounded-full bg-white transition peer-checked:translate-x-5" />
+                    </span>
+                  </label>
+                }
+              >
+                <div className="mt-3 space-y-3">
+                  {!createNewInvoice ? (
+                    <>
+                      <Input
+                        value={existingInvoiceNumber}
+                        onChange={(event) => setExistingInvoiceNumber(event.target.value)}
+                        placeholder="e.g. INV-00123"
+                      />
+                      <div className="text-sm text-[rgba(0,0,0,0.55)]">
+                        The system will find this invoice in Xero and link it to the new job.
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-sm text-[rgba(0,0,0,0.55)]">
+                      A new draft invoice will be created in Xero after the job is saved.
+                    </div>
+                  )}
+                </div>
+              </SectionCard>
             </div>
           </div>
 
@@ -900,6 +949,12 @@ export function NewJobPage() {
                 <div className="text-base text-[rgba(0,0,0,0.50)]">配件信息</div>
                 <div className="text-base font-semibold text-[rgba(0,0,0,0.80)]">
                   {normalizedPartsDescriptions.length} 个配件
+                </div>
+              </div>
+              <div>
+                <div className="text-base text-[rgba(0,0,0,0.50)]">Invoice 模式</div>
+                <div className="text-base font-semibold text-[rgba(0,0,0,0.80)]">
+                  {createNewInvoice ? "新建 Invoice" : `关联已有 Invoice${existingInvoiceNumber.trim() ? ` (${existingInvoiceNumber.trim()})` : ""}`}
                 </div>
               </div>
               <div>

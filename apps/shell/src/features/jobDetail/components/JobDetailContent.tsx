@@ -79,6 +79,10 @@ type JobDetailContentProps = {
   }) => Promise<{ success: boolean; message?: string }>;
   onCreateXeroInvoice?: () => Promise<{ success: boolean; message?: string }>;
   isCreatingXeroInvoice?: boolean;
+  onAttachXeroInvoice?: (invoiceNumber: string) => Promise<{ success: boolean; message?: string }>;
+  isAttachingXeroInvoice?: boolean;
+  onDetachXeroInvoice?: () => Promise<{ success: boolean; message?: string }>;
+  isDetachingXeroInvoice?: boolean;
   onArchiveJob?: () => Promise<{ success: boolean; message?: string }>;
   isArchivingJob?: boolean;
   onDeleteJob?: () => void;
@@ -128,6 +132,10 @@ export function JobDetailContent({
   onSaveVehicle,
   onCreateXeroInvoice,
   isCreatingXeroInvoice,
+  onAttachXeroInvoice,
+  isAttachingXeroInvoice,
+  onDetachXeroInvoice,
+  isDetachingXeroInvoice,
   onArchiveJob,
   isArchivingJob,
   onDeleteJob,
@@ -179,6 +187,10 @@ export function JobDetailContent({
           onSaveVehicle={onSaveVehicle}
           onCreateXeroInvoice={onCreateXeroInvoice}
           isCreatingXeroInvoice={isCreatingXeroInvoice}
+          onAttachXeroInvoice={onAttachXeroInvoice}
+          isAttachingXeroInvoice={isAttachingXeroInvoice}
+          onDetachXeroInvoice={onDetachXeroInvoice}
+          isDetachingXeroInvoice={isDetachingXeroInvoice}
           onArchiveJob={onArchiveJob}
           isArchivingJob={isArchivingJob}
           onDeleteJob={onDeleteJob}
