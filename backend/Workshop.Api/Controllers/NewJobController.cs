@@ -331,13 +331,14 @@ public class NewJobController : ControllerBase
     private async Task<SelectedServiceCatalogItems> ResolveSelectedServiceCatalogItemsAsync(NewJobRequest req, CancellationToken ct)
     {
         var requestedIds = req.RootServiceCatalogItemIds
+            .Concat(req.WofServiceCatalogItemIds)
             .Concat(req.MechServiceCatalogItemIds)
             .Concat(req.PaintServiceCatalogItemIds)
             .Distinct()
             .ToArray();
 
         if (requestedIds.Length == 0)
-            return new SelectedServiceCatalogItems([], [], []);
+            return new SelectedServiceCatalogItems([], [], [], []);
 
         var items = await _db.ServiceCatalogItems.AsNoTracking()
             .Where(x => requestedIds.Contains(x.Id))
@@ -366,6 +367,7 @@ public class NewJobController : ControllerBase
 
         return new SelectedServiceCatalogItems(
             MapIds(req.RootServiceCatalogItemIds, "root", null, "Root service"),
+            MapIds(req.WofServiceCatalogItemIds, "child", "wof", "WOF service"),
             MapIds(req.MechServiceCatalogItemIds, "child", "mech", "Mech service"),
             MapIds(req.PaintServiceCatalogItemIds, "child", "paint", "Paint service"));
     }
@@ -383,9 +385,16 @@ public class NewJobController : ControllerBase
             .GroupBy(x => x.ServiceType, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
 
-        if (hasWof && rootByType.TryGetValue("wof", out var wofRoot))
+        if (hasWof)
         {
-            selections.Add(BuildJobServiceSelection(jobId, wofRoot, now));
+            if (selectedCatalogItems.WofItems.Count > 0)
+            {
+                selections.AddRange(selectedCatalogItems.WofItems.Select(x => BuildJobServiceSelection(jobId, x, now)));
+            }
+            else if (rootByType.TryGetValue("wof", out var wofRoot))
+            {
+                selections.Add(BuildJobServiceSelection(jobId, wofRoot, now));
+            }
         }
 
         if (hasMech)
@@ -459,6 +468,7 @@ public class NewJobController : ControllerBase
 
     private sealed record SelectedServiceCatalogItems(
         IReadOnlyList<ServiceCatalogItem> RootItems,
+        IReadOnlyList<ServiceCatalogItem> WofItems,
         IReadOnlyList<ServiceCatalogItem> MechItems,
         IReadOnlyList<ServiceCatalogItem> PaintItems);
 

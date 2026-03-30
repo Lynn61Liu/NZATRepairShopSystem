@@ -10,6 +10,7 @@ public sealed class NewJobRequest
     public string? ExistingInvoiceNumber { get; set; }
     public bool UseServiceCatalogMapping { get; set; }
     public List<long> RootServiceCatalogItemIds { get; set; } = new();
+    public List<long> WofServiceCatalogItemIds { get; set; } = new();
     public List<long> MechServiceCatalogItemIds { get; set; } = new();
     public List<long> PaintServiceCatalogItemIds { get; set; } = new();
     public string? Notes { get; set; }

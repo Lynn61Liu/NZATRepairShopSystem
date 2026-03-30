@@ -35,6 +35,7 @@ import {
 import { withApiBase } from "@/utils/api";
 
 export function NewJobPage() {
+  const requiredRootServiceTypes: ServiceType[] = ["wof", "mech", "paint"];
   type PersonalCustomerOption = CachedPersonalCustomer;
   type CustomerMatchHint = {
     message: string;
@@ -66,9 +67,12 @@ export function NewJobPage() {
   const [importError, setImportError] = useState("");
   const [lastRequestedPlate, setLastRequestedPlate] = useState("");
   const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>(defaultServiceOptions);
+  const [loadedServiceCatalog, setLoadedServiceCatalog] = useState<CachedServiceCatalog | null>(null);
   const [serviceCatalogReady, setServiceCatalogReady] = useState(false);
   const [serviceCatalogLoading, setServiceCatalogLoading] = useState(true);
   const [selectedServices, setSelectedServices] = useState<ServiceType[]>([]);
+  const [wofOptionChoices, setWofOptionChoices] = useState<ChildServiceOption[]>([]);
+  const [wofOptions, setWofOptions] = useState<string[]>([]);
   const [mechOptionChoices, setMechOptionChoices] = useState<ChildServiceOption[]>([]);
   const [paintOptionChoices, setPaintOptionChoices] = useState<ChildServiceOption[]>([]);
   const [customerType, setCustomerType] = useState<CustomerType>("personal");
@@ -121,6 +125,13 @@ export function NewJobPage() {
     });
     return map;
   }, [serviceOptions]);
+  const selectedWofOptionLabels = useMemo(
+    () =>
+      wofOptions
+        .map((id) => wofOptionChoices.find((item) => item.id === id)?.label)
+        .filter((value): value is string => Boolean(value)),
+    [wofOptions, wofOptionChoices]
+  );
   const selectedMechOptionLabels = useMemo(
     () =>
       mechOptions
@@ -150,7 +161,11 @@ export function NewJobPage() {
   const selectedServiceSummaries = useMemo(() => {
     const rows: string[] = [];
     if (selectedServices.includes("wof")) {
-      rows.push(serviceLabelMap.wof || "WOF");
+      rows.push(
+        selectedWofOptionLabels.length
+          ? `WOF（${selectedWofOptionLabels.join("，")}）`
+          : (serviceLabelMap.wof || "WOF")
+      );
     }
     if (selectedServices.includes("mech")) {
       rows.push(
@@ -167,7 +182,7 @@ export function NewJobPage() {
       );
     }
     return rows;
-  }, [selectedServices, serviceLabelMap, selectedMechOptionLabels, selectedPaintOptionLabels, paintPanels]);
+  }, [selectedServices, serviceLabelMap, selectedWofOptionLabels, selectedMechOptionLabels, selectedPaintOptionLabels, paintPanels]);
   const customerTypeLabel = customerType === "business" ? "商户客户" : "个人客户";
   const customerDisplayName =
     customerType === "business"
@@ -183,7 +198,9 @@ export function NewJobPage() {
 
   const autoNotes = useMemo(() => {
     const items: string[] = [];
-    if (selectedServices.includes("wof")) items.push(serviceLabelMap.wof || "WOF");
+    if (selectedServices.includes("wof")) {
+      items.push(selectedWofOptionLabels.length ? selectedWofOptionLabels.join("，") : (serviceLabelMap.wof || "WOF"));
+    }
     if (selectedServices.includes("mech") && selectedMechOptionLabels.length) {
       items.push(selectedMechOptionLabels.join("，"));
     }
@@ -195,11 +212,13 @@ export function NewJobPage() {
   }, [
     selectedServices,
     serviceLabelMap,
+    selectedWofOptionLabels,
     selectedMechOptionLabels,
     selectedPaintOptionLabels,
   ]);
 
   const applyServiceCatalog = (catalog: CachedServiceCatalog) => {
+    setLoadedServiceCatalog(catalog);
     const roots = Array.isArray(catalog.rootServices) ? catalog.rootServices : [];
     const children = Array.isArray(catalog.childServices) ? catalog.childServices : [];
 
@@ -221,6 +240,18 @@ export function NewJobPage() {
     if (nextRootOptions.length) {
       setServiceOptions(nextRootOptions);
     }
+
+    setWofOptionChoices(
+      children
+        .filter((item) => item.isActive && item.serviceType === "wof")
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((item) => ({
+          id: String(item.id),
+          label: item.name,
+          personalLinkCode: item.personalLinkCode,
+          dealershipLinkCode: item.dealershipLinkCode,
+        }))
+    );
 
     setMechOptionChoices(
       children
@@ -245,6 +276,9 @@ export function NewJobPage() {
           dealershipLinkCode: item.dealershipLinkCode,
         }))
     );
+
+    const loadedRootTypes = new Set(nextRootOptions.map((item) => item.id));
+    return requiredRootServiceTypes.every((serviceType) => loadedRootTypes.has(serviceType));
   };
 
   useEffect(() => {
@@ -294,8 +328,8 @@ export function NewJobPage() {
       }
       const cachedCatalog = getCachedServiceCatalog();
       if (cachedCatalog && !cancelled) {
-        applyServiceCatalog(cachedCatalog);
-        setServiceCatalogReady(true);
+        const isReady = applyServiceCatalog(cachedCatalog);
+        setServiceCatalogReady(isReady);
         setServiceCatalogLoading(false);
         return;
       }
@@ -303,8 +337,8 @@ export function NewJobPage() {
       try {
         const catalog = await loadServiceCatalogCacheFirst();
         if (!cancelled) {
-          applyServiceCatalog(catalog);
-          setServiceCatalogReady(true);
+          const isReady = applyServiceCatalog(catalog);
+          setServiceCatalogReady(isReady);
         }
       } catch {
         if (!cancelled) {
@@ -358,6 +392,20 @@ export function NewJobPage() {
       setPaintPanels("1");
     }
   }, [showPaintPanels]);
+
+  useEffect(() => {
+    if (!selectedServices.includes("wof")) {
+      setWofOptions([]);
+      return;
+    }
+
+    if (wofOptionChoices.length === 1) {
+      const defaultWofChildId = wofOptionChoices[0]?.id;
+      if (defaultWofChildId) {
+        setWofOptions((prev) => (prev.includes(defaultWofChildId) ? prev : [defaultWofChildId]));
+      }
+    }
+  }, [selectedServices, wofOptionChoices]);
 
   useEffect(() => {
     if (!selectedServices.includes("mech")) {
@@ -515,7 +563,7 @@ export function NewJobPage() {
         throw new Error("已导入，但未在数据库中找到车辆");
       }
 
-      console.log("vehicle from db", dbData?.vehicle ?? dbData);
+      // console.log("vehicle from db", dbData?.vehicle ?? dbData);
       setVehicleInfo(extractVehicleInfo(dbData));
       applyLinkedCustomer((dbData as VehicleLookupPayload | null)?.linkedCustomer);
       setImportState("success");
@@ -536,7 +584,7 @@ export function NewJobPage() {
 
       const dbData = await fetchVehicleFromDb(normalized);
       if (dbData) {
-        console.log("vehicle from db", dbData?.vehicle ?? dbData);
+        // console.log("vehicle from db", dbData?.vehicle ?? dbData);
         setVehicleInfo(extractVehicleInfo(dbData));
         applyLinkedCustomer((dbData as VehicleLookupPayload | null)?.linkedCustomer);
         setImportState("success");
@@ -632,13 +680,13 @@ export function NewJobPage() {
       }
     }
 
- console.log("===========save body============");
-  console.log(" plate:", rego);
-  console.log(" services:", selectedServices);
-  console.log(" notesPayload:", notesPayload);
-  console.log(" partsDescriptions:", normalizedPartsDescriptions.length ? normalizedPartsDescriptions : undefined);
-  console.log(" businessId:", customerType === "business" ? businessId : undefined);
-  console.log(" customer:", customerPayload);
+//  console.log("===========save body============");
+//   console.log(" plate:", rego);
+//   console.log(" services:", selectedServices);
+//   console.log(" notesPayload:", notesPayload);
+//   console.log(" partsDescriptions:", normalizedPartsDescriptions.length ? normalizedPartsDescriptions : undefined);
+//   console.log(" businessId:", customerType === "business" ? businessId : undefined);
+//   console.log(" customer:", customerPayload);
 
 
 
@@ -660,6 +708,73 @@ export function NewJobPage() {
         .map((value) => Number(value))
         .filter((value) => Number.isFinite(value));
 
+      const resolveDefaultXeroCode = (personalLinkCode?: string | null, dealershipLinkCode?: string | null) =>
+        customerType === "personal" ? personalLinkCode ?? null : dealershipLinkCode ?? null;
+
+      const rootDebugRows = (["wof", "mech", "paint"] as const).map((serviceType) => {
+        const rootCatalogItemId = serviceOptions.find((option) => option.id === serviceType)?.catalogItemId ?? null;
+        const rootCatalogItem = loadedServiceCatalog?.rootServices.find(
+          (item) => String(item.id) === String(rootCatalogItemId ?? "")
+        );
+
+        return {
+          serviceType,
+          serviceCatalogItemId: rootCatalogItemId,
+          defaultXeroCode: resolveDefaultXeroCode(
+            rootCatalogItem?.personalLinkCode,
+            rootCatalogItem?.dealershipLinkCode
+          ),
+          rootCatalogItem: rootCatalogItem ?? null,
+        };
+      });
+
+      const wofChildDebugRows = wofOptions.map((id) => {
+        const catalogItem = loadedServiceCatalog?.childServices.find((item) => String(item.id) === id);
+        return {
+          serviceType: "wof-child",
+          serviceCatalogItemId: id,
+          defaultXeroCode: resolveDefaultXeroCode(
+            catalogItem?.personalLinkCode,
+            catalogItem?.dealershipLinkCode
+          ),
+          catalogItem: catalogItem ?? null,
+        };
+      });
+
+      const mechChildDebugRows = mechOptions.map((id) => {
+        const catalogItem = loadedServiceCatalog?.childServices.find((item) => String(item.id) === id);
+        return {
+          serviceType: "mech-child",
+          serviceCatalogItemId: id,
+          defaultXeroCode: resolveDefaultXeroCode(
+            catalogItem?.personalLinkCode,
+            catalogItem?.dealershipLinkCode
+          ),
+          catalogItem: catalogItem ?? null,
+        };
+      });
+
+      const paintChildDebugRows = paintOptions.map((id) => {
+        const catalogItem = loadedServiceCatalog?.childServices.find((item) => String(item.id) === id);
+        return {
+          serviceType: "paint-child",
+          serviceCatalogItemId: id,
+          defaultXeroCode: resolveDefaultXeroCode(
+            catalogItem?.personalLinkCode,
+            catalogItem?.dealershipLinkCode
+          ),
+          catalogItem: catalogItem ?? null,
+        };
+      });
+
+      console.log("===========service mapping debug============");
+      console.log(" customerType:", customerType);
+      console.log(" rootServiceCatalogItemIds:", rootServiceCatalogItemIds);
+      console.log(" rootMappings:", rootDebugRows);
+      console.log(" wofChildMappings:", wofChildDebugRows);
+      console.log(" mechChildMappings:", mechChildDebugRows);
+      console.log(" paintChildMappings:", paintChildDebugRows);
+
       const res = await fetch(withApiBase("/api/newJob"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -670,6 +785,9 @@ export function NewJobPage() {
           useServiceCatalogMapping: true,
           services: selectedServices,
           rootServiceCatalogItemIds,
+          wofServiceCatalogItemIds: selectedServices.includes("wof")
+            ? wofOptions.map((id) => Number(id)).filter((value) => Number.isFinite(value))
+            : [],
           needsPo: showNeedsPo ? needsPo : false,
           notes: notesPayload,
           // partsDescription: normalizedPartsDescriptions[0],
