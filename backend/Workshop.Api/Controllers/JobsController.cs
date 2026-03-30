@@ -213,6 +213,8 @@ public class JobsController : ControllerBase
             })
             .FirstOrDefaultAsync(ct);
 
+        var effectiveInvoiceProcessing = invoice is null ? invoiceProcessing : null;
+
         var job = new
         {
             id = row.Job.Id.ToString(CultureInfo.InvariantCulture),
@@ -266,7 +268,7 @@ public class JobsController : ControllerBase
                 notes = row.Customer.Notes
             },
             invoice,
-            invoiceProcessing,
+            invoiceProcessing = effectiveInvoiceProcessing,
         };
 
         return Ok(new { job, hasWofRecord });

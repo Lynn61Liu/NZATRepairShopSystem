@@ -283,11 +283,7 @@ export function XeroReadOnlyInvoiceView({ model, hasInvoice = true }: Props) {
   const taxGroups = groupTaxTotals(snapshot.lineItems);
 
   if (!hasInvoice) {
-    return (
-      <Card className="rounded-[18px] p-6">
-        <div className="rounded-[14px] border border-dashed border-[var(--ds-border)] px-5 py-8" />
-      </Card>
-    );
+    return null;
   }
 
   return (

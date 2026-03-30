@@ -180,7 +180,7 @@ export function InvoicePanel({
       {hasInvoice && model ? (
         <div className="mt-6 rounded-xl border border-[rgba(0,0,0,0.08)] bg-white p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="text-sm font-semibold text-[rgba(0,0,0,0.72)]">Payment</div>
+            <div className="text-xl font-semibold text-[rgba(0,0,0,0.72)]">Payment</div>
             {!paymentEditing && latestPayment ? (
               <Button variant="ghost" onClick={() => setPaymentEditing(true)}>
                 Modify

@@ -828,16 +828,7 @@ public sealed class JobInvoiceService
             });
         }
 
-        var jobNote = job.Notes?.Trim();
-        if (!string.IsNullOrWhiteSpace(jobNote))
-        {
-            lineItems.Add(new XeroInvoiceLineItemInput
-            {
-                Description = jobNote,
-                Quantity = 1m,
-                UnitAmount = 0m,
-            });
-        }
+        AppendJobNoteLineItem(lineItems, job.Notes);
 
         if (lineItems.Count == 0)
         {
@@ -933,6 +924,8 @@ public sealed class JobInvoiceService
         inventoryByCode.TryGetValue(JobInvoicePartsLineItemBuilder.DefaultItemCode, out var partsInventoryItem);
         lineItems.AddRange(JobInvoicePartsLineItemBuilder.Build(partsServices, partsInventoryItem));
 
+        AppendJobNoteLineItem(lineItems, job.Notes);
+
         if (lineItems.Count == 0)
         {
             lineItems.Add(new XeroInvoiceLineItemInput
@@ -956,6 +949,20 @@ public sealed class JobInvoiceService
             },
             LineItems = lineItems,
         };
+    }
+
+    private static void AppendJobNoteLineItem(List<XeroInvoiceLineItemInput> lineItems, string? jobNotes)
+    {
+        var jobNote = jobNotes?.Trim();
+        if (string.IsNullOrWhiteSpace(jobNote))
+            return;
+
+        lineItems.Add(new XeroInvoiceLineItemInput
+        {
+            Description = jobNote,
+            Quantity = 1m,
+            UnitAmount = 0m,
+        });
     }
 
     private async Task<List<XeroInvoiceLineItemInput>> SanitizeLineItemsAsync(

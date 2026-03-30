@@ -17,7 +17,9 @@ type InvoicePaymentRow = {
   paymentWay: string;
   paymentDate: string;
   paymentDateTime: string;
+  xeroTotal?: number | null;
   amount: number;
+  paymentTotal?: number | null;
   note: string;
   externalStatus: string;
   createdAt: string;
@@ -39,6 +41,11 @@ function normalizePaymentWay(value: string): PaymentWayFilter | "other" {
   if (normalized === "cash") return "cash";
   if (normalized === "epost") return "epost";
   return "other";
+}
+
+function formatCurrency(value?: number | null) {
+  if (typeof value !== "number" || Number.isNaN(value)) return "-";
+  return value.toFixed(2);
 }
 
 function formatDateInputValue(date: Date) {
@@ -269,12 +276,14 @@ export function InvoicePage() {
 
                 {isExpanded ? (
                   <div className="border-t border-[var(--ds-border)]">
-                    <div className="grid grid-cols-[110px_150px_1fr_120px_1fr_140px_170px_1fr] gap-3 bg-[rgba(0,0,0,0.03)] px-5 py-3 text-xs font-semibold uppercase tracking-[0.04em] text-[var(--ds-muted)]">
+                    <div className="grid grid-cols-[110px_150px_1fr_120px_1fr_120px_120px_140px_170px_1fr] gap-3 bg-[rgba(0,0,0,0.03)] px-5 py-3 text-xs font-semibold uppercase tracking-[0.04em] text-[var(--ds-muted)]">
                       <div>Job ID</div>
                       <div>Invoice Number</div>
                       <div>Contact</div>
                       <div>Issue Date</div>
                       <div>Reference</div>
+                      <div>Xero Total</div>
+                      <div>Payment Total</div>
                       <div>Payment Way</div>
                       <div>Payment Datetime</div>
                       <div>Note</div>
@@ -286,7 +295,7 @@ export function InvoicePage() {
                         visibleItems.map((row) => (
                           <div
                             key={row.id}
-                            className="grid grid-cols-[110px_150px_1fr_120px_1fr_140px_170px_1fr] gap-3 border-t border-[var(--ds-border)] px-5 py-4 text-sm text-[var(--ds-text)] first:border-t-0"
+                            className="grid grid-cols-[110px_150px_1fr_120px_1fr_120px_120px_140px_170px_1fr] gap-3 border-t border-[var(--ds-border)] px-5 py-4 text-sm text-[var(--ds-text)] first:border-t-0"
                           >
                             <div>
                               <Link
@@ -302,7 +311,7 @@ export function InvoicePage() {
                                   href={getXeroInvoiceUrl(row.xeroInvoiceId)}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="hover:text-blue-700 hover:underline"
+                                  className="font-semibold text-blue-600 hover:text-blue-700 hover:underline"
                                 >
                                   {row.invoiceNumber || row.xeroInvoiceId || "-"}
                                 </a>
@@ -313,6 +322,8 @@ export function InvoicePage() {
                             <div>{row.contact || "-"}</div>
                             <div>{row.issueDate || "-"}</div>
                             <div className="break-words">{row.reference || "-"}</div>
+                            <div>{formatCurrency(row.xeroTotal)}</div>
+                            <div>{formatCurrency(row.paymentTotal ?? row.amount)}</div>
                             <div>{formatPaymentWay(row.paymentWay)}</div>
                             <div>{row.paymentDateTime || row.paymentDate || "-"}</div>
                             <div className="break-words">{row.note || "-"}</div>

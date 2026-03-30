@@ -141,7 +141,11 @@ public sealed class InvoiceOutboxService
                 return;
             }
 
-            await MarkFailedAsync(message.Id, dispatchResult.Error ?? "Invoice outbox processing failed.", retryable: true, ct);
+            await MarkFailedAsync(
+                message.Id,
+                dispatchResult.Error ?? "Invoice outbox processing failed.",
+                retryable: dispatchResult.Retryable,
+                ct);
         }
         catch (Exception ex)
         {
@@ -170,7 +174,9 @@ public sealed class InvoiceOutboxService
         var result = await _jobInvoiceService.CreateDraftForJobAsync(payload.JobId, ct);
         return result.Ok
             ? InvoiceOutboxDispatchResult.Success()
-            : InvoiceOutboxDispatchResult.Fail(result.Error ?? "Failed to create draft invoice.");
+            : InvoiceOutboxDispatchResult.Fail(
+                result.Error ?? "Failed to create draft invoice.",
+                IsRetryableStatusCode(result.StatusCode));
     }
 
     private async Task<InvoiceOutboxDispatchResult> ProcessAttachExistingAsync(OutboxMessage message, CancellationToken ct)
@@ -182,7 +188,9 @@ public sealed class InvoiceOutboxService
         var result = await _jobInvoiceService.AttachExistingXeroInvoiceAsync(payload.JobId, payload.InvoiceNumber, ct);
         return result.Ok
             ? InvoiceOutboxDispatchResult.Success()
-            : InvoiceOutboxDispatchResult.Fail(result.Error ?? "Failed to attach existing Xero invoice.");
+            : InvoiceOutboxDispatchResult.Fail(
+                result.Error ?? "Failed to attach existing Xero invoice.",
+                IsRetryableStatusCode(result.StatusCode));
     }
 
     private async Task<InvoiceOutboxDispatchResult> ProcessSyncPoStateAsync(OutboxMessage message, CancellationToken ct)
@@ -266,6 +274,9 @@ public sealed class InvoiceOutboxService
             _ => TimeSpan.FromHours(2),
         };
 
+    private static bool IsRetryableStatusCode(int statusCode)
+        => statusCode == 0 || statusCode == 408 || statusCode == 429 || statusCode >= 500;
+
     private sealed record CreateDraftPayload(long JobId);
     private sealed record AttachExistingPayload(long JobId, string InvoiceNumber);
     private sealed record SyncPoStatePayload(long JobId);
@@ -283,8 +294,8 @@ public sealed record InvoiceOutboxEnqueueResult(bool Ok, bool AlreadyHandled, lo
         => new(false, false, null, "failed", error);
 }
 
-public sealed record InvoiceOutboxDispatchResult(bool Ok, string? Error = null)
+public sealed record InvoiceOutboxDispatchResult(bool Ok, string? Error = null, bool Retryable = true)
 {
     public static InvoiceOutboxDispatchResult Success() => new(true);
-    public static InvoiceOutboxDispatchResult Fail(string error) => new(false, error);
+    public static InvoiceOutboxDispatchResult Fail(string error, bool retryable = true) => new(false, error, retryable);
 }

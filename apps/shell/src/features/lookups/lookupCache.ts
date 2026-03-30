@@ -89,9 +89,9 @@ export type CachedInventoryItem = {
   status: string;
 };
 
-const BUSINESS_CUSTOMER_LIST_KEY = "cache:customers:business-list:v1";
-const PERSONAL_CUSTOMER_LIST_KEY = "cache:customers:personal-list:v1";
-const CUSTOMER_LIST_KEY = "cache:customers:list:v1";
+const BUSINESS_CUSTOMER_LIST_KEY = "cache:customers:business-list:v2";
+const PERSONAL_CUSTOMER_LIST_KEY = "cache:customers:personal-list:v2";
+const CUSTOMER_LIST_KEY = "cache:customers:list:v2";
 const CUSTOMER_PROFILE_KEY_PREFIX = "cache:customers:profile:";
 const SERVICE_CATALOG_KEY = "cache:service-catalog:v1";
 const INVENTORY_ITEMS_KEY = "cache:inventory-items:v1";
