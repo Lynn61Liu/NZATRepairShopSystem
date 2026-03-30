@@ -66,6 +66,8 @@ export function NewJobPage() {
   const [importError, setImportError] = useState("");
   const [lastRequestedPlate, setLastRequestedPlate] = useState("");
   const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>(defaultServiceOptions);
+  const [serviceCatalogReady, setServiceCatalogReady] = useState(false);
+  const [serviceCatalogLoading, setServiceCatalogLoading] = useState(true);
   const [selectedServices, setSelectedServices] = useState<ServiceType[]>([]);
   const [mechOptionChoices, setMechOptionChoices] = useState<ChildServiceOption[]>([]);
   const [paintOptionChoices, setPaintOptionChoices] = useState<ChildServiceOption[]>([]);
@@ -287,9 +289,14 @@ export function NewJobPage() {
   useEffect(() => {
     let cancelled = false;
     const loadServiceCatalog = async () => {
+      if (!cancelled) {
+        setServiceCatalogLoading(true);
+      }
       const cachedCatalog = getCachedServiceCatalog();
       if (cachedCatalog && !cancelled) {
         applyServiceCatalog(cachedCatalog);
+        setServiceCatalogReady(true);
+        setServiceCatalogLoading(false);
         return;
       }
 
@@ -297,9 +304,16 @@ export function NewJobPage() {
         const catalog = await loadServiceCatalogCacheFirst();
         if (!cancelled) {
           applyServiceCatalog(catalog);
+          setServiceCatalogReady(true);
         }
       } catch {
-        // Keep the built-in fallback service options when the cache cannot be loaded.
+        if (!cancelled) {
+          setServiceCatalogReady(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setServiceCatalogLoading(false);
+        }
       }
     };
 
@@ -561,6 +575,10 @@ export function NewJobPage() {
       setFormAlert({ variant: "error", message: "关闭新建 Invoice 后，Invoice Number 为必填。" });
       return;
     }
+    if (serviceCatalogLoading || !serviceCatalogReady) {
+      setFormAlert({ variant: "error", message: "服务目录仍在加载，请稍后再保存。" });
+      return;
+    }
 
     const hasMech = selectedServices.includes("mech");
     const personalHasInfo = [
@@ -626,6 +644,16 @@ export function NewJobPage() {
 
     try {
       setSaving(true);
+      const missingRootCatalogIds = selectedServices.filter(
+        (serviceType) => !serviceOptions.find((option) => option.id === serviceType)?.catalogItemId
+      );
+      if (missingRootCatalogIds.length) {
+        const missingLabels = missingRootCatalogIds
+          .map((serviceType) => serviceLabelMap[serviceType] || serviceType)
+          .join("、");
+        throw new Error(`服务目录映射尚未准备好：${missingLabels}。请刷新后重试。`);
+      }
+
       const rootServiceCatalogItemIds = selectedServices
         .map((serviceType) => serviceOptions.find((option) => option.id === serviceType)?.catalogItemId)
         .filter((value): value is string => Boolean(value))
@@ -1001,10 +1029,10 @@ export function NewJobPage() {
               variant="primary"
               className="w-full justify-center gap-2 text-center disabled:cursor-not-allowed disabled:bg-[rgba(0,0,0,0.18)] disabled:text-white/80"
               onClick={handleSave}
-              disabled={saving}
+              disabled={saving || serviceCatalogLoading || !serviceCatalogReady}
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {saving ? "保存中" : "保存"}
+              {saving ? "保存中" : serviceCatalogLoading || !serviceCatalogReady ? "加载服务配置中..." : "保存"}
             </Button>
           </div>
         </div>
