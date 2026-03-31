@@ -398,6 +398,59 @@ public class JobsController : ControllerBase
         return Ok(new { jobs });
     }
 
+    [HttpGet("wof-schedule")]
+    public async Task<IActionResult> GetWofSchedule(CancellationToken ct)
+    {
+        var wofJobIds = await (
+                from selection in _db.JobServiceSelections.AsNoTracking()
+                join catalogItem in _db.ServiceCatalogItems.AsNoTracking() on selection.ServiceCatalogItemId equals catalogItem.Id
+                where catalogItem.ServiceType == "wof"
+                select selection.JobId
+            )
+            .Union(_db.JobWofRecords.AsNoTracking().Select(x => x.JobId))
+            .Distinct()
+            .ToArrayAsync(ct);
+
+        if (wofJobIds.Length == 0)
+            return Ok(new { jobs = Array.Empty<object>() });
+
+        var rows = await (
+                from j in _db.Jobs.AsNoTracking()
+                join v in _db.Vehicles.AsNoTracking() on j.VehicleId equals v.Id
+                where wofJobIds.Contains(j.Id)
+                where !EF.Functions.ILike(j.Status, "archived")
+                orderby j.CreatedAt descending
+                select new
+                {
+                    j.Id,
+                    j.CreatedAt,
+                    j.Status,
+                    v.Plate,
+                    v.Make,
+                    v.Model,
+                    v.Year,
+                    v.Vin,
+                    v.WofExpiry,
+                }
+            )
+            .ToListAsync(ct);
+
+        var jobs = rows.Select(row => new
+        {
+            jobId = row.Id.ToString(CultureInfo.InvariantCulture),
+            plate = row.Plate,
+            make = row.Make ?? "",
+            model = row.Model ?? "",
+            year = row.Year,
+            vin = row.Vin ?? "",
+            wofExpiry = FormatDate(row.WofExpiry),
+            inShopDateTime = FormatDateTime(row.CreatedAt),
+            status = MapDetailStatus(row.Status),
+        });
+
+        return Ok(new { jobs });
+    }
+
     [HttpGet("{id:long}/paint-service")]
     public async Task<IActionResult> GetPaintService(long id, CancellationToken ct)
     {

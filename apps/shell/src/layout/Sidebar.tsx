@@ -124,6 +124,15 @@ export function Sidebar() {
           </NavLink>
 
           <NavLink
+            to="/wof-schedule"
+            className={({ isActive }) =>
+              `${linkBase} ${isActive ? linkActive : linkIdle}`
+            }
+          >
+            WOF 排班表
+          </NavLink>
+
+          <NavLink
             to="/po-dashboard-preview"
             className={({ isActive }) =>
               `${linkBase} ${isActive ? linkActive : linkIdle}`

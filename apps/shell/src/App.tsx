@@ -17,6 +17,7 @@ import { PaintBoardPage } from "./pages/paint/PaintBoardPage";
 import { PaintTechBoardPage } from "./pages/paint/PaintTechBoardPage";
 import { WorklogPage } from "./pages/worklog/WorklogPage";
 import { PoDashboardPreviewPage } from "./pages/PoDashboardPreviewPage";
+import { WofSchedulePage } from "./pages/WofSchedulePage";
 import { ToastProvider } from "@/components/ui";
 
 const router = createBrowserRouter([
@@ -28,6 +29,7 @@ const router = createBrowserRouter([
       { index: true, element: <DashboardPage /> },
       { path: "jobs", element: <JobsPage /> },
       { path: "paint-board", element: <PaintBoardPage /> },
+      { path: "wof-schedule", element: <WofSchedulePage /> },
       { path: "po-dashboard-preview", element: <PoDashboardPreviewPage /> },
       { path: "worklog", element: <WorklogPage /> },
       { path: "parts-flow", element: <PartFlowPage /> },
