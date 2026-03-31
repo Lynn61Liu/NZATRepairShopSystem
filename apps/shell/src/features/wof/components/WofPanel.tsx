@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { SectionCard } from "@/components/ui";
+import { Button, SectionCard } from "@/components/ui";
 import { JOB_DETAIL_TEXT } from "@/features/jobDetail/jobDetail.constants";
 import type { WofCheckItem, WofFailReason, WofRecord, WofRecordUpdatePayload } from "@/types";
 import { WofResultsList } from "./WofResultsList";
@@ -7,6 +7,7 @@ import { WofToolbar } from "./WofToolbar";
 
 export type WofPanelProps = {
   hasRecord: boolean;
+  hasService?: boolean;
   onAdd: () => void;
   records: WofRecord[];
   checkItems?: WofCheckItem[];
@@ -35,6 +36,9 @@ export type WofPanelProps = {
 
 export function WofPanel(props: WofPanelProps) {
   const {
+    hasRecord,
+    hasService = false,
+    onAdd,
     checkItems = [],
     failReasons = [],
     isLoading,
@@ -54,6 +58,19 @@ export function WofPanel(props: WofPanelProps) {
     customerAddress,
   } = props;
   const [showCreate, setShowCreate] = useState(false);
+  const hasAnyRenderedWofData = hasRecord || checkItems.length > 0 || props.records.length > 0;
+
+  if (!hasService && !hasAnyRenderedWofData) {
+    return (
+      <div className="space-y-5 py-4">
+        <div className="flex justify-start">
+          <Button variant="primary" onClick={onAdd}>
+            New WOF Service
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5 py-4">

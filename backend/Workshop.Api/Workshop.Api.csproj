@@ -9,8 +9,6 @@
 
   <ItemGroup>
   <InternalsVisibleTo Include="Workshop.Api.Tests" />
-    <PackageReference Include="ExcelDataReader" Version="3.7.0" />
-    <PackageReference Include="ExcelDataReader.DataSet" Version="3.7.0" />
     <PackageReference Include="Google.Apis.Auth" Version="1.68.0" />
     <PackageReference Include="Google.Apis.Sheets.v4" Version="1.68.0.3393" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.23" />

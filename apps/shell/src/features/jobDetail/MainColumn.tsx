@@ -298,6 +298,7 @@ export function MainColumn({
         {activeTab === "WOF" ? (
           <WofPanel
             hasRecord={hasWofRecord}
+            hasService={jobData.hasWofService}
             onAdd={onAddWof}
             records={wofRecords}
             checkItems={wofCheckItems}

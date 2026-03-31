@@ -181,6 +181,20 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
     }
   }, [jobId]);
 
+  const refreshJobSummary = useCallback(async () => {
+    if (!jobId) return;
+
+    const jobRes = await fetchJob(jobId);
+    if (jobRes.ok) {
+      const data = jobRes.data as any;
+      const job = data?.job ?? data;
+      setJobData(job ?? null);
+      if (typeof data?.hasWofRecord === "boolean") {
+        setHasWofRecord(data.hasWofRecord);
+      }
+    }
+  }, [jobId]);
+
   const createWofServerForJob = useCallback(async () => {
     if (!jobId || wofLoading) return;
     if (hasWofRecord || wofRecords.length > 0 || wofCheckItems.length > 0) return;
@@ -190,10 +204,19 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
       return;
     }
     if (jobId) {
-      await refreshWofServer();
-      toast.success("已创建 WOF 记录");
+      await Promise.all([refreshJobSummary(), refreshWofServer()]);
+      toast.success(res.data?.alreadyExists ? "WOF 服务已存在" : "已创建 WOF 服务");
     }
-  }, [jobId, wofLoading, hasWofRecord, wofRecords.length, wofCheckItems.length, refreshWofServer, toast]);
+  }, [
+    jobId,
+    wofLoading,
+    hasWofRecord,
+    wofRecords.length,
+    wofCheckItems.length,
+    refreshJobSummary,
+    refreshWofServer,
+    toast,
+  ]);
 
   const saveWofResult = useCallback(
     async (payload: { result: "Pass" | "Fail"; expiryDate?: string; failReasonId?: string; note?: string }) => {
@@ -225,10 +248,10 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
       return { success: false, message: res.error || "删除失败" };
     }
 
-    await refreshWofServer();
+    await Promise.all([refreshJobSummary(), refreshWofServer()]);
     toast.success("删除成功");
     return { success: true, message: "删除成功" };
-  }, [jobId, refreshWofServer, toast]);
+  }, [jobId, refreshJobSummary, refreshWofServer, toast]);
 
   const createPaintServiceRow = useCallback(
     async (status?: string, panels?: number) => {
@@ -610,20 +633,6 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
       setArchivingJob(false);
     }
   }, [jobData?.status, jobId, toast]);
-
-  const refreshJobSummary = useCallback(async () => {
-    if (!jobId) return;
-
-    const jobRes = await fetchJob(jobId);
-    if (jobRes.ok) {
-      const data = jobRes.data as any;
-      const job = data?.job ?? data;
-      setJobData(job ?? null);
-      if (typeof data?.hasWofRecord === "boolean") {
-        setHasWofRecord(data.hasWofRecord);
-      }
-    }
-  }, [jobId]);
 
   useEffect(() => {
     if (!jobData || jobData.invoice) return;

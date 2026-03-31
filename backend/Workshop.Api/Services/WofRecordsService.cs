@@ -1,8 +1,5 @@
 using System.Data;
 using System.Globalization;
-using System.IO;
-using System.Text;
-using ExcelDataReader;
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Services;
 using Google.Apis.Sheets.v4;
@@ -115,83 +112,61 @@ public class WofRecordsService
     {
         var spreadsheetId = _config["WofImport:SpreadsheetId"];
         var credentialsPath = _config["WofImport:GoogleCredentialsPath"];
-        if (!string.IsNullOrWhiteSpace(spreadsheetId) && !string.IsNullOrWhiteSpace(credentialsPath))
-        {
-            return await ImportWofRecordsFromGoogleSheet(id, ct);
-        }
+        if (string.IsNullOrWhiteSpace(spreadsheetId))
+            return WofServiceResult.BadRequest("Missing WofImport:SpreadsheetId configuration.");
+        if (string.IsNullOrWhiteSpace(credentialsPath))
+            return WofServiceResult.BadRequest("Missing WofImport:GoogleCredentialsPath configuration.");
 
-        var filePath = _config["WofImport:FilePath"];
-        if (string.IsNullOrWhiteSpace(filePath))
-            return WofServiceResult.BadRequest("Missing WofImport:FilePath configuration.");
-
-        if (!System.IO.File.Exists(filePath))
-            return WofServiceResult.NotFound($"Excel file not found: {filePath}");
-
-        var sheetName = _config["WofImport:SheetName"];
-        var organisationFallback = _config["WofImport:OrganisationName"] ?? "Unknown";
-        var sourceFile = Path.GetFileName(filePath);
-    
-        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-
-        DataTable table;
-        await using (var stream = System.IO.File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-        using (var reader = ExcelReaderFactory.CreateReader(stream))
-        {
-            var dataSet = reader.AsDataSet(new ExcelDataSetConfiguration
-            {
-                ConfigureDataTable = _ => new ExcelDataTableConfiguration { UseHeaderRow = true }
-            });
-
-            if (!string.IsNullOrWhiteSpace(sheetName))
-            {
-                if (!dataSet.Tables.Contains(sheetName))
-                    return WofServiceResult.BadRequest($"Sheet '{sheetName}' not found.");
-                table = dataSet.Tables[sheetName]!;
-            }
-            else
-            {
-                if (dataSet.Tables.Count == 0)
-                    return WofServiceResult.BadRequest("No worksheet found in the Excel file.");
-                table = dataSet.Tables[0];
-            }
-        }
-
-        return await ImportWofRecordsFromTable(id, table, sheetName, organisationFallback, sourceFile, ct);
+        return await ImportWofRecordsFromGoogleSheet(id, ct);
     }
 
-    public async Task<WofServiceResult> ImportWofRecordsFromStream(long id, Stream stream, string? sourceFileName, CancellationToken ct)
+    public async Task<WofServiceResult> CreateWofService(long id, CancellationToken ct)
     {
-        var sheetName = _config["WofImport:SheetName"];
-        var organisationFallback = _config["WofImport:OrganisationName"] ?? "Unknown";
-        var sourceFile = string.IsNullOrWhiteSpace(sourceFileName)
-            ? "upload.xlsx"
-            : Path.GetFileName(sourceFileName);
+        var jobExists = await _db.Jobs.AsNoTracking().AnyAsync(x => x.Id == id, ct);
+        if (!jobExists)
+            return WofServiceResult.NotFound("Job not found.");
 
-        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        var existingSelection = await (
+                from selection in _db.JobServiceSelections.AsNoTracking()
+                join catalogItem in _db.ServiceCatalogItems.AsNoTracking() on selection.ServiceCatalogItemId equals catalogItem.Id
+                where selection.JobId == id && catalogItem.ServiceType == "wof"
+                select selection.Id
+            )
+            .AnyAsync(ct);
 
-        DataTable table;
-        using (var reader = ExcelReaderFactory.CreateReader(stream))
+        if (existingSelection)
+            return WofServiceResult.Ok(new { success = true, alreadyExists = true });
+
+        var selectedItem = await _db.ServiceCatalogItems
+            .AsNoTracking()
+            .Where(x => x.IsActive && x.ServiceType == "wof" && (x.Category == "child" || x.Category == "root"))
+            .OrderByDescending(x => x.Category == "child")
+            .ThenBy(x => x.SortOrder)
+            .ThenBy(x => x.Id)
+            .Select(x => new { x.Id, x.Name })
+            .FirstOrDefaultAsync(ct);
+
+        if (selectedItem is null)
+            return WofServiceResult.BadRequest("No active WOF service catalog item is configured.");
+
+        var now = DateTime.UtcNow;
+        _db.JobServiceSelections.Add(new JobServiceSelection
         {
-            var dataSet = reader.AsDataSet(new ExcelDataSetConfiguration
-            {
-                ConfigureDataTable = _ => new ExcelDataTableConfiguration { UseHeaderRow = true }
-            });
+            JobId = id,
+            ServiceCatalogItemId = selectedItem.Id,
+            ServiceNameSnapshot = selectedItem.Name.Trim(),
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
 
-            if (!string.IsNullOrWhiteSpace(sheetName))
-            {
-                if (!dataSet.Tables.Contains(sheetName))
-                    return WofServiceResult.BadRequest($"Sheet '{sheetName}' not found.");
-                table = dataSet.Tables[sheetName]!;
-            }
-            else
-            {
-                if (dataSet.Tables.Count == 0)
-                    return WofServiceResult.BadRequest("No worksheet found in the Excel file.");
-                table = dataSet.Tables[0];
-            }
-        }
+        await _db.SaveChangesAsync(ct);
 
-        return await ImportWofRecordsFromTable(id, table, sheetName, organisationFallback, sourceFile, ct);
+        return WofServiceResult.Ok(new
+        {
+            success = true,
+            alreadyExists = false,
+            serviceCatalogItemId = selectedItem.Id
+        });
     }
 
     private async Task<WofServiceResult> ImportWofRecordsFromGoogleSheet(long id, CancellationToken ct)
@@ -535,14 +510,22 @@ public class WofRecordsService
 
     public async Task<WofServiceResult> DeleteWofServer(long id, CancellationToken ct)
     {
+        var wofCatalogItemIds = _db.ServiceCatalogItems.AsNoTracking()
+            .Where(x => x.ServiceType == "wof")
+            .Select(x => x.Id);
+
         var deleted = await _db.JobWofRecords
             .Where(x => x.JobId == id)
             .ExecuteDeleteAsync(ct);
 
-        if (deleted == 0)
+        var deletedSelections = await _db.JobServiceSelections
+            .Where(x => x.JobId == id && wofCatalogItemIds.Contains(x.ServiceCatalogItemId))
+            .ExecuteDeleteAsync(ct);
+
+        if (deleted == 0 && deletedSelections == 0)
             return WofServiceResult.NotFound("WOF record not found.");
 
-        return WofServiceResult.Ok(new { success = true });
+        return WofServiceResult.Ok(new { success = true, deleted, deletedSelections });
     }
 
     public async Task<WofServiceResult> CreateWofRecord(long jobId, WofRecordUpdateRequest request, CancellationToken ct)

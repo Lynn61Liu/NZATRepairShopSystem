@@ -205,6 +205,7 @@ export type JobDetailData = {
   poNumber?: string;
   invoiceReference?: string;
   createdAt?: string;
+  hasWofService?: boolean;
   vehicle: VehicleInfo;
   customer: CustomerInfo;
   invoice?: JobInvoiceData | null;

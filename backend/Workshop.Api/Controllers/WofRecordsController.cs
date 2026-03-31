@@ -66,7 +66,7 @@ public class WofRecordsController : ControllerBase
     [HttpPost("wof-server")]
     public async Task<IActionResult> CreateWofRecord(long id, CancellationToken ct)
     {
-        var result = await _wofService.ImportWofRecords(id, ct);
+        var result = await _wofService.CreateWofService(id, ct);
         return ToActionResult(result);
     }
 

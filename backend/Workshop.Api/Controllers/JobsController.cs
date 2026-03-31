@@ -144,6 +144,13 @@ public class JobsController : ControllerBase
             return NotFound(new { error = "Job not found." });
 
         var hasWofRecord = await _db.JobWofRecords.AsNoTracking().AnyAsync(x => x.JobId == id, ct);
+        var hasWofService = await (
+                from selection in _db.JobServiceSelections.AsNoTracking()
+                join catalogItem in _db.ServiceCatalogItems.AsNoTracking() on selection.ServiceCatalogItemId equals catalogItem.Id
+                where selection.JobId == id && catalogItem.ServiceType == "wof"
+                select selection.Id
+            )
+            .AnyAsync(ct);
 
         var tagNames = await (
                 from jt in _db.JobTags.AsNoTracking()
@@ -226,6 +233,7 @@ public class JobsController : ControllerBase
             tags = tagNames.ToArray(),
             notes = row.Job.Notes,
             createdAt = FormatDateTime(row.Job.CreatedAt),
+            hasWofService = hasWofService || hasWofRecord,
             vehicle = new
             {
                 plate = row.Vehicle.Plate,
