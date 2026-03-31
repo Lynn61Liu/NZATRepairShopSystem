@@ -205,7 +205,13 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
     }
     if (jobId) {
       await Promise.all([refreshJobSummary(), refreshWofServer()]);
-      toast.success(res.data?.alreadyExists ? "WOF 服务已存在" : "已创建 WOF 服务");
+      if (res.data?.alreadyExists) {
+        toast.success("WOF 服务已存在");
+      } else if (res.data?.xeroSyncQueued) {
+        toast.success("已创建 WOF 服务，Xero draft 正在后台更新");
+      } else {
+        toast.success("已创建 WOF 服务");
+      }
     }
   }, [
     jobId,
@@ -249,7 +255,7 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
     }
 
     await Promise.all([refreshJobSummary(), refreshWofServer()]);
-    toast.success("删除成功");
+    toast.success(res.data?.xeroSyncQueued ? "删除成功，Xero draft 正在后台更新" : "删除成功");
     return { success: true, message: "删除成功" };
   }, [jobId, refreshJobSummary, refreshWofServer, toast]);
 

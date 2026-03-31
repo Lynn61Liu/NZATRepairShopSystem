@@ -192,32 +192,6 @@ public class NewJobController : ControllerBase
             hasPendingPostJobChanges = true;
         }
 
-        if (wofCreated)
-        {
-            var makeModel = string.Join(' ', new[] { vehicle.Make, vehicle.Model }
-                .Where(x => !string.IsNullOrWhiteSpace(x))
-                .Select(x => x!.Trim()));
-
-            _db.JobWofRecords.Add(new JobWofRecord
-            {
-                JobId = job.Id,
-                OccurredAt = now,
-                Rego = vehicle.Plate,
-                MakeModel = string.IsNullOrWhiteSpace(makeModel) ? null : makeModel,
-                Odo = vehicle.Odometer?.ToString(),
-                RecordState = WofRecordState.Pass,
-                IsNewWof = true,
-                OrganisationName = "Workshop",
-                ExcelRowNo = 0,
-                SourceFile = "new-job",
-                Note = "Auto-created from new job WOF service selection.",
-                WofUiState = WofUiState.Pass,
-                ImportedAt = now,
-                UpdatedAt = now,
-            });
-            hasPendingPostJobChanges = true;
-        }
-
         if (req.UseServiceCatalogMapping)
         {
             var selections = BuildJobServiceSelections(

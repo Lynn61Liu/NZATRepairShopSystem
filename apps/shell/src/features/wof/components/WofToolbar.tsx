@@ -8,9 +8,10 @@ type WofToolbarProps = {
   onRefresh?: () => Promise<{ success: boolean; message?: string }>;
   onDelete?: () => Promise<{ success: boolean; message?: string }>;
   onAdd?: () => void;
+  onOpenNzta?: () => void;
 };
 
-export function WofToolbar({ isLoading, onRefresh, onDelete, onAdd }: WofToolbarProps) {
+export function WofToolbar({ isLoading, onRefresh, onDelete, onAdd, onOpenNzta }: WofToolbarProps) {
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
@@ -98,7 +99,7 @@ export function WofToolbar({ isLoading, onRefresh, onDelete, onAdd }: WofToolbar
       <Button className="flex items-center gap-2" onClick={onAdd} disabled={isLoading}>
         手工添加
       </Button>
-      <Button className="flex items-center gap-2">
+      <Button className="flex items-center gap-2" onClick={onOpenNzta}>
         <ExternalLink className="w-4 h-4" />
         {JOB_DETAIL_TEXT.buttons.openNzta}
       </Button>

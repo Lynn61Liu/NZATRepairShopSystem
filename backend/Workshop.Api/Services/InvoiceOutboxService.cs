@@ -9,6 +9,8 @@ public sealed class InvoiceOutboxService
 {
     public const string CreateDraftMessageType = "job_invoice.create_draft";
     public const string AttachExistingMessageType = "job_invoice.attach_existing";
+    public const string SyncWofDraftMessageType = "job_invoice.sync_wof_draft";
+    public const string RemoveWofDraftItemsMessageType = "job_invoice.remove_wof_draft_items";
     public const string SyncPoStateMessageType = "job_po.sync_state";
     public const string JobAggregateType = "job";
 
@@ -43,6 +45,15 @@ public sealed class InvoiceOutboxService
 
     public OutboxMessage BuildSyncPoStateMessage(long jobId, DateTime utcNow)
         => BuildMessage(SyncPoStateMessageType, jobId, new SyncPoStatePayload(jobId), utcNow);
+
+    public OutboxMessage BuildSyncWofDraftMessage(long jobId, DateTime utcNow)
+        => BuildMessage(SyncWofDraftMessageType, jobId, new SyncWofDraftPayload(jobId), utcNow);
+
+    public OutboxMessage BuildRemoveWofDraftItemsMessage(
+        long jobId,
+        IReadOnlyList<RemovedServiceSelectionPayload> selections,
+        DateTime utcNow)
+        => BuildMessage(RemoveWofDraftItemsMessageType, jobId, new RemoveWofDraftItemsPayload(jobId, selections), utcNow);
 
     public async Task<InvoiceOutboxEnqueueResult> EnqueueCreateDraftAsync(long jobId, CancellationToken ct)
     {
@@ -106,7 +117,7 @@ public sealed class InvoiceOutboxService
                 FROM outbox_messages
                 WHERE status = 'pending'
                   AND available_at <= {now}
-                  AND message_type IN ({CreateDraftMessageType}, {AttachExistingMessageType}, {SyncPoStateMessageType})
+                  AND message_type IN ({CreateDraftMessageType}, {AttachExistingMessageType}, {SyncWofDraftMessageType}, {RemoveWofDraftItemsMessageType}, {SyncPoStateMessageType})
                 ORDER BY created_at
                 FOR UPDATE SKIP LOCKED
                 LIMIT {batchSize}")
@@ -160,6 +171,8 @@ public sealed class InvoiceOutboxService
         {
             CreateDraftMessageType => await ProcessCreateDraftAsync(message, ct),
             AttachExistingMessageType => await ProcessAttachExistingAsync(message, ct),
+            SyncWofDraftMessageType => await ProcessSyncWofDraftAsync(message, ct),
+            RemoveWofDraftItemsMessageType => await ProcessRemoveWofDraftItemsAsync(message, ct),
             SyncPoStateMessageType => await ProcessSyncPoStateAsync(message, ct),
             _ => InvoiceOutboxDispatchResult.Fail($"Unsupported invoice outbox message type '{message.MessageType}'."),
         };
@@ -190,6 +203,38 @@ public sealed class InvoiceOutboxService
             ? InvoiceOutboxDispatchResult.Success()
             : InvoiceOutboxDispatchResult.Fail(
                 result.Error ?? "Failed to attach existing Xero invoice.",
+                IsRetryableStatusCode(result.StatusCode));
+    }
+
+    private async Task<InvoiceOutboxDispatchResult> ProcessSyncWofDraftAsync(OutboxMessage message, CancellationToken ct)
+    {
+        var payload = JsonSerializer.Deserialize<SyncWofDraftPayload>(message.PayloadJson, JsonOptions);
+        if (payload is null || payload.JobId <= 0)
+            return InvoiceOutboxDispatchResult.Fail("Invalid WOF draft sync outbox payload.");
+
+        var result = await _jobInvoiceService.SyncWofItemsToDraftAsync(payload.JobId, ct);
+        return result.Ok
+            ? InvoiceOutboxDispatchResult.Success()
+            : InvoiceOutboxDispatchResult.Fail(
+                result.Error ?? "Failed to sync WOF item to draft invoice.",
+                IsRetryableStatusCode(result.StatusCode));
+    }
+
+    private async Task<InvoiceOutboxDispatchResult> ProcessRemoveWofDraftItemsAsync(OutboxMessage message, CancellationToken ct)
+    {
+        var payload = JsonSerializer.Deserialize<RemoveWofDraftItemsPayload>(message.PayloadJson, JsonOptions);
+        if (payload is null || payload.JobId <= 0)
+            return InvoiceOutboxDispatchResult.Fail("Invalid remove WOF draft items outbox payload.");
+
+        var result = await _jobInvoiceService.RemoveServiceItemsFromDraftAsync(
+            payload.JobId,
+            payload.Selections.Select(x => new JobInvoiceService.ServiceSelectionSnapshot(x.ServiceCatalogItemId, x.ServiceNameSnapshot)).ToArray(),
+            ct);
+
+        return result.Ok
+            ? InvoiceOutboxDispatchResult.Success()
+            : InvoiceOutboxDispatchResult.Fail(
+                result.Error ?? "Failed to remove WOF item from draft invoice.",
                 IsRetryableStatusCode(result.StatusCode));
     }
 
@@ -279,6 +324,9 @@ public sealed class InvoiceOutboxService
 
     private sealed record CreateDraftPayload(long JobId);
     private sealed record AttachExistingPayload(long JobId, string InvoiceNumber);
+    private sealed record SyncWofDraftPayload(long JobId);
+    public sealed record RemovedServiceSelectionPayload(long ServiceCatalogItemId, string ServiceNameSnapshot);
+    private sealed record RemoveWofDraftItemsPayload(long JobId, IReadOnlyList<RemovedServiceSelectionPayload> Selections);
     private sealed record SyncPoStatePayload(long JobId);
 }
 

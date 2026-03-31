@@ -407,6 +407,7 @@ export function WofSchedulePage() {
   const [jobs, setJobs] = useState<WofScheduleJob[]>([]);
   const [placements, setPlacements] = useState<PlacementMap>(() => loadPlacements());
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [weekOffset, setWeekOffset] = useState(0);
@@ -448,6 +449,28 @@ export function WofSchedulePage() {
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  const syncGoogleSheet = useCallback(async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch(withApiBase("/api/wof-records/sync"), {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to sync WOF records from Google Sheet.");
+      }
+
+      await loadJobs();
+      toast.success(
+        `同步完成：新增 ${Number(data?.inserted ?? 0)} 条，更新 ${Number(data?.updated ?? 0)} 条，跳过 ${Number(data?.skipped ?? 0)} 条`
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to sync WOF records from Google Sheet.");
+    } finally {
+      setSyncing(false);
+    }
+  }, [loadJobs, toast]);
 
   const moveToBacklog = useCallback((jobId: string) => {
     setPlacements((prev) => {
@@ -547,8 +570,13 @@ export function WofSchedulePage() {
               Drag WOF jobs from the backlog into the next 7 working days, or move them to completed when done.
             </p>
           </div>
-          <Button variant="ghost" leftIcon={<RefreshCcw className="h-4 w-4" />} onClick={loadJobs}>
-            Refresh
+          <Button
+            variant="ghost"
+            leftIcon={<RefreshCcw className="h-4 w-4" />}
+            onClick={syncGoogleSheet}
+            disabled={syncing}
+          >
+            {syncing ? "同步中..." : "同步 Google Sheet"}
           </Button>
         </div>
 
@@ -562,7 +590,7 @@ export function WofSchedulePage() {
           <div className="grid min-h-[820px] grid-cols-[320px_minmax(0,1fr)_320px] gap-6">
             <DropLane
               title="WOF 待办栏"
-              subtitle="Unsheduled WOF jobs"
+              subtitle="Only jobs with WOF status = 代办"
               jobs={backlogJobs}
               onDropJob={moveToBacklog}
             >

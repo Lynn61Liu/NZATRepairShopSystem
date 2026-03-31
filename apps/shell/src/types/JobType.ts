@@ -16,6 +16,7 @@ export type JobRow = {
   plate: string;
   vehicleModel: string;
   wofPct: number | null;
+  wofStatus?: "Todo" | "Recorded" | "Printed" | null;
   mechPct: number | null;
   paintPct: number | null;
   customerName: string;

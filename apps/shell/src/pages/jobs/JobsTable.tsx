@@ -31,6 +31,51 @@ const ONE_LINE_CLAMP_STYLE = {
   wordBreak: "break-word",
 } as const;
 
+function WofStatusPill({ status }: { status?: JobRow["wofStatus"] }) {
+  if (!status) {
+    return <span className="text-xs text-[rgba(0,0,0,0.35)]">—</span>;
+  }
+
+  const config =
+    status === "Printed"
+      ? {
+          label: "完成打印",
+          bg: "bg-emerald-50",
+          bd: "border-emerald-200",
+          tx: "text-emerald-700",
+          dot: "bg-emerald-500",
+        }
+      : status === "Recorded"
+        ? {
+            label: "有记录",
+            bg: "bg-sky-50",
+            bd: "border-sky-200",
+            tx: "text-sky-700",
+            dot: "bg-sky-500",
+          }
+        : {
+            label: "代办",
+            bg: "bg-amber-50",
+            bd: "border-amber-200",
+            tx: "text-amber-700",
+            dot: "bg-amber-500",
+          };
+
+  return (
+    <span
+      className={[
+        "inline-flex items-center gap-2 rounded-[8px] border px-2 py-1 text-[11px] font-medium",
+        config.bg,
+        config.bd,
+        config.tx,
+      ].join(" ")}
+    >
+      <span className={["h-1.5 w-1.5 rounded-full", config.dot].join(" ")} />
+      {config.label}
+    </span>
+  );
+}
+
 const JOB_TABLE_COLUMNS: Array<{
   key: string;
   label: string;
@@ -301,7 +346,7 @@ export function JobsTable({
                   )}
                 </div>
 
-                <div className="flex justify-center"><ProgressRing value={r.wofPct} /></div>
+                <div className="flex justify-center"><WofStatusPill status={r.wofStatus} /></div>
                 <div className="flex justify-center"><ProgressRing value={r.mechPct} /></div>
                 <div className="flex justify-center"><ProgressRing value={r.paintPct} /></div>
 

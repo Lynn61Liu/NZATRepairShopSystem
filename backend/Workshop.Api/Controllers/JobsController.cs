@@ -57,6 +57,18 @@ public class JobsController : ControllerBase
                     j.Notes,
                     ExternalInvoiceId = ji != null ? ji.ExternalInvoiceId : null,
                     PaintPanels = (int?)p.Panels,
+                    HasWofService = (
+                        from selection in _db.JobServiceSelections.AsNoTracking()
+                        join catalogItem in _db.ServiceCatalogItems.AsNoTracking() on selection.ServiceCatalogItemId equals catalogItem.Id
+                        where selection.JobId == j.Id && catalogItem.ServiceType == "wof"
+                        select selection.Id
+                    ).Any(),
+                    LatestWofUiState = _db.JobWofRecords.AsNoTracking()
+                        .Where(x => x.JobId == j.Id)
+                        .OrderByDescending(x => x.OccurredAt)
+                        .ThenByDescending(x => x.Id)
+                        .Select(x => (WofUiState?)x.WofUiState)
+                        .FirstOrDefault(),
                     Vehicle = v,
                     Customer = c
                 }
@@ -78,6 +90,7 @@ public class JobsController : ControllerBase
             customerName = r.Customer.Name,
             customerCode = r.Customer.BusinessCode,
             customerPhone = r.Customer.Phone ?? "",
+            wofStatus = MapWofStatus(r.HasWofService, r.LatestWofUiState),
             notes = r.Notes ?? "",
             externalInvoiceId = r.ExternalInvoiceId,
             createdAt = FormatDateTime(r.CreatedAt),
@@ -409,24 +422,18 @@ public class JobsController : ControllerBase
     [HttpGet("wof-schedule")]
     public async Task<IActionResult> GetWofSchedule(CancellationToken ct)
     {
-        var wofJobIds = await (
-                from selection in _db.JobServiceSelections.AsNoTracking()
-                join catalogItem in _db.ServiceCatalogItems.AsNoTracking() on selection.ServiceCatalogItemId equals catalogItem.Id
-                where catalogItem.ServiceType == "wof"
-                select selection.JobId
-            )
-            .Union(_db.JobWofRecords.AsNoTracking().Select(x => x.JobId))
-            .Distinct()
-            .ToArrayAsync(ct);
-
-        if (wofJobIds.Length == 0)
-            return Ok(new { jobs = Array.Empty<object>() });
-
         var rows = await (
                 from j in _db.Jobs.AsNoTracking()
                 join v in _db.Vehicles.AsNoTracking() on j.VehicleId equals v.Id
-                where wofJobIds.Contains(j.Id)
                 where !EF.Functions.ILike(j.Status, "archived")
+                let hasWofService = (
+                    from selection in _db.JobServiceSelections.AsNoTracking()
+                    join catalogItem in _db.ServiceCatalogItems.AsNoTracking() on selection.ServiceCatalogItemId equals catalogItem.Id
+                    where selection.JobId == j.Id && catalogItem.ServiceType == "wof"
+                    select selection.Id
+                ).Any()
+                let hasWofRecord = _db.JobWofRecords.AsNoTracking().Any(x => x.JobId == j.Id)
+                where hasWofService && !hasWofRecord
                 orderby j.CreatedAt descending
                 select new
                 {
@@ -1046,6 +1053,17 @@ public class JobsController : ControllerBase
         if (value.Equals("In Shop", StringComparison.OrdinalIgnoreCase))
             return "In Shop";
         return value;
+    }
+
+    private static string? MapWofStatus(bool hasWofService, WofUiState? latestWofUiState)
+    {
+        if (latestWofUiState == WofUiState.Printed)
+            return "Printed";
+
+        if (latestWofUiState.HasValue)
+            return "Recorded";
+
+        return hasWofService ? "Todo" : null;
     }
 
     private static string BuildVehicleModel(string? make, string? model, int? year)
