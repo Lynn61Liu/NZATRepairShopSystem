@@ -109,7 +109,7 @@ export function WofToolbar({ isLoading, onRefresh, onDelete, onAdd, onOpenNzta }
         onClick={handleDelete}
         disabled={isLoading}
       >
-        删除WOF
+        删除WOF服务
       </Button>
 
       {showRefreshConfirm ? (

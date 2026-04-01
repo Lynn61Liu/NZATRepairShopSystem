@@ -4,6 +4,7 @@ import { fetchPaintBoard } from "@/features/paint/api/paintApi";
 import { countOverdue, type PaintBoardJob } from "@/features/paint/paintBoard.utils";
 import { subscribeWorklogCostAlert } from "@/utils/refreshSignals";
 import { usePoUnreadSummary } from "@/features/jobs";
+import { requestJson } from "@/utils/api";
 import { Plus } from "lucide-react";
 
 const linkBase =
@@ -16,6 +17,7 @@ const linkIdle =
 export function Sidebar() {
   const [paintOverdueCount, setPaintOverdueCount] = useState(0);
   const [worklogAlertCount, setWorklogAlertCount] = useState(0);
+  const [wofTodoCount, setWofTodoCount] = useState(0);
   const poUnreadSummary = usePoUnreadSummary();
 
   useEffect(() => {
@@ -37,6 +39,28 @@ export function Sidebar() {
     if (stored) setWorklogAlertCount(Number(stored) || 0);
     return subscribeWorklogCostAlert((count) => setWorklogAlertCount(count));
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      const res = await requestJson<{ jobs?: Array<unknown> }>("/api/jobs/wof-schedule");
+      if (!res.ok || cancelled) return;
+      const count = Array.isArray(res.data?.jobs) ? res.data.jobs.length : 0;
+      setWofTodoCount(count);
+    };
+
+    void load();
+    const timer = window.setInterval(() => {
+      void load();
+    }, 60000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
   return (
     <div className="h-full p-4 flex flex-col gap-6 flex-1 min-h-0">
       <div>
@@ -129,7 +153,14 @@ export function Sidebar() {
               `${linkBase} ${isActive ? linkActive : linkIdle}`
             }
           >
-            WOF 排班表
+            <span className="flex items-center justify-between gap-2">
+              <span>WOF 排班表</span>
+              {wofTodoCount > 0 ? (
+                <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-600">
+                  {wofTodoCount}
+                </span>
+              ) : null}
+            </span>
           </NavLink>
 
           <NavLink

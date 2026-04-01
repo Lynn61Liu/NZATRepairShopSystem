@@ -783,6 +783,18 @@ public class WofRecordsService
         return WofServiceResult.Ok(new { success = true, deleted, deletedSelections, xeroSyncQueued });
     }
 
+    public async Task<WofServiceResult> DeleteWofRecord(long jobId, long recordId, CancellationToken ct)
+    {
+        var deleted = await _db.JobWofRecords
+            .Where(x => x.JobId == jobId && x.Id == recordId)
+            .ExecuteDeleteAsync(ct);
+
+        if (deleted == 0)
+            return WofServiceResult.NotFound("WOF record not found.");
+
+        return WofServiceResult.Ok(new { success = true, deleted });
+    }
+
     public async Task<WofServiceResult> CreateWofRecord(long jobId, WofRecordUpdateRequest request, CancellationToken ct)
     {
         if (request is null)

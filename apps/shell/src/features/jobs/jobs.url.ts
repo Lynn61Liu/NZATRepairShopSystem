@@ -8,6 +8,7 @@ export function filtersToSearchParams(filters: JobsFilters): URLSearchParams {
 
   if (filters.search) p.set("q", filters.search);
   if (filters.jobType) p.set("status", filters.jobType);
+  if (filters.wofStatus) p.set("wof", filters.wofStatus);
   if (filters.timeRange) p.set("range", filters.timeRange);
   if (filters.startDate) p.set("start", filters.startDate);
   if (filters.endDate) p.set("end", filters.endDate);
@@ -25,6 +26,7 @@ export function searchParamsToFilters(sp: URLSearchParams): JobsFilters {
 
   next.search = sp.get("q") ?? "";
   next.jobType = (sp.get("status") ?? "") as JobsFilters["jobType"];
+  next.wofStatus = (sp.get("wof") ?? "") as JobsFilters["wofStatus"];
   next.timeRange = (sp.get("range") ?? "") as JobsFilters["timeRange"];
   next.startDate = sp.get("start") ?? "";
   next.endDate = sp.get("end") ?? "";

@@ -8,6 +8,7 @@ type WofResultsListProps = {
   checkItems: WofCheckItem[];
   printContext?: WofPrintContext;
   onUpdate?: (id: string, payload: WofRecordUpdatePayload) => Promise<{ success: boolean; message?: string }>;
+  onDelete?: (id: string) => Promise<{ success: boolean; message?: string }>;
   onCreate?: (payload: WofRecordUpdatePayload) => Promise<{ success: boolean; message?: string }>;
   onCancelCreate?: () => void;
   showCreate?: boolean;
@@ -21,6 +22,7 @@ export function WofResultsList({
   checkItems,
   printContext,
   onUpdate,
+  onDelete,
   onCreate,
   onCancelCreate,
   showCreate,
@@ -98,6 +100,7 @@ export function WofResultsList({
           wofResults={checkItems}
           printContext={printContext}
           onUpdate={onUpdate}
+          onDelete={onDelete}
           failReasons={mergedFailReasons}
         />
       ) : null}

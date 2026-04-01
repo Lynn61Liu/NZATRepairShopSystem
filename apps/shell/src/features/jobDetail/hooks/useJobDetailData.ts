@@ -36,6 +36,7 @@ import {
   createWofRecord,
   createWofResult,
   createWofServer,
+  deleteWofRecord,
   deleteWofServer,
   fetchWofFailReasons,
   fetchWofServer,
@@ -397,6 +398,26 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
       return { success: true, message: "保存成功" };
     },
     [jobId, refreshWofServer, toast]
+  );
+
+  const deleteWofRecordRow = useCallback(
+    async (recordId: string) => {
+      if (!jobId) {
+        return { success: false, message: "缺少工单 ID" };
+      }
+
+      const res = await deleteWofRecord(jobId, recordId);
+      if (!res.ok) {
+        toast.error(res.error || "删除失败");
+        return { success: false, message: res.error || "删除失败" };
+      }
+
+      await refreshWofServer();
+      await refreshJobSummary();
+      toast.success("删除成功");
+      return { success: true, message: "删除成功" };
+    },
+    [jobId, refreshJobSummary, refreshWofServer, toast]
   );
 
   const importWofRecordsForJob = useCallback(async () => {
@@ -933,6 +954,7 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
     deleteWofServer: deleteWofServerForJob,
     createWofRecordRow,
     updateWofRecord: updateWofRecordRow,
+    deleteWofRecord: deleteWofRecordRow,
     importWofRecords: importWofRecordsForJob,
     createPartsService: createPartsServiceRow,
     updatePartsService: updatePartsServiceRow,

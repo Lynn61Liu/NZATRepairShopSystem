@@ -48,6 +48,9 @@ type MainColumnProps = {
     id: string,
     payload: WofRecordUpdatePayload
   ) => Promise<{ success: boolean; message?: string }>;
+  onDeleteWofRecord?: (
+    id: string
+  ) => Promise<{ success: boolean; message?: string }>;
   onCreateWofRecord?: (
     payload: WofRecordUpdatePayload
   ) => Promise<{ success: boolean; message?: string }>;
@@ -123,6 +126,7 @@ export function MainColumn({
   onRefreshWof,
   onDeleteWofServer,
   onUpdateWofRecord,
+  onDeleteWofRecord,
   onCreateWofRecord,
   onCreatePartsService,
   onUpdatePartsService,
@@ -168,14 +172,7 @@ export function MainColumn({
   const needsPo = Boolean(jobData.needsPo);
 
   const handleTabChange = (nextTab: JobDetailTabKey) => {
-    if (!invoiceDashboard.draftDirty) {
-      onTabChange(nextTab);
-      return;
-    }
-
-    void invoiceDashboard.confirmSaveBeforeLeaving().then((shouldProceed) => {
-      if (shouldProceed) onTabChange(nextTab);
-    });
+    onTabChange(nextTab);
   };
 
   const tabs = useMemo(() => {
@@ -307,6 +304,7 @@ export function MainColumn({
             onRefresh={onRefreshWof}
             onDeleteWofServer={onDeleteWofServer}
             onUpdateRecord={onUpdateWofRecord}
+            onDeleteRecord={onDeleteWofRecord}
             onCreateRecord={onCreateWofRecord}
             jobId={jobData.id}
             vehiclePlate={jobData.vehicle.plate}
@@ -378,35 +376,6 @@ export function MainColumn({
         {activeTab === "PO" && needsPo ? <PoPanel model={invoiceDashboard} /> : null}
       </Card>
 
-      {invoiceDashboard.leavePromptOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="text-lg font-semibold text-[var(--ds-primary)]">Invoice changes not saved</div>
-            <p className="mt-2 text-sm leading-6 text-[var(--ds-muted)]">
-              You have invoice changes that have not been confirmed yet. Choose whether to keep the current changes or cancel them before leaving this page.
-            </p>
-            <div className="mt-6 flex flex-wrap justify-end gap-3">
-              {/* <Button variant="ghost" className="h-10 px-4" onClick={() => invoiceDashboard.resolveLeavePrompt("stay")}>
-                Stay Here
-              </Button> */}
-              <Button
-                variant="ghost"
-                className="h-10 border-[var(--ds-border)] px-4"
-                onClick={() => invoiceDashboard.resolveLeavePrompt("discard")}
-              >
-                Cancel Changes
-              </Button>
-              <Button  variant="ghost" 
-              
-        className="h-10 px-4 !bg-red-600 !text-white"
-              
-              onClick={() => invoiceDashboard.resolveLeavePrompt("save")}>
-                Save Changes
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

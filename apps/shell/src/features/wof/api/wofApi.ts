@@ -49,6 +49,12 @@ export function updateWofRecord(jobId: string, recordId: string, payload: WofRec
   });
 }
 
+export function deleteWofRecord(jobId: string, recordId: string) {
+  return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}/wof-records/${encodeURIComponent(recordId)}`, {
+    method: "DELETE",
+  });
+}
+
 export function fetchWofFailReasons() {
   return requestJson<any>("/api/wof-fail-reasons");
 }

@@ -37,6 +37,9 @@ type JobDetailContentProps = {
     id: string,
     payload: WofRecordUpdatePayload
   ) => Promise<{ success: boolean; message?: string }>;
+  onDeleteWofRecord?: (
+    id: string
+  ) => Promise<{ success: boolean; message?: string }>;
   onCreateWofRecord?: (
     payload: WofRecordUpdatePayload
   ) => Promise<{ success: boolean; message?: string }>;
@@ -113,6 +116,7 @@ export function JobDetailContent({
   onRefreshWof,
   onDeleteWofServer,
   onUpdateWofRecord,
+  onDeleteWofRecord,
   onCreateWofRecord,
   onCreatePartsService,
   onUpdatePartsService,
@@ -168,6 +172,7 @@ export function JobDetailContent({
           onRefreshWof={onRefreshWof}
           onDeleteWofServer={onDeleteWofServer}
           onUpdateWofRecord={onUpdateWofRecord}
+          onDeleteWofRecord={onDeleteWofRecord}
           onCreateWofRecord={onCreateWofRecord}
           onCreatePartsService={onCreatePartsService}
           onUpdatePartsService={onUpdatePartsService}

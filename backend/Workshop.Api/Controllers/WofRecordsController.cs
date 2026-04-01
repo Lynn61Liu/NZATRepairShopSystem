@@ -50,6 +50,13 @@ public class WofRecordsController : ControllerBase
         return ToActionResult(result);
     }
 
+    [HttpDelete("wof-records/{recordId:long}")]
+    public async Task<IActionResult> DeleteWofRecord(long id, long recordId, CancellationToken ct)
+    {
+        var result = await _wofService.DeleteWofRecord(id, recordId, ct);
+        return ToActionResult(result);
+    }
+
     [HttpGet("wof-records/{recordId:long}/print")]
     public async Task<IActionResult> PrintWofRecord(long id, long recordId, CancellationToken ct)
     {

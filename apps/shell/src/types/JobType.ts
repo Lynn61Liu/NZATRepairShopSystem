@@ -32,6 +32,7 @@ export type TimeRange = "" | "week" | "lastWeek" | "month" | "custom";
 export type JobsFilters = {
   search: string;
   jobType: "" | JobStatus;
+  wofStatus: "" | "Todo" | "Recorded" | "Printed";
   timeRange: TimeRange;
   startDate: string; // yyyy-mm-dd (input date)
   endDate: string;   // yyyy-mm-dd

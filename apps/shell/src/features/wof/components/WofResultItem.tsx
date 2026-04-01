@@ -8,6 +8,7 @@ import { buildWofPayload, createEmptyWofFormState, toWofFormState, type WofFormS
 import { FieldRow } from "./FieldRow";
 import { useTemplatePrinter } from "@/features/printing/useTemplatePrinter";
 import type { WofPrintData } from "@/features/printing/wofPrint";
+import { Trash2 } from "lucide-react";
 
 export type WofPrintContext = {
   jobId?: string;
@@ -25,6 +26,7 @@ type WofResultItemProps = {
   record: WofCheckItem;
   printContext?: WofPrintContext;
   onUpdate?: (id: string, payload: WofRecordUpdatePayload) => Promise<{ success: boolean; message?: string }>;
+  onDelete?: (id: string) => Promise<{ success: boolean; message?: string }>;
   failReasons?: WofFailReason[];
   isDraft?: boolean;
   onCreate?: (payload: WofRecordUpdatePayload) => Promise<{ success: boolean; message?: string }>;
@@ -124,6 +126,7 @@ export function WofResultItem({
   record,
   printContext,
   onUpdate,
+  onDelete,
   failReasons = [],
   isDraft,
   onCreate,
@@ -135,6 +138,7 @@ export function WofResultItem({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [failReasonQuery, setFailReasonQuery] = useState("");
   const [selectedFailReason, setSelectedFailReason] = useState("");
   const { printTemplate } = useTemplatePrinter({
@@ -267,6 +271,26 @@ export function WofResultItem({
     toast.success("已发送打印任务");
   };
 
+  const handleDelete = async () => {
+    if (isDraft || !onDelete) return;
+    if (!window.confirm("确定删除这条 WOF 记录？")) return;
+
+    setDeleting(true);
+    setMessage(null);
+    setError(null);
+    const response = await onDelete(record.id);
+    setDeleting(false);
+
+    if (response.success) {
+      toast.success(response.message || "删除成功");
+      return;
+    }
+
+    const nextMessage = response.message || "删除失败";
+    setError(nextMessage);
+    toast.error(nextMessage);
+  };
+
   return (
     <div className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 transition-colors">
       <div className="flex items-start justify-between">
@@ -315,6 +339,19 @@ export function WofResultItem({
                 {editing ? "取消" : "修改"}
               </Button>
             )}
+            {!isDraft ? (
+              <Button
+                variant="ghost"
+                className="text-red-600 hover:bg-red-50"
+                leftIcon={<Trash2 className="h-4 w-4" />}
+                onClick={() => {
+                  void handleDelete();
+                }}
+                disabled={deleting || saving}
+              >
+                删除
+              </Button>
+            ) : null}
             {editing ? (
               <Button variant="primary" onClick={handleSave} disabled={saving}>
                 保存

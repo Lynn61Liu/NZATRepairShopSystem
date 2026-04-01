@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useBlocker } from "react-router-dom";
 import { useToast } from "@/components/ui";
 import { requestJson } from "@/utils/api";
 import { notifyPoDashboardRefresh } from "@/utils/refreshSignals";
@@ -278,8 +277,6 @@ type InvoiceSnapshot = {
   items: InvoiceItem[];
 };
 
-type LeavePromptDecision = "save" | "discard" | "stay";
-
 function mapExternalStatus(status?: string | null): InvoiceDashboardState["status"] {
   const normalized = status?.trim().toUpperCase();
   switch (normalized) {
@@ -462,10 +459,8 @@ export function useInvoiceDashboardState({
   const [itemCatalogLastUpdated, setItemCatalogLastUpdated] = useState<string | null>(null);
   const [itemsDirty, setItemsDirty] = useState(!persistedInvoice);
   const [draftDirty, setDraftDirty] = useState(false);
-  const [draftSaving, setDraftSaving] = useState(false);
   const [refreshingFromXero, setRefreshingFromXero] = useState(false);
   const [updatingXeroState, setUpdatingXeroState] = useState(false);
-  const [leavePromptOpen, setLeavePromptOpen] = useState(false);
   const [pendingFocusRowId, setPendingFocusRowId] = useState<string | null>(null);
   const [manualPoNumber, setManualPoNumber] = useState("");
   const [poPanelLoading, setPoPanelLoading] = useState(true);
@@ -474,7 +469,6 @@ export function useInvoiceDashboardState({
   const [merchantRecipientsLoading, setMerchantRecipientsLoading] = useState(true);
   const [savedPoNumber, setSavedPoNumber] = useState(persistedPoNumber?.trim() || "");
   const [savedInvoiceReference, setSavedInvoiceReference] = useState(persistedInvoiceReference?.trim() || "");
-  const blocker = useBlocker(draftDirty || itemsDirty);
   const timelineRef = useRef<EmailTimelineEvent[]>([]);
   const selectedDetectionIdRef = useRef<string | null>(null);
   const poPanelInitializedRef = useRef(false);
@@ -484,7 +478,6 @@ export function useInvoiceDashboardState({
     invoice: initialInvoiceState,
     items: parsePersistedItems(persistedInvoice),
   });
-  const leavePromptResolverRef = useRef<((decision: LeavePromptDecision) => void) | null>(null);
   const resolvedCorrelationId = useMemo(() => buildCorrelationId(jobId, vehicle), [jobId, vehicle]);
   const subtotal = useMemo(
     () => items.reduce((sum, item) => sum + getBaseAmount(item, invoice.amountsAre), 0),
@@ -586,18 +579,6 @@ export function useInvoiceDashboardState({
     setPendingFocusRowId(null);
   };
 
-  const requestLeaveDecision = () =>
-    new Promise<LeavePromptDecision>((resolve) => {
-      leavePromptResolverRef.current = resolve;
-      setLeavePromptOpen(true);
-    });
-
-  const resolveLeavePrompt = (decision: LeavePromptDecision) => {
-    setLeavePromptOpen(false);
-    leavePromptResolverRef.current?.(decision);
-    leavePromptResolverRef.current = null;
-  };
-
   const persistDraftToDb = async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!jobId) return true;
     if (isSystemLocked(invoice.xeroStatus)) {
@@ -605,45 +586,28 @@ export function useInvoiceDashboardState({
       return false;
     }
 
-    setDraftSaving(true);
-    try {
-      const res = await saveJobInvoiceDraft(jobId, buildDraftPayload());
-      if (!res.ok) {
-        if (!silent) toast.error(res.error || "Failed to save invoice draft");
-        return false;
-      }
-
-      const savedInvoice = res.data?.invoice;
-      setSourceInvoice(savedInvoice ?? sourceInvoice ?? persistedInvoice);
-      setInvoice((prev) => ({
-        ...prev,
-        reference: savedInvoice?.reference || prev.reference,
-        invoiceNote: savedInvoice?.invoiceNote ?? "",
-        amountsAre: savedInvoice ? mapLineAmountTypes(savedInvoice.lineAmountTypes) : prev.amountsAre,
-        issueDate: savedInvoice?.invoiceDate || prev.issueDate,
-        invoiceNumber: savedInvoice?.externalInvoiceNumber || prev.invoiceNumber,
-        xeroInvoiceId: savedInvoice?.externalInvoiceId || prev.xeroInvoiceId,
-        xeroStatus: mapXeroStatus(savedInvoice?.externalStatus) || prev.xeroStatus,
-        latestPaymentMethod: savedInvoice?.latestPayment?.method || prev.latestPaymentMethod,
-        latestPaymentReference: savedInvoice?.latestPayment?.reference || prev.latestPaymentReference,
-      }));
-      setDraftDirty(false);
-      return true;
-    } finally {
-      setDraftSaving(false);
+    const res = await saveJobInvoiceDraft(jobId, buildDraftPayload());
+    if (!res.ok) {
+      if (!silent) toast.error(res.error || "Failed to save invoice draft");
+      return false;
     }
-  };
 
-  const confirmSaveBeforeLeaving = async () => {
-    if (!draftDirty && !itemsDirty) return true;
-    const decision = await requestLeaveDecision();
-    if (decision === "stay") return false;
-    if (decision === "discard") {
-      const reverted = await discardChanges({ silent: true });
-      return reverted;
-    }
-    if (!draftDirty) return true;
-    return await persistDraftToDb();
+    const savedInvoice = res.data?.invoice;
+    setSourceInvoice(savedInvoice ?? sourceInvoice ?? persistedInvoice);
+    setInvoice((prev) => ({
+      ...prev,
+      reference: savedInvoice?.reference || prev.reference,
+      invoiceNote: savedInvoice?.invoiceNote ?? "",
+      amountsAre: savedInvoice ? mapLineAmountTypes(savedInvoice.lineAmountTypes) : prev.amountsAre,
+      issueDate: savedInvoice?.invoiceDate || prev.issueDate,
+      invoiceNumber: savedInvoice?.externalInvoiceNumber || prev.invoiceNumber,
+      xeroInvoiceId: savedInvoice?.externalInvoiceId || prev.xeroInvoiceId,
+      xeroStatus: mapXeroStatus(savedInvoice?.externalStatus) || prev.xeroStatus,
+      latestPaymentMethod: savedInvoice?.latestPayment?.method || prev.latestPaymentMethod,
+      latestPaymentReference: savedInvoice?.latestPayment?.reference || prev.latestPaymentReference,
+    }));
+    setDraftDirty(false);
+    return true;
   };
 
   const discardChanges = async ({ silent = false }: { silent?: boolean } = {}) => {
@@ -655,36 +619,31 @@ export function useInvoiceDashboardState({
       return true;
     }
 
-    setDraftSaving(true);
-    try {
-      const res = await saveJobInvoiceDraft(jobId, {
-        lineAmountTypes: mapAmountsAreToLineAmountTypes(snapshot.invoice.amountsAre),
-        date: snapshot.invoice.issueDate || new Date().toISOString().slice(0, 10),
-        reference: snapshot.invoice.reference,
-        contactName: snapshot.invoice.contact,
-        invoiceNote: snapshot.invoice.invoiceNote,
-        lineItems: snapshot.items.map((item) => ({
-          description: item.description,
-          quantity: item.quantity,
-          unitAmount: item.unitPrice,
-          itemCode: item.itemCode || undefined,
-          accountCode: item.account || undefined,
-          taxType: item.taxRate,
-          discountRate: item.discount > 0 ? item.discount : undefined,
-        })),
-      });
+    const res = await saveJobInvoiceDraft(jobId, {
+      lineAmountTypes: mapAmountsAreToLineAmountTypes(snapshot.invoice.amountsAre),
+      date: snapshot.invoice.issueDate || new Date().toISOString().slice(0, 10),
+      reference: snapshot.invoice.reference,
+      contactName: snapshot.invoice.contact,
+      invoiceNote: snapshot.invoice.invoiceNote,
+      lineItems: snapshot.items.map((item) => ({
+        description: item.description,
+        quantity: item.quantity,
+        unitAmount: item.unitPrice,
+        itemCode: item.itemCode || undefined,
+        accountCode: item.account || undefined,
+        taxType: item.taxRate,
+        discountRate: item.discount > 0 ? item.discount : undefined,
+      })),
+    });
 
-      if (!res.ok) {
-        if (!silent) toast.error(res.error || "Failed to discard invoice changes");
-        return false;
-      }
-
-      applySnapshot(snapshot);
-      if (!silent) toast.info("Invoice changes discarded");
-      return true;
-    } finally {
-      setDraftSaving(false);
+    if (!res.ok) {
+      if (!silent) toast.error(res.error || "Failed to discard invoice changes");
+      return false;
     }
+
+    applySnapshot(snapshot);
+    if (!silent) toast.info("Invoice changes discarded");
+    return true;
   };
 
   const updateItem = (id: string, field: keyof InvoiceItem, value: string) => {
@@ -1349,17 +1308,6 @@ export function useInvoiceDashboardState({
   }, [draftDirty, itemsDirty, invoice, items]);
 
   useEffect(() => {
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!draftDirty && !itemsDirty && !draftSaving) return;
-      event.preventDefault();
-      event.returnValue = "";
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [draftDirty, itemsDirty, draftSaving]);
-
-  useEffect(() => {
     setSavedPoNumber(persistedPoNumber?.trim() || "");
     setSavedInvoiceReference(persistedInvoiceReference?.trim() || "");
   }, [persistedPoNumber, persistedInvoiceReference]);
@@ -1644,25 +1592,6 @@ export function useInvoiceDashboardState({
     };
   }, [customer, persistedInvoice, vehicle]);
 
-  useEffect(() => {
-    if (blocker.state !== "blocked") return;
-    let cancelled = false;
-
-    void (async () => {
-      const shouldProceed = await confirmSaveBeforeLeaving();
-      if (cancelled) return;
-      if (shouldProceed) {
-        blocker.proceed();
-      } else {
-        blocker.reset();
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [blocker]);
-
   const updateXeroState = async (
     state: XeroStateOption,
     options?: {
@@ -1738,7 +1667,6 @@ export function useInvoiceDashboardState({
     itemCatalogLastUpdated,
     itemsDirty,
     draftDirty,
-    leavePromptOpen,
     refreshingFromXero,
     updatingXeroState,
     referencePreview,
@@ -1768,8 +1696,6 @@ export function useInvoiceDashboardState({
     refreshFromXero,
     openInXero,
     saveReference,
-    confirmSaveBeforeLeaving,
-    resolveLeavePrompt,
     refreshItemCatalog,
     sendPoRequest,
     sendReminderNow,
