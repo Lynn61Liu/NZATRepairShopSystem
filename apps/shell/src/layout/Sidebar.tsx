@@ -46,7 +46,9 @@ export function Sidebar() {
     const load = async () => {
       const res = await requestJson<{ jobs?: Array<unknown> }>("/api/jobs/wof-schedule");
       if (!res.ok || cancelled) return;
-      const count = Array.isArray(res.data?.jobs) ? res.data.jobs.length : 0;
+      const count = Array.isArray(res.data?.jobs)
+        ? res.data.jobs.filter((job: any) => job?.wofStatus === "Todo" || job?.wofStatus === "Checked").length
+        : 0;
       setWofTodoCount(count);
     };
 

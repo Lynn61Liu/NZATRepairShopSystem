@@ -12,7 +12,7 @@ export type JobsTableProps = {
   onArchive: (id: string) => void | Promise<void>;
   onDelete: (id: string) => void | Promise<void>;
   onUpdateCreatedAt: (id: string, date: string) => boolean | Promise<boolean>;
-  onUpdatePaintStatus: (id: string, stageIndex: number) => boolean | Promise<boolean>;
+  onUpdatePaintStatus?: (id: string, stageIndex: number) => boolean | Promise<boolean>;
   onPrintMech: (id: string) => void | Promise<void>;
   onPrintPaint: (id: string) => void | Promise<void>;
 };
@@ -98,10 +98,10 @@ function PaintStatusSelect({
   onChange,
 }: {
   row: JobRow;
-  onChange: (stageIndex: number) => void | Promise<void>;
+  onChange?: (stageIndex: number) => boolean | Promise<boolean>;
 }) {
   const currentValue = getPaintStageValue(row);
-  if (currentValue === null) {
+  if (currentValue === null || !onChange) {
     return <span className="text-xs text-[rgba(0,0,0,0.35)]">—</span>;
   }
 
@@ -402,7 +402,7 @@ export function JobsTable({
                 <div className="flex justify-center"><WofStatusPill status={r.wofStatus} /></div>
                 <div className="flex justify-center"><ProgressRing value={r.mechPct} /></div>
                 <div className="flex justify-center">
-                  <PaintStatusSelect row={r} onChange={(stageIndex) => onUpdatePaintStatus(r.id, stageIndex)} />
+                  <PaintStatusSelect row={r} onChange={onUpdatePaintStatus ? (stageIndex) => onUpdatePaintStatus(r.id, stageIndex) : undefined} />
                 </div>
 
                 <div className="flex justify-center gap-1 ">

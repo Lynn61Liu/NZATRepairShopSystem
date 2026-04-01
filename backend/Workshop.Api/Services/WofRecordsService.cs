@@ -336,11 +336,20 @@ public class WofRecordsService
             CreatedAt = now,
             UpdatedAt = now,
         });
-        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (job is not null)
+        var existingState = await _db.JobWofStates.FirstOrDefaultAsync(x => x.JobId == id, ct);
+        if (existingState is null)
         {
-            job.WofManualStatus = null;
-            job.UpdatedAt = now;
+            _db.JobWofStates.Add(new JobWofState
+            {
+                JobId = id,
+                ManualStatus = null,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+        }
+        else
+        {
+            existingState.UpdatedAt = now;
         }
 
         var linkedDraftExists = await _db.JobInvoices.AsNoTracking()
@@ -378,8 +387,8 @@ public class WofRecordsService
 
     public async Task<WofServiceResult> UpdateWofStatus(long jobId, string? status, CancellationToken ct)
     {
-        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == jobId, ct);
-        if (job is null)
+        var jobExists = await _db.Jobs.AsNoTracking().AnyAsync(x => x.Id == jobId, ct);
+        if (!jobExists)
             return WofServiceResult.NotFound("Job not found.");
 
         var hasWofService = await (
@@ -400,16 +409,28 @@ public class WofRecordsService
             return WofServiceResult.BadRequest("WOF status must be Todo or Checked.");
         }
 
-        job.WofManualStatus = string.Equals(normalized, "Checked", StringComparison.OrdinalIgnoreCase)
+        var now = DateTime.UtcNow;
+        var state = await _db.JobWofStates.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (state is null)
+        {
+            state = new JobWofState
+            {
+                JobId = jobId,
+                CreatedAt = now,
+            };
+            _db.JobWofStates.Add(state);
+        }
+
+        state.ManualStatus = string.Equals(normalized, "Checked", StringComparison.OrdinalIgnoreCase)
             ? "Checked"
             : null;
-        job.UpdatedAt = DateTime.UtcNow;
+        state.UpdatedAt = now;
         await _db.SaveChangesAsync(ct);
 
         return WofServiceResult.Ok(new
         {
             success = true,
-            wofStatus = job.WofManualStatus is null ? "Todo" : "Checked"
+            wofStatus = state.ManualStatus is null ? "Todo" : "Checked"
         });
     }
 
@@ -800,12 +821,9 @@ public class WofRecordsService
             .Where(x => x.JobId == id && wofCatalogItemIds.Contains(x.ServiceCatalogItemId))
             .ExecuteDeleteAsync(ct);
 
-        var clearStatusAt = DateTime.UtcNow;
-        await _db.Jobs
-            .Where(x => x.Id == id)
-            .ExecuteUpdateAsync(setters => setters
-                .SetProperty(x => x.WofManualStatus, (string?)null)
-                .SetProperty(x => x.UpdatedAt, clearStatusAt), ct);
+        await _db.JobWofStates
+            .Where(x => x.JobId == id)
+            .ExecuteDeleteAsync(ct);
 
         var xeroSyncQueued = false;
         if (linkedDraftExists && removedSelections.Count > 0)

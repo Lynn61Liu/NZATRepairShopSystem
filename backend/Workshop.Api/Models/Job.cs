@@ -9,7 +9,6 @@ public class Job
     public bool UseServiceCatalogMapping { get; set; }
     public string? PoNumber { get; set; }
     public string? InvoiceReference { get; set; }
-    public string? WofManualStatus { get; set; }
     public long? VehicleId { get; set; }
     public Vehicle? Vehicle { get; set; }
     public long? CustomerId { get; set; }

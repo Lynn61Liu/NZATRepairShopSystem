@@ -22,6 +22,7 @@ public class AppDbContext : DbContext
     public DbSet<ServiceCatalogItem> ServiceCatalogItems => Set<ServiceCatalogItem>();
     public DbSet<SystemSyncState> SystemSyncStates => Set<SystemSyncState>();
     public DbSet<JobPoState> JobPoStates => Set<JobPoState>();
+    public DbSet<JobWofState> JobWofStates => Set<JobWofState>();
     public DbSet<Tag> Tags => Set<Tag>();
     public DbSet<JobTag> JobTags => Set<JobTag>();
 
@@ -222,7 +223,6 @@ public class AppDbContext : DbContext
         j.Property(x => x.UseServiceCatalogMapping).HasColumnName("use_service_catalog_mapping").HasDefaultValue(false);
         j.Property(x => x.PoNumber).HasColumnName("po_number");
         j.Property(x => x.InvoiceReference).HasColumnName("invoice_reference");
-        j.Property(x => x.WofManualStatus).HasColumnName("wof_manual_status");
         j.Property(x => x.VehicleId).HasColumnName("vehicle_id");
         j.Property(x => x.CustomerId).HasColumnName("customer_id");
         j.Property(x => x.Notes).HasColumnName("notes");
@@ -236,6 +236,17 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(x => x.CustomerId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        var jws = modelBuilder.Entity<JobWofState>();
+        jws.ToTable("job_wof_state");
+        jws.HasKey(x => x.Id);
+        jws.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        jws.Property(x => x.JobId).HasColumnName("job_id").IsRequired();
+        jws.Property(x => x.ManualStatus).HasColumnName("manual_status");
+        jws.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        jws.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        jws.HasIndex(x => x.JobId).IsUnique().HasDatabaseName("ux_job_wof_state_job_id");
+        jws.HasOne<Job>().WithMany().HasForeignKey(x => x.JobId).OnDelete(DeleteBehavior.Cascade);
 
         var ji = modelBuilder.Entity<JobInvoice>();
         ji.ToTable("job_invoices");
