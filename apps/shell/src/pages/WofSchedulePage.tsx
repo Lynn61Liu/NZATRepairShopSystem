@@ -7,6 +7,7 @@ import { Button, Card, EmptyState, useToast } from "@/components/ui";
 import { withApiBase } from "@/utils/api";
 import { formatNzDateTime, parseTimestamp } from "@/utils/date";
 import { useRef } from "react";
+import { updateWofStatus as apiUpdateWofStatus } from "@/features/wof/api/wofApi";
 
 const STORAGE_KEY = "wof:schedule:placements:v1";
 const DRAG_TYPE = "wof-job-card";
@@ -24,6 +25,7 @@ type WofScheduleJob = {
   wofExpiry: string;
   inShopDateTime: string;
   status: string;
+  wofStatus?: "Todo" | "Checked" | "Recorded" | null;
 };
 
 type Placement =
@@ -146,11 +148,84 @@ function openNztaAndCopyVin(vin: string, toast: ReturnType<typeof useToast>) {
   navigator.clipboard.writeText(vin.trim())
     .then(() => {
       toast.success("VIN copied. Opening NZTA.");
-      window.open("https://www.nzta.govt.nz/", "_blank", "noopener,noreferrer");
+      window.open("https://vic.nzta.govt.nz/", "_blank", "noopener,noreferrer");
     })
     .catch(() => {
       toast.error("Failed to copy VIN.");
     });
+}
+
+function WofStatusBadge({ status }: { status?: WofScheduleJob["wofStatus"] }) {
+  if (!status) return null;
+
+  const config =
+    status === "Recorded"
+      ? {
+          label: "已录入",
+          bg: "bg-sky-50",
+          bd: "border-sky-200",
+          tx: "text-sky-700",
+        }
+      : status === "Checked"
+        ? {
+            label: "检查完成",
+            bg: "bg-amber-50",
+            bd: "border-amber-200",
+            tx: "text-amber-700",
+          }
+        : {
+            label: "待查",
+            bg: "bg-white",
+            bd: "border-slate-200",
+            tx: "text-slate-700",
+          };
+
+  return (
+    <span
+      className={[
+        "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+        config.bg,
+        config.bd,
+        config.tx,
+      ].join(" ")}
+    >
+      {config.label}
+    </span>
+  );
+}
+
+function getCardTone(status?: WofScheduleJob["wofStatus"]) {
+  if (status === "Checked") {
+    return "border-amber-200 bg-amber-50 hover:border-amber-300";
+  }
+  if (status === "Recorded") {
+    return "border-sky-200 bg-sky-50 hover:border-sky-300";
+  }
+  return "border-slate-200 bg-white hover:border-slate-300";
+}
+
+function WofStatusSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value?: WofScheduleJob["wofStatus"];
+  onChange: (next: "Todo" | "Checked") => void;
+  disabled?: boolean;
+}) {
+  return (
+    <select
+      className="pointer-events-auto h-7 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-medium text-slate-700 shadow-sm outline-none transition focus:border-[var(--ds-primary)]"
+      value={value === "Checked" ? "Checked" : "Todo"}
+      onChange={(e) => onChange(e.target.value as "Todo" | "Checked")}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      disabled={disabled}
+    >
+      <option value="Todo">待查</option>
+      <option value="Checked">检查完成</option>
+    </select>
+  );
 }
 
 function WofJobCard({
@@ -158,11 +233,15 @@ function WofJobCard({
   compact = false,
   showNztaAction = false,
   onNzta,
+  onStatusChange,
+  statusUpdating = false,
 }: {
   job: WofScheduleJob;
   compact?: boolean;
   showNztaAction?: boolean;
   onNzta?: () => void;
+  onStatusChange?: (next: "Todo" | "Checked") => void;
+  statusUpdating?: boolean;
 }) {
   const dragRef = useRef<HTMLDivElement | null>(null);
   const [{ isDragging }, drag] = useDrag(() => ({
@@ -173,6 +252,7 @@ function WofJobCard({
     }),
   }), [job.jobId]);
   drag(dragRef);
+  const tone = getCardTone(job.wofStatus);
 
   return (
     <div
@@ -183,9 +263,10 @@ function WofJobCard({
           : undefined
       }
       className={[
-        "group relative rounded-xl border border-slate-200 bg-white shadow-sm transition",
+        "group relative rounded-xl border shadow-sm transition",
         "cursor-grab active:cursor-grabbing",
         compact ? "space-y-1 p-2" : "space-y-3 p-3",
+        tone,
         isDragging ? "opacity-45" : "opacity-100",
       ].join(" ")}
     >
@@ -202,6 +283,7 @@ function WofJobCard({
                   >
                     #{job.jobId}
                   </Link>
+                  <WofStatusBadge status={job.wofStatus} />
                 </div>
                 <div className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
                   {getInShopDaysLabel(job.inShopDateTime)}
@@ -221,12 +303,19 @@ function WofJobCard({
                 >
                   #{job.jobId}
                 </Link>
+                <WofStatusBadge status={job.wofStatus} />
               </div>
               <div className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
                 {getInShopDaysLabel(job.inShopDateTime)}
               </div>
             </div>
             <div className="mt-0.5 text-xs text-slate-500">{formatVehicleLabel(job)}</div>
+            {onStatusChange ? (
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <div className="text-[11px] font-medium text-slate-500">状态</div>
+                <WofStatusSelect value={job.wofStatus} onChange={onStatusChange} disabled={statusUpdating} />
+              </div>
+            ) : null}
             <dl className="mt-3 grid gap-2 text-xs text-slate-600">
               <div className="flex items-start justify-between gap-3">
                 <dt className="font-medium text-slate-500">VIN</dt>
@@ -252,6 +341,7 @@ function WofJobCard({
                   >
                     #{job.jobId}
                   </Link>
+                  <WofStatusBadge status={job.wofStatus} />
                 </div>
                 <div className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
                   {getInShopDaysLabel(job.inShopDateTime)}
@@ -272,6 +362,9 @@ function WofJobCard({
             </div>
           </dl>
           <div className="flex items-center justify-end gap-2 pt-1">
+            {onStatusChange ? (
+              <WofStatusSelect value={job.wofStatus} onChange={onStatusChange} disabled={statusUpdating} />
+            ) : null}
             {showNztaAction ? (
               <Button
                 variant="ghost"
@@ -351,6 +444,8 @@ function ScheduleSlot({
   showCurrentLine,
   currentLineOffsetPct,
   onNzta,
+  onStatusChange,
+  statusUpdatingId,
 }: {
   slotKey: string;
   hour: number;
@@ -359,6 +454,8 @@ function ScheduleSlot({
   showCurrentLine: boolean;
   currentLineOffsetPct: number;
   onNzta: (job: WofScheduleJob) => void;
+  onStatusChange: (jobId: string, next: "Todo" | "Checked") => void;
+  statusUpdatingId?: string | null;
 }) {
   const dropRef = useRef<HTMLDivElement | null>(null);
   const [{ isOver }, drop] = useDrop<DragItem, void, { isOver: boolean }>(() => ({
@@ -383,7 +480,15 @@ function ScheduleSlot({
       </div>
       <div className="h-[calc(100%-24px)] space-y-1 overflow-y-auto pr-1">
         {jobs.map((job) => (
-          <WofJobCard key={job.jobId} job={job} compact showNztaAction={false} onNzta={() => onNzta(job)} />
+          <WofJobCard
+            key={job.jobId}
+            job={job}
+            compact
+            showNztaAction={false}
+            onNzta={() => onNzta(job)}
+            onStatusChange={(next) => onStatusChange(job.jobId, next)}
+            statusUpdating={statusUpdatingId === job.jobId}
+          />
         ))}
       </div>
       {showCurrentLine ? (
@@ -411,6 +516,7 @@ export function WofSchedulePage() {
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [weekOffset, setWeekOffset] = useState(0);
+  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
 
   const workingDays = useMemo(() => buildWorkingDays(weekOffset), [weekOffset]);
 
@@ -472,17 +578,34 @@ export function WofSchedulePage() {
     }
   }, [loadJobs, toast]);
 
+  const handleStatusChange = useCallback(async (jobId: string, next: "Todo" | "Checked") => {
+    setStatusUpdatingId(jobId);
+    try {
+      const res = await apiUpdateWofStatus(jobId, next);
+      if (!res.ok) {
+        throw new Error(res.error || "Failed to update WOF status.");
+      }
+      setJobs((prev) =>
+        prev.map((job) =>
+          job.jobId === jobId
+            ? {
+                ...job,
+                wofStatus: next,
+              }
+            : job
+        )
+      );
+      toast.success(next === "Checked" ? "WOF 状态已改为检查完成" : "WOF 状态已改为待查");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update WOF status.");
+    } finally {
+      setStatusUpdatingId(null);
+    }
+  }, [toast]);
+
   const moveToBacklog = useCallback((jobId: string) => {
     setPlacements((prev) => {
       const next = { ...prev, [jobId]: { kind: "backlog" } as Placement };
-      savePlacements(next);
-      return next;
-    });
-  }, []);
-
-  const moveToCompleted = useCallback((jobId: string) => {
-    setPlacements((prev) => {
-      const next = { ...prev, [jobId]: { kind: "completed" } as Placement };
       savePlacements(next);
       return next;
     });
@@ -514,14 +637,8 @@ export function WofSchedulePage() {
     () =>
       jobs.filter((job) => {
         const placement = placements[job.jobId];
-        return !placement || placement.kind === "backlog";
+        return !placement || placement.kind === "backlog" || placement.kind === "completed";
       }),
-    [jobs, placements]
-  );
-
-  const completedJobs = useMemo(
-    () =>
-      jobs.filter((job) => placements[job.jobId]?.kind === "completed"),
     [jobs, placements]
   );
 
@@ -567,7 +684,7 @@ export function WofSchedulePage() {
           <div>
             <h1 className="text-2xl font-semibold text-slate-900">WOF 排班表</h1>
             <p className="mt-1 text-sm text-slate-500">
-              Drag WOF jobs from the backlog into the next 7 working days, or move them to completed when done.
+              Drag WOF jobs from the backlog into the next 7 working days and update their inspection status as they move.
             </p>
           </div>
           <Button
@@ -587,15 +704,22 @@ export function WofSchedulePage() {
         {jobs.length === 0 ? (
           <EmptyState message="No active WOF jobs are available for scheduling right now." />
         ) : (
-          <div className="grid min-h-[820px] grid-cols-[320px_minmax(0,1fr)_320px] gap-6">
+          <div className="grid min-h-[820px] grid-cols-[320px_minmax(0,1fr)] gap-6">
             <DropLane
               title="WOF 待办栏"
-              subtitle="Only jobs with WOF status = 代办"
+              subtitle="Only jobs with WOF service and no WOF records yet"
               jobs={backlogJobs}
               onDropJob={moveToBacklog}
             >
               {backlogJobs.map((job) => (
-                <WofJobCard key={job.jobId} job={job} />
+                <WofJobCard
+                  key={job.jobId}
+                  job={job}
+                  onNzta={() => openNztaAndCopyVin(job.vin, toast)}
+                  onStatusChange={(next) => handleStatusChange(job.jobId, next)}
+                  statusUpdating={statusUpdatingId === job.jobId}
+                  showNztaAction
+                />
               ))}
             </DropLane>
 
@@ -606,7 +730,7 @@ export function WofSchedulePage() {
                     <div className="text-sm font-semibold text-slate-900">7 个工作日</div>
                     <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
                       <Clock3 className="h-3.5 w-3.5" />
-                      08:00 - 17:00, one-hour scheduling blocks
+                      08:00 - 18:00, one-hour scheduling blocks
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -660,11 +784,13 @@ export function WofSchedulePage() {
                               slotKey={slotKey}
                               hour={hour}
                               jobs={jobsBySlot.get(slotKey) ?? []}
-                              onDropJob={moveToSlot}
-                              showCurrentLine={showCurrentLine}
-                              currentLineOffsetPct={(currentHours - hour) * 100}
-                              onNzta={(job) => openNztaAndCopyVin(job.vin, toast)}
-                            />
+                            onDropJob={moveToSlot}
+                            showCurrentLine={showCurrentLine}
+                            currentLineOffsetPct={(currentHours - hour) * 100}
+                            onNzta={(job) => openNztaAndCopyVin(job.vin, toast)}
+                            onStatusChange={handleStatusChange}
+                            statusUpdatingId={statusUpdatingId}
+                          />
                           );
                         })}
                       </div>
@@ -673,22 +799,6 @@ export function WofSchedulePage() {
                 </div>
               </div>
             </Card>
-
-            <DropLane
-              title="完成 WOF"
-              subtitle="Drop finished vehicles here"
-              jobs={completedJobs}
-              onDropJob={moveToCompleted}
-            >
-              {completedJobs.map((job) => (
-                <WofJobCard
-                  key={job.jobId}
-                  job={job}
-                  showNztaAction
-                  onNzta={() => openNztaAndCopyVin(job.vin, toast)}
-                />
-              ))}
-            </DropLane>
           </div>
         )}
       </div>

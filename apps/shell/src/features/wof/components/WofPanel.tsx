@@ -8,6 +8,7 @@ import { WofToolbar } from "./WofToolbar";
 export type WofPanelProps = {
   hasRecord: boolean;
   hasService?: boolean;
+  wofStatus?: "Todo" | "Checked" | "Recorded" | null;
   onAdd: () => void;
   records: WofRecord[];
   checkItems?: WofCheckItem[];
@@ -41,6 +42,7 @@ export function WofPanel(props: WofPanelProps) {
   const {
     hasRecord,
     hasService = false,
+    wofStatus,
     onAdd,
     checkItems = [],
     failReasons = [],
@@ -63,12 +65,7 @@ export function WofPanel(props: WofPanelProps) {
   } = props;
   const [showCreate, setShowCreate] = useState(false);
   const hasAnyRenderedWofData = hasRecord || checkItems.length > 0 || props.records.length > 0;
-  const currentWofStatus = getWofStatusLabel({
-    hasService,
-    hasRenderedData: hasAnyRenderedWofData,
-    checkItems,
-    records: props.records,
-  });
+  const currentWofStatus = getWofStatusLabel(wofStatus, hasService, hasAnyRenderedWofData);
 
   const handleOpenNzta = async () => {
     const url = "https://vic.nzta.govt.nz/";
@@ -148,34 +145,26 @@ export function WofPanel(props: WofPanelProps) {
   );
 }
 
-function getWofStatusLabel({
-  hasService,
-  hasRenderedData,
-  checkItems,
-  records,
-}: {
-  hasService: boolean;
-  hasRenderedData: boolean;
-  checkItems: WofCheckItem[];
-  records: WofRecord[];
-}) {
-  const allStates = [...checkItems, ...records]
-    .map((item) => String(item?.wofUiState ?? "").trim())
-    .filter(Boolean);
-
-  if (allStates.includes("Printed")) return "完成打印";
-  if (hasRenderedData) return "有记录";
-  if (hasService) return "代办";
+function getWofStatusLabel(
+  status: WofPanelProps["wofStatus"],
+  hasService: boolean,
+  hasRenderedData: boolean
+) {
+  if (status === "Recorded") return "已录入";
+  if (status === "Checked") return "检查完成";
+  if (status === "Todo") return "待查";
+  if (hasRenderedData) return "已录入";
+  if (hasService) return "待查";
   return null;
 }
 
 function WofStatusBadge({ label }: { label: string }) {
   const className =
-    label === "完成打印"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-      : label === "有记录"
+    label === "已录入"
         ? "border-sky-200 bg-sky-50 text-sky-700"
-        : "border-amber-200 bg-amber-50 text-amber-700";
+        : label === "检查完成"
+          ? "border-amber-200 bg-amber-50 text-amber-700"
+          : "border-slate-200 bg-white text-slate-700";
 
   return (
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${className}`}>

@@ -38,13 +38,6 @@ public class WofPrintService
         var pdfBytes = document.GeneratePdf();
         var fileName = $"wof-{recordId}.pdf";
 
-        if (data.w.WofUiState != WofUiState.Printed)
-        {
-            data.w.WofUiState = WofUiState.Printed;
-            data.w.UpdatedAt = DateTime.UtcNow;
-            await _db.SaveChangesAsync(ct);
-        }
-
         return WofPrintPdfResult.Ok(pdfBytes, fileName);
     }
 

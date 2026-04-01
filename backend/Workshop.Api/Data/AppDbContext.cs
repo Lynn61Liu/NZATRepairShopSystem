@@ -222,6 +222,7 @@ public class AppDbContext : DbContext
         j.Property(x => x.UseServiceCatalogMapping).HasColumnName("use_service_catalog_mapping").HasDefaultValue(false);
         j.Property(x => x.PoNumber).HasColumnName("po_number");
         j.Property(x => x.InvoiceReference).HasColumnName("invoice_reference");
+        j.Property(x => x.WofManualStatus).HasColumnName("wof_manual_status");
         j.Property(x => x.VehicleId).HasColumnName("vehicle_id");
         j.Property(x => x.CustomerId).HasColumnName("customer_id");
         j.Property(x => x.Notes).HasColumnName("notes");

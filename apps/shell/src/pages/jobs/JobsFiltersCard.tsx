@@ -43,9 +43,9 @@ export function JobsFiltersCard({ value, onChange, onReset, tagOptions }: Props)
               onChange={(e) => onChange({ ...value, wofStatus: e.target.value as JobsFilters["wofStatus"] })}
             >
               <option value="">全部</option>
-              <option value="Todo">代办</option>
-              <option value="Recorded">有记录</option>
-              <option value="Printed">完成打印</option>
+              <option value="Todo">待查</option>
+              <option value="Checked">检查完成</option>
+              <option value="Recorded">已录入</option>
             </Select>
           </div>
 

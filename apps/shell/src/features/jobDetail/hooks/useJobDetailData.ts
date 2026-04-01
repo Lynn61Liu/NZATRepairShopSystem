@@ -237,11 +237,11 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
         return { success: false, message: res.error || "保存失败" };
       }
 
-      await refreshWofServer();
+      await Promise.all([refreshWofServer(), refreshJobSummary()]);
       toast.success("保存成功");
       return { success: true, message: "保存成功" };
     },
-    [jobId, refreshWofServer, toast]
+    [jobId, refreshJobSummary, refreshWofServer, toast]
   );
 
   const deleteWofServerForJob = useCallback(async () => {
@@ -374,11 +374,11 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
         return { success: false, message: res.error || "保存失败" };
       }
 
-      await refreshWofServer();
+      await Promise.all([refreshWofServer(), refreshJobSummary()]);
       toast.success("保存成功");
       return { success: true, message: "保存成功" };
     },
-    [jobId, refreshWofServer, toast]
+    [jobId, refreshJobSummary, refreshWofServer, toast]
   );
 
   const updateWofRecordRow = useCallback(
@@ -434,7 +434,7 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
       return { success: false, message: res.error || "导入失败" };
     }
 
-    await refreshWofServer();
+    await Promise.all([refreshWofServer(), refreshJobSummary()]);
     const inserted = Number(res.data?.inserted ?? 0);
     const updated = Number(res.data?.updated ?? 0);
     const skipped = Number(res.data?.skipped ?? 0);
@@ -445,7 +445,7 @@ export function useJobDetailData({ jobId, onDeleted }: UseJobDetailDataArgs) {
       success: true,
       message,
     };
-  }, [jobId, wofLoading, refreshWofServer, toast]);
+  }, [jobId, wofLoading, refreshJobSummary, refreshWofServer, toast]);
 
   const createPartsServiceRow = useCallback(
     async (payload: { description: string; status?: PartsServiceStatus }) => {

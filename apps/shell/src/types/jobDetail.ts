@@ -206,6 +206,7 @@ export type JobDetailData = {
   invoiceReference?: string;
   createdAt?: string;
   hasWofService?: boolean;
+  wofStatus?: "Todo" | "Checked" | "Recorded" | null;
   vehicle: VehicleInfo;
   customer: CustomerInfo;
   invoice?: JobInvoiceData | null;

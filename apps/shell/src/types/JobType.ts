@@ -16,9 +16,11 @@ export type JobRow = {
   plate: string;
   vehicleModel: string;
   wofPct: number | null;
-  wofStatus?: "Todo" | "Recorded" | "Printed" | null;
+  wofStatus?: "Todo" | "Checked" | "Recorded" | null;
   mechPct: number | null;
   paintPct: number | null;
+  paintStatus?: string | null;
+  paintCurrentStage?: number | null;
   customerName: string;
   customerCode?: string;
   customerPhone: string;
@@ -32,7 +34,7 @@ export type TimeRange = "" | "week" | "lastWeek" | "month" | "custom";
 export type JobsFilters = {
   search: string;
   jobType: "" | JobStatus;
-  wofStatus: "" | "Todo" | "Recorded" | "Printed";
+  wofStatus: "" | "Todo" | "Checked" | "Recorded";
   timeRange: TimeRange;
   startDate: string; // yyyy-mm-dd (input date)
   endDate: string;   // yyyy-mm-dd

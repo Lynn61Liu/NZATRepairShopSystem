@@ -336,6 +336,12 @@ public class WofRecordsService
             CreatedAt = now,
             UpdatedAt = now,
         });
+        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (job is not null)
+        {
+            job.WofManualStatus = null;
+            job.UpdatedAt = now;
+        }
 
         var linkedDraftExists = await _db.JobInvoices.AsNoTracking()
             .AnyAsync(
@@ -367,6 +373,43 @@ public class WofRecordsService
             alreadyExists = false,
             serviceCatalogItemId = selectedItem.Id,
             xeroSyncQueued = linkedDraftExists
+        });
+    }
+
+    public async Task<WofServiceResult> UpdateWofStatus(long jobId, string? status, CancellationToken ct)
+    {
+        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == jobId, ct);
+        if (job is null)
+            return WofServiceResult.NotFound("Job not found.");
+
+        var hasWofService = await (
+                from selection in _db.JobServiceSelections.AsNoTracking()
+                join catalogItem in _db.ServiceCatalogItems.AsNoTracking() on selection.ServiceCatalogItemId equals catalogItem.Id
+                where selection.JobId == jobId && catalogItem.ServiceType == "wof"
+                select selection.Id
+            )
+            .AnyAsync(ct);
+
+        if (!hasWofService)
+            return WofServiceResult.BadRequest("This job does not have a WOF service.");
+
+        var normalized = string.IsNullOrWhiteSpace(status) ? "Todo" : status.Trim();
+        if (!string.Equals(normalized, "Todo", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(normalized, "Checked", StringComparison.OrdinalIgnoreCase))
+        {
+            return WofServiceResult.BadRequest("WOF status must be Todo or Checked.");
+        }
+
+        job.WofManualStatus = string.Equals(normalized, "Checked", StringComparison.OrdinalIgnoreCase)
+            ? "Checked"
+            : null;
+        job.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return WofServiceResult.Ok(new
+        {
+            success = true,
+            wofStatus = job.WofManualStatus is null ? "Todo" : "Checked"
         });
     }
 
@@ -689,7 +732,7 @@ public class WofRecordsService
 
         var parsedUiState = ParseUiState(request.WofUiState);
         if (!string.IsNullOrWhiteSpace(request.WofUiState) && parsedUiState is null)
-            return WofServiceResult.BadRequest("WofUiState must be Pass, Fail, Recheck or Printed.");
+            return WofServiceResult.BadRequest("WofUiState must be Pass, Fail or Recheck.");
         var uiState = parsedUiState ?? MapUiState(recordState.Value);
 
         record.OccurredAt = EnsureUtc(occurredAt.Value);
@@ -756,6 +799,13 @@ public class WofRecordsService
         var deletedSelections = await _db.JobServiceSelections
             .Where(x => x.JobId == id && wofCatalogItemIds.Contains(x.ServiceCatalogItemId))
             .ExecuteDeleteAsync(ct);
+
+        var clearStatusAt = DateTime.UtcNow;
+        await _db.Jobs
+            .Where(x => x.Id == id)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.WofManualStatus, (string?)null)
+                .SetProperty(x => x.UpdatedAt, clearStatusAt), ct);
 
         var xeroSyncQueued = false;
         if (linkedDraftExists && removedSelections.Count > 0)
@@ -840,7 +890,7 @@ public class WofRecordsService
 
         var parsedUiState = ParseUiState(request.WofUiState);
         if (!string.IsNullOrWhiteSpace(request.WofUiState) && parsedUiState is null)
-            return WofServiceResult.BadRequest("WofUiState must be Pass, Fail, Recheck or Printed.");
+            return WofServiceResult.BadRequest("WofUiState must be Pass, Fail or Recheck.");
         var uiState = parsedUiState ?? MapUiState(recordState.Value);
 
         var now = DateTime.UtcNow;

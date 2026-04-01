@@ -84,6 +84,15 @@ public class WofRecordsController : ControllerBase
         return ToActionResult(result);
     }
 
+    public record UpdateWofStatusRequest(string? Status);
+
+    [HttpPut("wof-status")]
+    public async Task<IActionResult> UpdateWofStatus(long id, [FromBody] UpdateWofStatusRequest? request, CancellationToken ct)
+    {
+        var result = await _wofService.UpdateWofStatus(id, request?.Status, ct);
+        return ToActionResult(result);
+    }
+
     public record CreateWofResultRequest(string Result, string? RecheckExpiryDate, long? FailReasonId, string? Note);
 
     [HttpPost("wof-results")]

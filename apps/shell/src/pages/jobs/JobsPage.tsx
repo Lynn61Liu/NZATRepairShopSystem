@@ -22,7 +22,7 @@ import {
   updateJobStatus,
   updateJobTags,
 } from "@/features/jobDetail/api/jobDetailApi";
-import { fetchPaintService } from "@/features/paint/api/paintApi";
+import { fetchPaintService, updatePaintStage } from "@/features/paint/api/paintApi";
 import { parseTimestamp } from "@/utils/date";
 
 export function JobsPage() {
@@ -311,6 +311,33 @@ export function JobsPage() {
     [setAllRows, toast]
   );
 
+  const handleUpdatePaintStatus = useCallback(
+    async (id: string, stageIndex: number) => {
+      const res = await updatePaintStage(id, stageIndex);
+      if (!res.ok) {
+        setLoadError(res.error || "更新喷漆状态失败");
+        toast.error(res.error || "更新喷漆状态失败");
+        return false;
+      }
+
+      setAllRows((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                paintStatus: res.data?.status ?? item.paintStatus,
+                paintCurrentStage:
+                  typeof res.data?.currentStage === "number" ? Number(res.data.currentStage) : item.paintCurrentStage,
+              }
+            : item
+        )
+      );
+      toast.success("喷漆状态已更新");
+      return true;
+    },
+    [setAllRows, toast]
+  );
+
   const resolveJobSheetData = useCallback(
     async (id: string) => {
       const jobRes = await fetchJob(id);
@@ -403,6 +430,7 @@ export function JobsPage() {
               onArchive={handleArchive}
               onDelete={handleDelete}
               onUpdateCreatedAt={handleUpdateCreatedAt}
+              onUpdatePaintStatus={handleUpdatePaintStatus}
               onPrintMech={handlePrintMech}
               onPrintPaint={handlePrintPaint}
             />

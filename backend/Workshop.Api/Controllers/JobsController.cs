@@ -53,9 +53,12 @@ public class JobsController : ControllerBase
                     j.Status,
                     j.IsUrgent,
                     j.NeedsPo,
+                    j.WofManualStatus,
                     j.CreatedAt,
                     j.Notes,
                     ExternalInvoiceId = ji != null ? ji.ExternalInvoiceId : null,
+                    PaintStatus = p != null ? p.Status : null,
+                    PaintCurrentStage = p != null ? (int?)p.CurrentStage : null,
                     PaintPanels = (int?)p.Panels,
                     HasWofService = (
                         from selection in _db.JobServiceSelections.AsNoTracking()
@@ -87,10 +90,12 @@ public class JobsController : ControllerBase
             wofPct = (int?)null,
             mechPct = (int?)null,
             paintPct = (int?)null,
+            paintStatus = r.PaintStatus,
+            paintCurrentStage = r.PaintCurrentStage,
             customerName = r.Customer.Name,
             customerCode = r.Customer.BusinessCode,
             customerPhone = r.Customer.Phone ?? "",
-            wofStatus = MapWofStatus(r.HasWofService, r.LatestWofUiState),
+            wofStatus = MapWofStatus(r.HasWofService, r.WofManualStatus, r.LatestWofUiState),
             notes = r.Notes ?? "",
             externalInvoiceId = r.ExternalInvoiceId,
             createdAt = FormatDateTime(r.CreatedAt),
@@ -157,6 +162,14 @@ public class JobsController : ControllerBase
             return NotFound(new { error = "Job not found." });
 
         var hasWofRecord = await _db.JobWofRecords.AsNoTracking().AnyAsync(x => x.JobId == id, ct);
+        var latestWofUiState = hasWofRecord
+            ? await _db.JobWofRecords.AsNoTracking()
+                .Where(x => x.JobId == id)
+                .OrderByDescending(x => x.OccurredAt)
+                .ThenByDescending(x => x.Id)
+                .Select(x => (WofUiState?)x.WofUiState)
+                .FirstOrDefaultAsync(ct)
+            : null;
         var hasWofService = await (
                 from selection in _db.JobServiceSelections.AsNoTracking()
                 join catalogItem in _db.ServiceCatalogItems.AsNoTracking() on selection.ServiceCatalogItemId equals catalogItem.Id
@@ -247,6 +260,7 @@ public class JobsController : ControllerBase
             notes = row.Job.Notes,
             createdAt = FormatDateTime(row.Job.CreatedAt),
             hasWofService = hasWofService || hasWofRecord,
+            wofStatus = MapWofStatus(hasWofService || hasWofRecord, row.Job.WofManualStatus, latestWofUiState),
             vehicle = new
             {
                 plate = row.Vehicle.Plate,
@@ -432,7 +446,13 @@ public class JobsController : ControllerBase
                     where selection.JobId == j.Id && catalogItem.ServiceType == "wof"
                     select selection.Id
                 ).Any()
-                let hasWofRecord = _db.JobWofRecords.AsNoTracking().Any(x => x.JobId == j.Id)
+                let latestWofUiState = _db.JobWofRecords.AsNoTracking()
+                    .Where(x => x.JobId == j.Id)
+                    .OrderByDescending(x => x.OccurredAt)
+                    .ThenByDescending(x => x.Id)
+                    .Select(x => (WofUiState?)x.WofUiState)
+                    .FirstOrDefault()
+                let hasWofRecord = latestWofUiState.HasValue
                 where hasWofService && !hasWofRecord
                 orderby j.CreatedAt descending
                 select new
@@ -440,12 +460,14 @@ public class JobsController : ControllerBase
                     j.Id,
                     j.CreatedAt,
                     j.Status,
+                    j.WofManualStatus,
                     v.Plate,
                     v.Make,
                     v.Model,
                     v.Year,
                     v.Vin,
                     v.WofExpiry,
+                    WofStatus = MapWofStatus(hasWofService, j.WofManualStatus, latestWofUiState),
                 }
             )
             .ToListAsync(ct);
@@ -461,6 +483,7 @@ public class JobsController : ControllerBase
             wofExpiry = FormatDate(row.WofExpiry),
             inShopDateTime = FormatDateTime(row.CreatedAt),
             status = MapDetailStatus(row.Status),
+            wofStatus = row.WofStatus,
         });
 
         return Ok(new { jobs });
@@ -1055,15 +1078,17 @@ public class JobsController : ControllerBase
         return value;
     }
 
-    private static string? MapWofStatus(bool hasWofService, WofUiState? latestWofUiState)
+    private static string? MapWofStatus(bool hasWofService, string? wofManualStatus, WofUiState? latestWofUiState)
     {
-        if (latestWofUiState == WofUiState.Printed)
-            return "Printed";
-
         if (latestWofUiState.HasValue)
             return "Recorded";
 
-        return hasWofService ? "Todo" : null;
+        if (!hasWofService)
+            return null;
+
+        return string.Equals(wofManualStatus, "Checked", StringComparison.OrdinalIgnoreCase)
+            ? "Checked"
+            : "Todo";
     }
 
     private static string BuildVehicleModel(string? make, string? model, int? year)
