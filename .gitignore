@@ -24,3 +24,4 @@ backend/Workshop.Api/appsettings.json
 backend/Workshop.Api/App_Data/gmail-attachments/45cf089179ba_ec756fabd0a0_HONDA-CPO-13058 (1).pdf
 backend/Workshop.Api/App_Data/gmail-attachments/45cf089179ba_1a755c11f119_HONDA-CPO-13058 (1).pdf
 backend/Workshop.Api/App_Data/gmail-attachments/45cf089179ba_0feb5d6c8336_HONDA-CPO-13058 (1).pdf
+backend/Workshop.Api.Tests/Unit/Services/JobInvoicePartsLineItemBuilderTests.cs
