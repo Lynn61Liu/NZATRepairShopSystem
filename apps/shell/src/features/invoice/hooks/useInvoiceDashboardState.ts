@@ -227,6 +227,7 @@ const initialInvoiceState: InvoiceDashboardState = {
   vehicleRego: "",
   vehicleModel: "",
   vehicleMake: "",
+  vehicleYear: "",
   snapshotTotal: 0,
   emailStates: ["Draft"],
   remindersSent: 0,
@@ -1040,26 +1041,36 @@ export function useInvoiceDashboardState({
     const loadMerchantRecipients = async () => {
       setMerchantRecipientsLoading(true);
       const customerId = customer?.id?.trim();
-
-      if (customer?.type?.toLowerCase() !== "business" || !customer.name.trim()) {
+      const setMerchantInvoiceState = (
+        resolveNext: (prev: InvoiceDashboardState) => Pick<
+          InvoiceDashboardState,
+          "contact" | "merchantUserName" | "merchantEmails" | "merchantEmailRecipients" | "selectedMerchantEmail"
+        >
+      ) => {
         setInvoice((prev) => ({
           ...prev,
+          ...resolveNext(prev),
+          vehicleRego: vehicle?.plate || prev.vehicleRego,
+          vehicleModel: vehicle?.model || prev.vehicleModel,
+          vehicleMake: vehicle?.make || prev.vehicleMake,
+          vehicleYear: vehicle?.year != null ? String(vehicle.year) : prev.vehicleYear,
+        }));
+      };
+
+      if (customer?.type?.toLowerCase() !== "business" || !customer.name.trim()) {
+        setMerchantInvoiceState((prev) => ({
           contact: persistedInvoice?.contactName?.trim() || customer?.name?.trim() || prev.contact,
           merchantUserName: "team",
           merchantEmails: [],
           merchantEmailRecipients: [],
           selectedMerchantEmail: "",
-          vehicleRego: vehicle?.plate || prev.vehicleRego,
-          vehicleModel: vehicle?.model || prev.vehicleModel,
-          vehicleMake: vehicle?.make || prev.vehicleMake,
         }));
         if (!cancelled) setMerchantRecipientsLoading(false);
         return;
       }
 
       if (!customerId) {
-        setInvoice((prev) => ({
-          ...prev,
+        setMerchantInvoiceState(() => ({
           contact: persistedInvoice?.contactName?.trim() || customer.name.trim(),
           merchantUserName: "team",
           merchantEmails: customer.email?.trim() ? [customer.email.trim()] : [],
@@ -1067,9 +1078,6 @@ export function useInvoiceDashboardState({
             ? [{ email: customer.email.trim(), kind: "business", name: "Team", title: "" }]
             : [],
           selectedMerchantEmail: customer.email?.trim() || "",
-          vehicleRego: vehicle?.plate || prev.vehicleRego,
-          vehicleModel: vehicle?.model || prev.vehicleModel,
-          vehicleMake: vehicle?.make || prev.vehicleMake,
         }));
         if (!cancelled) setMerchantRecipientsLoading(false);
         return;
@@ -1085,8 +1093,7 @@ export function useInvoiceDashboardState({
       }>(`/api/customers/${encodeURIComponent(customerId)}`);
 
       if (!res.ok || !res.data || cancelled) {
-        setInvoice((prev) => ({
-          ...prev,
+        setMerchantInvoiceState(() => ({
           contact: persistedInvoice?.contactName?.trim() || customer.name.trim(),
           merchantUserName: "team",
           merchantEmails: customer.email?.trim() ? [customer.email.trim()] : [],
@@ -1094,9 +1101,6 @@ export function useInvoiceDashboardState({
             ? [{ email: customer.email.trim(), kind: "business", name: "Team", title: "" }]
             : [],
           selectedMerchantEmail: customer.email?.trim() || "",
-          vehicleRego: vehicle?.plate || prev.vehicleRego,
-          vehicleModel: vehicle?.model || prev.vehicleModel,
-          vehicleMake: vehicle?.make || prev.vehicleMake,
         }));
         if (!cancelled) setMerchantRecipientsLoading(false);
         return;
@@ -1134,8 +1138,7 @@ export function useInvoiceDashboardState({
 
       if (cancelled) return;
 
-      setInvoice((prev) => ({
-        ...prev,
+      setMerchantInvoiceState((prev) => ({
         contact: persistedInvoice?.contactName?.trim() || matched?.name?.trim() || customer.name.trim(),
         merchantUserName:
           recipients.find((item) => item.kind === "staff")?.name ||
@@ -1146,9 +1149,6 @@ export function useInvoiceDashboardState({
           recipients.some((item) => item.email === prev.selectedMerchantEmail)
             ? prev.selectedMerchantEmail
             : (recipients[0]?.email ?? ""),
-        vehicleRego: vehicle?.plate || prev.vehicleRego,
-        vehicleModel: vehicle?.model || prev.vehicleModel,
-        vehicleMake: vehicle?.make || prev.vehicleMake,
       }));
       setMerchantRecipientsLoading(false);
     };
@@ -1216,6 +1216,49 @@ export function useInvoiceDashboardState({
     }
   };
 
+  const invoicePanel = {
+    persistedInvoice,
+    sourceInvoice,
+    invoice,
+    items,
+    refreshingFromXero,
+    updatingXeroState,
+    referencePreview,
+    subtotal,
+    taxTotal,
+    totalAmount,
+    updateXeroState,
+    resolveXeroStateOption,
+    refreshFromXero,
+    openInXero,
+  };
+
+  const poPanel = {
+    invoice,
+    items,
+    timeline,
+    detections,
+    selectedDetectionId,
+    poPanelLoading,
+    poPanelRefreshing,
+    poLocked,
+    poLockReason,
+    hasExternalDraftSend,
+    draftSendBlockedReason,
+    unreadReplyCount,
+    totalAmount,
+    manualPoNumber,
+    setSelectedDetectionId,
+    setManualPoNumber,
+    sendPoRequest,
+    sendReminderNow,
+    configureReminders,
+    confirmPo,
+    rejectPo,
+    syncManualPoToInvoiceReference,
+    markPoThreadSeen,
+  };
+
   return {
     persistedInvoice,
     sourceInvoice,
@@ -1251,7 +1294,11 @@ export function useInvoiceDashboardState({
     rejectPo,
     syncManualPoToInvoiceReference,
     markPoThreadSeen,
+    invoicePanel,
+    poPanel,
   };
 }
 
 export type InvoiceDashboardModel = ReturnType<typeof useInvoiceDashboardState>;
+export type InvoicePanelModel = InvoiceDashboardModel["invoicePanel"];
+export type PoPanelModel = InvoiceDashboardModel["poPanel"];

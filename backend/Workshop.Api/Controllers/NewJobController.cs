@@ -137,9 +137,21 @@ public class NewJobController : ControllerBase
         await _db.SaveChangesAsync(ct);
         jobCustomerId = job.CustomerId;
 
-        var wofCreated = req.Services?.Any(s => string.Equals(s, "wof", StringComparison.OrdinalIgnoreCase)) == true;
-        var hasMech = req.Services?.Any(s => string.Equals(s, "mech", StringComparison.OrdinalIgnoreCase)) == true;
-        var hasPaint = req.Services?.Any(s => string.Equals(s, "paint", StringComparison.OrdinalIgnoreCase)) == true;
+        var wofCreated = HasRequestedOrSelectedService(
+            req.Services,
+            "wof",
+            selectedCatalogItems.RootItems,
+            selectedCatalogItems.WofItems);
+        var hasMech = HasRequestedOrSelectedService(
+            req.Services,
+            "mech",
+            selectedCatalogItems.RootItems,
+            selectedCatalogItems.MechItems);
+        var hasPaint = HasRequestedOrSelectedService(
+            req.Services,
+            "paint",
+            selectedCatalogItems.RootItems,
+            selectedCatalogItems.PaintItems);
         var partsDescriptions = ParsePartsDescriptions(req);
         var hasPendingPostJobChanges = false;
 
@@ -447,6 +459,17 @@ public class NewJobController : ControllerBase
         }
 
         return selections;
+    }
+
+    private static bool HasRequestedOrSelectedService(
+        IEnumerable<string>? requestedServices,
+        string serviceType,
+        IEnumerable<ServiceCatalogItem> rootItems,
+        IReadOnlyCollection<ServiceCatalogItem> childItems)
+    {
+        return requestedServices?.Any(s => string.Equals(s, serviceType, StringComparison.OrdinalIgnoreCase)) == true
+            || childItems.Count > 0
+            || rootItems.Any(x => string.Equals(x.ServiceType, serviceType, StringComparison.OrdinalIgnoreCase));
     }
 
     private static JobServiceSelection BuildJobServiceSelection(long jobId, ServiceCatalogItem item, DateTime now) =>

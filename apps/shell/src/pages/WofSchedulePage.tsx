@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { ChevronLeft, ChevronRight, Clock3, ExternalLink, GripVertical, RefreshCcw } from "lucide-react";
-import { Button, Card, EmptyState, useToast } from "@/components/ui";
+import { Button, Card, useToast } from "@/components/ui";
 import { withApiBase } from "@/utils/api";
 import { formatNzDateTime, parseTimestamp } from "@/utils/date";
 import { notifyPaintBoardRefresh, notifyWofScheduleRefresh, subscribeWofScheduleRefresh } from "@/utils/refreshSignals";
@@ -12,7 +12,9 @@ import { useRef } from "react";
 import { updateWofStatus as apiUpdateWofStatus } from "@/features/wof/api/wofApi";
 
 const STORAGE_KEY = "wof:schedule:placements:v1";
+const PLACEHOLDER_STORAGE_KEY = "wof:schedule:placeholders:v1";
 const DRAG_TYPE = "wof-job-card";
+const PLACEHOLDER_PLACEMENT_PREFIX = "placeholder:";
 const DAY_START_HOUR = 8;
 const DAY_END_HOUR = 18;
 const SLOT_HOURS = Array.from({ length: DAY_END_HOUR - DAY_START_HOUR }, (_, index) => DAY_START_HOUR + index);
@@ -30,6 +32,16 @@ type WofScheduleJob = {
   wofStatus?: "Todo" | "Checked" | "Recorded" | null;
 };
 
+type WofSchedulePlaceholder = {
+  placeholderId: string;
+  rego: string;
+  contact: string;
+  notes: string;
+  createdAt: string;
+};
+
+type PlaceholderDraft = Pick<WofSchedulePlaceholder, "rego" | "contact" | "notes">;
+
 type Placement =
   | { kind: "backlog" }
   | { kind: "slot"; slotKey: string }
@@ -37,9 +49,10 @@ type Placement =
 
 type PlacementMap = Record<string, Placement>;
 
-type DragItem = {
-  jobId: string;
-};
+type DragItem =
+  | { kind: "job"; jobId: string }
+  | { kind: "placeholder"; placeholderId: string }
+  | { kind: "placeholder-template" };
 
 type WorkingDay = {
   key: string;
@@ -97,6 +110,55 @@ function loadPlacements(): PlacementMap {
 function savePlacements(next: PlacementMap) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+}
+
+function getPlaceholderPlacementKey(placeholderId: string) {
+  return `${PLACEHOLDER_PLACEMENT_PREFIX}${placeholderId}`;
+}
+
+function getPlaceholderIdFromPlacementKey(placementKey: string) {
+  return placementKey.startsWith(PLACEHOLDER_PLACEMENT_PREFIX)
+    ? placementKey.slice(PLACEHOLDER_PLACEMENT_PREFIX.length)
+    : null;
+}
+
+function loadPlaceholders(): WofSchedulePlaceholder[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(PLACEHOLDER_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item) => item && typeof item === "object" && typeof item.placeholderId === "string")
+      .map((item) => ({
+        placeholderId: item.placeholderId,
+        rego: typeof item.rego === "string" ? item.rego : "",
+        contact: typeof item.contact === "string" ? item.contact : "",
+        notes: typeof item.notes === "string" ? item.notes : "",
+        createdAt: typeof item.createdAt === "string" ? item.createdAt : new Date().toISOString(),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function savePlaceholders(next: WofSchedulePlaceholder[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(PLACEHOLDER_STORAGE_KEY, JSON.stringify(next));
+}
+
+function createPlaceholderFromDraft(draft: PlaceholderDraft): WofSchedulePlaceholder {
+  const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return {
+    placeholderId: suffix,
+    rego: draft.rego.trim(),
+    contact: draft.contact.trim(),
+    notes: draft.notes.trim(),
+    createdAt: new Date().toISOString(),
+  };
 }
 
 function getNzCalendarDateParts(value: Date) {
@@ -362,12 +424,15 @@ function WofJobCard({
   const [overlayPosition, setOverlayPosition] = useState<{ top: number; left: number } | null>(null);
   const [{ isDragging }, drag] = useDrag(() => ({
     type: DRAG_TYPE,
-    item: { jobId: job.jobId } satisfies DragItem,
+    item: { kind: "job", jobId: job.jobId } satisfies DragItem,
     collect: (monitor) => ({
       isDragging: monitor.isDragging(),
     }),
   }), [job.jobId]);
-  drag(dragRef);
+  const attachDragRef = useCallback((node: HTMLDivElement | null) => {
+    dragRef.current = node;
+    drag(node);
+  }, [drag]);
   const tone = getCardTone(job.wofStatus);
   const compactTone = getCompactRowTone(job.wofStatus);
 
@@ -427,7 +492,7 @@ function WofJobCard({
 
   return (
     <div
-      ref={dragRef}
+      ref={attachDragRef}
       onMouseEnter={compact ? openOverlay : undefined}
       onMouseLeave={compact ? scheduleCloseOverlay : undefined}
       className={[
@@ -487,28 +552,230 @@ function WofJobCard({
   );
 }
 
+function PlaceholderFields({
+  value,
+  onChange,
+  compact = false,
+}: {
+  value: PlaceholderDraft;
+  onChange: (next: PlaceholderDraft) => void;
+  compact?: boolean;
+}) {
+  const inputClass = compact
+    ? "h-8 rounded-md border border-sky-200 bg-white/95 px-2 text-xs text-slate-800 outline-none focus:border-sky-500"
+    : "h-9 rounded-md border border-sky-200 bg-white/95 px-2 text-sm text-slate-800 outline-none focus:border-sky-500";
+  const textareaClass = compact
+    ? "min-h-[56px] rounded-md border border-sky-200 bg-white/95 px-2 py-1.5 text-xs text-slate-800 outline-none focus:border-sky-500"
+    : "min-h-[72px] rounded-md border border-sky-200 bg-white/95 px-2 py-1.5 text-sm text-slate-800 outline-none focus:border-sky-500";
+
+  return (
+    <div className="grid gap-2" onMouseDown={(event) => event.stopPropagation()}>
+      <input
+        className={inputClass}
+        value={value.rego}
+        onChange={(event) => onChange({ ...value, rego: event.target.value })}
+        placeholder="Rego（可选）"
+      />
+      <input
+        className={inputClass}
+        value={value.contact}
+        onChange={(event) => onChange({ ...value, contact: event.target.value })}
+        placeholder="联系人 / 电话（可选）"
+      />
+      <textarea
+        className={textareaClass}
+        value={value.notes}
+        onChange={(event) => onChange({ ...value, notes: event.target.value })}
+        placeholder="备注（可选）"
+      />
+    </div>
+  );
+}
+
+function getPlaceholderLabel(value: PlaceholderDraft) {
+  return value.rego.trim() || value.contact.trim() || "时间占位";
+}
+
+function WofPlaceholderCard({
+  value,
+  placeholderId,
+  compact = false,
+  isTemplate = false,
+  onChange,
+  onRemove,
+}: {
+  value: PlaceholderDraft;
+  placeholderId?: string;
+  compact?: boolean;
+  isTemplate?: boolean;
+  onChange: (next: PlaceholderDraft) => void;
+  onRemove?: () => void;
+}) {
+  const dragRef = useRef<HTMLDivElement | null>(null);
+  const closeTimerRef = useRef<number | null>(null);
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  const [overlayPosition, setOverlayPosition] = useState<{ top: number; left: number } | null>(null);
+  const [{ isDragging }, drag] = useDrag(() => ({
+    type: DRAG_TYPE,
+    item: isTemplate
+      ? ({ kind: "placeholder-template" } satisfies DragItem)
+      : ({ kind: "placeholder", placeholderId: placeholderId ?? "" } satisfies DragItem),
+    collect: (monitor) => ({
+      isDragging: monitor.isDragging(),
+    }),
+  }), [isTemplate, placeholderId]);
+  const attachDragRef = useCallback((node: HTMLDivElement | null) => {
+    dragRef.current = node;
+    drag(node);
+  }, [drag]);
+
+  const updateOverlayPosition = useCallback(() => {
+    if (!compact || !dragRef.current || typeof window === "undefined") return;
+    const rect = dragRef.current.getBoundingClientRect();
+    const overlayWidth = 360;
+    const overlayHeight = 260;
+    const gutter = 12;
+    const left = rect.right + gutter + overlayWidth <= window.innerWidth
+      ? rect.right + gutter
+      : Math.max(16, rect.left - overlayWidth - gutter);
+    const top = Math.min(
+      Math.max(16, rect.top - 8),
+      Math.max(16, window.innerHeight - overlayHeight - 16)
+    );
+    setOverlayPosition({ top, left });
+  }, [compact]);
+
+  const openOverlay = useCallback(() => {
+    if (!compact) return;
+    if (closeTimerRef.current) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    updateOverlayPosition();
+    setOverlayOpen(true);
+  }, [compact, updateOverlayPosition]);
+
+  const scheduleCloseOverlay = useCallback(() => {
+    if (!compact) return;
+    if (closeTimerRef.current) {
+      window.clearTimeout(closeTimerRef.current);
+    }
+    closeTimerRef.current = window.setTimeout(() => {
+      setOverlayOpen(false);
+      closeTimerRef.current = null;
+    }, 120);
+  }, [compact]);
+
+  useEffect(() => {
+    if (!overlayOpen || !compact) return;
+    const handleViewportChange = () => updateOverlayPosition();
+    window.addEventListener("scroll", handleViewportChange, true);
+    window.addEventListener("resize", handleViewportChange);
+    return () => {
+      window.removeEventListener("scroll", handleViewportChange, true);
+      window.removeEventListener("resize", handleViewportChange);
+    };
+  }, [compact, overlayOpen, updateOverlayPosition]);
+
+  useEffect(() => () => {
+    if (closeTimerRef.current) {
+      window.clearTimeout(closeTimerRef.current);
+    }
+  }, []);
+
+  const renderHeader = (draggable: boolean) => (
+    <div
+      ref={draggable ? attachDragRef : undefined}
+      className={[
+        "flex items-start justify-between gap-3",
+        draggable ? "cursor-grab active:cursor-grabbing" : "",
+        compact ? "rounded-lg bg-sky-100 px-2 py-1" : "",
+      ].join(" ")}
+      onMouseEnter={compact && draggable ? openOverlay : undefined}
+      onMouseLeave={compact && draggable ? scheduleCloseOverlay : undefined}
+    >
+      <div className="min-w-0">
+        <div className="truncate text-sm font-semibold text-sky-950">
+          {getPlaceholderLabel(value)}
+        </div>
+        <div className="text-[11px] font-medium text-sky-700">
+          {isTemplate ? "拖到日历生成新占位" : ""}
+        </div>
+      </div>
+      <GripVertical className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+    </div>
+  );
+
+  if (compact) {
+    return (
+      <div className={isDragging ? "opacity-45" : "opacity-100"}>
+        {renderHeader(true)}
+        {overlayOpen && overlayPosition && typeof document !== "undefined"
+          ? createPortal(
+              <div
+                onMouseEnter={openOverlay}
+                onMouseLeave={scheduleCloseOverlay}
+                className="fixed z-[200] w-[340px] space-y-3 rounded-xl border border-sky-200 bg-sky-50 p-3 shadow-2xl"
+                style={{ top: overlayPosition.top, left: overlayPosition.left }}
+              >
+                {renderHeader(false)}
+                <PlaceholderFields value={value} onChange={onChange} compact />
+                {onRemove ? (
+                  <Button variant="ghost" className="h-8 w-full border-sky-200 text-xs text-sky-800" onClick={onRemove}>
+                    删除占位
+                  </Button>
+                ) : null}
+              </div>,
+              document.body
+            )
+          : null}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={[
+        "space-y-3 rounded-xl border border-sky-200 bg-sky-50 p-3 shadow-sm transition hover:border-sky-300",
+        isDragging ? "opacity-45" : "opacity-100",
+      ].join(" ")}
+    >
+      {renderHeader(true)}
+      <PlaceholderFields value={value} onChange={onChange} />
+      {onRemove ? (
+        <Button variant="ghost" className="h-8 w-full border-sky-200 text-xs text-sky-800" onClick={onRemove}>
+          删除占位
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 function DropLane({
   title,
   subtitle,
-  jobs,
-  onDropJob,
+  itemCount,
+  onDropItem,
   children,
 }: {
   title: string;
   subtitle: string;
-  jobs: WofScheduleJob[];
-  onDropJob: (jobId: string) => void;
+  itemCount: number;
+  onDropItem: (item: DragItem) => void;
   children?: React.ReactNode;
 }) {
   const dropRef = useRef<HTMLDivElement | null>(null);
   const [{ isOver }, drop] = useDrop<DragItem, void, { isOver: boolean }>(() => ({
     accept: DRAG_TYPE,
-    drop: (item) => onDropJob(item.jobId),
+    drop: (item) => onDropItem(item),
     collect: (monitor) => ({
       isOver: monitor.isOver({ shallow: true }),
     }),
-  }), [onDropJob]);
-  drop(dropRef);
+  }), [onDropItem]);
+  const attachDropRef = useCallback((node: HTMLDivElement | null) => {
+    dropRef.current = node;
+    drop(node);
+  }, [drop]);
 
   return (
     <Card className="flex h-full min-h-[760px] flex-col overflow-hidden">
@@ -519,19 +786,19 @@ function DropLane({
             <div className="text-xs text-slate-500">{subtitle}</div>
           </div>
           <div className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
-            {jobs.length}
+            {itemCount}
           </div>
         </div>
       </div>
       <div
-        ref={dropRef}
+        ref={attachDropRef}
         className={[
           "flex-1 space-y-3 overflow-y-auto px-4 py-4",
           isOver ? "bg-rose-50/60" : "bg-white",
         ].join(" ")}
       >
         {children}
-        {jobs.length === 0 ? (
+        {itemCount === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
             Drag a car here.
           </div>
@@ -545,36 +812,45 @@ function ScheduleSlot({
   slotKey,
   hour,
   jobs,
-  onDropJob,
+  placeholders,
+  onDropItem,
   showCurrentLine,
   currentLineOffsetPct,
   onNzta,
   onStatusChange,
+  onPlaceholderChange,
+  onPlaceholderRemove,
   statusUpdatingId,
 }: {
   slotKey: string;
   hour: number;
   jobs: WofScheduleJob[];
-  onDropJob: (jobId: string, slotKey: string) => void;
+  placeholders: WofSchedulePlaceholder[];
+  onDropItem: (item: DragItem, slotKey: string) => void;
   showCurrentLine: boolean;
   currentLineOffsetPct: number;
   onNzta: (job: WofScheduleJob) => void;
   onStatusChange: (jobId: string, next: "Todo" | "Checked") => void;
+  onPlaceholderChange: (placeholderId: string, next: PlaceholderDraft) => void;
+  onPlaceholderRemove: (placeholderId: string) => void;
   statusUpdatingId?: string | null;
 }) {
   const dropRef = useRef<HTMLDivElement | null>(null);
   const [{ isOver }, drop] = useDrop<DragItem, void, { isOver: boolean }>(() => ({
     accept: DRAG_TYPE,
-    drop: (item) => onDropJob(item.jobId, slotKey),
+    drop: (item) => onDropItem(item, slotKey),
     collect: (monitor) => ({
       isOver: monitor.isOver({ shallow: true }),
     }),
-  }), [onDropJob, slotKey]);
-  drop(dropRef);
+  }), [onDropItem, slotKey]);
+  const attachDropRef = useCallback((node: HTMLDivElement | null) => {
+    dropRef.current = node;
+    drop(node);
+  }, [drop]);
 
   return (
     <div
-      ref={dropRef}
+      ref={attachDropRef}
       className={[
         "relative h-full min-h-0 border-t border-slate-200 px-2 py-2 transition",
         isOver ? "bg-rose-50" : "bg-white",
@@ -584,6 +860,16 @@ function ScheduleSlot({
         {getSlotLabel(hour)}
       </div>
       <div className="h-[calc(100%-24px)] space-y-1 overflow-x-visible overflow-y-auto pr-1">
+        {placeholders.map((placeholder) => (
+          <WofPlaceholderCard
+            key={placeholder.placeholderId}
+            value={placeholder}
+            placeholderId={placeholder.placeholderId}
+            compact
+            onChange={(next) => onPlaceholderChange(placeholder.placeholderId, next)}
+            onRemove={() => onPlaceholderRemove(placeholder.placeholderId)}
+          />
+        ))}
         {jobs.map((job) => (
           <WofJobCard
             key={job.jobId}
@@ -615,6 +901,12 @@ function ScheduleSlot({
 export function WofSchedulePage() {
   const toast = useToast();
   const [jobs, setJobs] = useState<WofScheduleJob[]>([]);
+  const [placeholders, setPlaceholders] = useState<WofSchedulePlaceholder[]>(() => loadPlaceholders());
+  const [placeholderTemplate, setPlaceholderTemplate] = useState<PlaceholderDraft>({
+    rego: "",
+    contact: "",
+    notes: "",
+  });
   const [placements, setPlacements] = useState<PlacementMap>(() => loadPlacements());
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -643,7 +935,9 @@ export function WofSchedulePage() {
       setPlacements((prev) => {
         const validIds = new Set(rows.map((job) => job.jobId));
         const next = Object.fromEntries(
-          Object.entries(prev).filter(([jobId]) => validIds.has(jobId))
+          Object.entries(prev).filter(([placementKey]) =>
+            getPlaceholderIdFromPlacementKey(placementKey) || validIds.has(placementKey)
+          )
         ) as PlacementMap;
         savePlacements(next);
         return next;
@@ -729,9 +1023,40 @@ export function WofSchedulePage() {
     }
   }, [toast]);
 
-  const moveToBacklog = useCallback((jobId: string) => {
+  const updatePlaceholder = useCallback((placeholderId: string, nextDraft: PlaceholderDraft) => {
+    setPlaceholders((prev) => {
+      const next = prev.map((placeholder) =>
+        placeholder.placeholderId === placeholderId
+          ? { ...placeholder, ...nextDraft }
+          : placeholder
+      );
+      savePlaceholders(next);
+      return next;
+    });
+  }, []);
+
+  const removePlaceholder = useCallback((placeholderId: string) => {
+    const placementKey = getPlaceholderPlacementKey(placeholderId);
+    setPlaceholders((prev) => {
+      const next = prev.filter((placeholder) => placeholder.placeholderId !== placeholderId);
+      savePlaceholders(next);
+      return next;
+    });
     setPlacements((prev) => {
-      const next = { ...prev, [jobId]: { kind: "backlog" } as Placement };
+      const next = { ...prev };
+      delete next[placementKey];
+      savePlacements(next);
+      return next;
+    });
+  }, []);
+
+  const moveToBacklog = useCallback((item: DragItem) => {
+    if (item.kind === "placeholder-template") return;
+    const placementKey = item.kind === "placeholder"
+      ? getPlaceholderPlacementKey(item.placeholderId)
+      : item.jobId;
+    setPlacements((prev) => {
+      const next = { ...prev, [placementKey]: { kind: "backlog" } as Placement };
       savePlacements(next);
       return next;
     });
@@ -742,7 +1067,39 @@ export function WofSchedulePage() {
     [jobs]
   );
 
-  const moveToSlot = useCallback((jobId: string, slotKey: string) => {
+  const placeholderMap = useMemo(
+    () => new Map(placeholders.map((placeholder) => [placeholder.placeholderId, placeholder])),
+    [placeholders]
+  );
+
+  const moveToSlot = useCallback((item: DragItem, slotKey: string) => {
+    if (item.kind === "placeholder-template") {
+      const placeholder = createPlaceholderFromDraft(placeholderTemplate);
+      const placementKey = getPlaceholderPlacementKey(placeholder.placeholderId);
+      setPlaceholders((prev) => {
+        const next = [...prev, placeholder];
+        savePlaceholders(next);
+        return next;
+      });
+      setPlacements((prev) => {
+        const next = { ...prev, [placementKey]: { kind: "slot", slotKey } as Placement };
+        savePlacements(next);
+        return next;
+      });
+      return;
+    }
+
+    if (item.kind === "placeholder") {
+      const placementKey = getPlaceholderPlacementKey(item.placeholderId);
+      setPlacements((prev) => {
+        const next = { ...prev, [placementKey]: { kind: "slot", slotKey } as Placement };
+        savePlacements(next);
+        return next;
+      });
+      return;
+    }
+
+    const jobId = item.jobId;
     setPlacements((prev) => {
       const next = { ...prev };
       const movingJob = jobMap.get(jobId);
@@ -764,7 +1121,7 @@ export function WofSchedulePage() {
       savePlacements(normalized);
       return normalized;
     });
-  }, [jobMap, jobs]);
+  }, [jobMap, jobs, placeholderTemplate]);
 
   const backlogJobs = useMemo(
     () =>
@@ -778,6 +1135,20 @@ export function WofSchedulePage() {
         );
       }),
     [jobs, placements, visibleSlotKeys]
+  );
+
+  const backlogPlaceholders = useMemo(
+    () =>
+      placeholders.filter((placeholder) => {
+        const placement = placements[getPlaceholderPlacementKey(placeholder.placeholderId)];
+        return (
+          !placement ||
+          placement.kind === "backlog" ||
+          placement.kind === "completed" ||
+          (placement.kind === "slot" && !visibleSlotKeys.has(placement.slotKey))
+        );
+      }),
+    [placeholders, placements, visibleSlotKeys]
   );
 
   const jobsBySlot = useMemo(() => {
@@ -803,6 +1174,28 @@ export function WofSchedulePage() {
 
     return map;
   }, [jobMap, placements, visibleSlotKeys]);
+
+  const placeholdersBySlot = useMemo(() => {
+    const map = new Map<string, WofSchedulePlaceholder[]>();
+    for (const [placementKey, placement] of Object.entries(placements)) {
+      if (placement.kind !== "slot") continue;
+      if (!visibleSlotKeys.has(placement.slotKey)) continue;
+      const placeholderId = getPlaceholderIdFromPlacementKey(placementKey);
+      if (!placeholderId) continue;
+      const placeholder = placeholderMap.get(placeholderId);
+      if (!placeholder) continue;
+      const list = map.get(placement.slotKey) ?? [];
+      list.push(placeholder);
+      map.set(placement.slotKey, list);
+    }
+
+    for (const [slotKey, list] of map.entries()) {
+      list.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      map.set(slotKey, list);
+    }
+
+    return map;
+  }, [placeholderMap, placements, visibleSlotKeys]);
 
   const currentDayKey = useMemo(() => {
     const parts = new Intl.DateTimeFormat("en-NZ", {
@@ -853,15 +1246,32 @@ export function WofSchedulePage() {
         ) : null}
 
         {jobs.length === 0 ? (
-          <EmptyState message="No active WOF jobs are available for scheduling right now." />
-        ) : (
-          <div className="grid min-h-[820px] grid-cols-[320px_minmax(0,1fr)] gap-6">
+          <Card className="border-sky-200 bg-sky-50 p-4 text-sm text-sky-800">
+            No active WOF jobs are available right now. You can still use the blue placeholder card for time holds.
+          </Card>
+        ) : null}
+
+        <div className="grid min-h-[820px] grid-cols-[320px_minmax(0,1fr)] gap-6">
             <DropLane
               title="WOF 待办栏"
-              subtitle="Only jobs with WOF service and no WOF records yet"
-              jobs={backlogJobs}
-              onDropJob={moveToBacklog}
+              subtitle="Drag the blue placeholder or WOF jobs into the schedule"
+              itemCount={backlogJobs.length + backlogPlaceholders.length + 1}
+              onDropItem={moveToBacklog}
             >
+              <WofPlaceholderCard
+                value={placeholderTemplate}
+                isTemplate
+                onChange={setPlaceholderTemplate}
+              />
+              {backlogPlaceholders.map((placeholder) => (
+                <WofPlaceholderCard
+                  key={placeholder.placeholderId}
+                  value={placeholder}
+                  placeholderId={placeholder.placeholderId}
+                  onChange={(next) => updatePlaceholder(placeholder.placeholderId, next)}
+                  onRemove={() => removePlaceholder(placeholder.placeholderId)}
+                />
+              ))}
               {backlogJobs.map((job) => (
                 <WofJobCard
                   key={job.jobId}
@@ -935,11 +1345,14 @@ export function WofSchedulePage() {
                               slotKey={slotKey}
                               hour={hour}
                               jobs={jobsBySlot.get(slotKey) ?? []}
-                            onDropJob={moveToSlot}
+                            placeholders={placeholdersBySlot.get(slotKey) ?? []}
+                            onDropItem={moveToSlot}
                             showCurrentLine={showCurrentLine}
                             currentLineOffsetPct={(currentHours - hour) * 100}
                             onNzta={(job) => openNztaAndCopyVin(job.vin, toast)}
                             onStatusChange={handleStatusChange}
+                            onPlaceholderChange={updatePlaceholder}
+                            onPlaceholderRemove={removePlaceholder}
                             statusUpdatingId={statusUpdatingId}
                           />
                           );
@@ -950,8 +1363,7 @@ export function WofSchedulePage() {
                 </div>
               </div>
             </Card>
-          </div>
-        )}
+        </div>
       </div>
     </DndProvider>
   );

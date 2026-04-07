@@ -2,12 +2,12 @@ import type React from "react";
 import { CalendarDays, ExternalLink, Hash, RefreshCcw } from "lucide-react";
 import { Button, Card } from "@/components/ui";
 import { XeroButton } from "@/components/common/XeroButton";
-import type { InvoiceDashboardModel } from "../hooks/useInvoiceDashboardState";
-import type { AmountsAre, TaxRateOption } from "../types";
+import type { InvoicePanelModel } from "../../hooks/useInvoiceDashboardState";
+import type { AmountsAre, TaxRateOption } from "../../types";
 import type { JobInvoiceData } from "@/types";
 
 type Props = {
-  model: InvoiceDashboardModel;
+  model: InvoicePanelModel;
   hasInvoice?: boolean;
 };
 
@@ -221,7 +221,7 @@ function parseXeroInvoice(source?: JobInvoiceData | null): ParsedXeroInvoice | n
   }
 }
 
-function buildFallbackSnapshot(model: InvoiceDashboardModel): ParsedXeroInvoice {
+function buildFallbackSnapshot(model: InvoicePanelModel): ParsedXeroInvoice {
   return {
     contactName: model.invoice.contact,
     issueDate: model.invoice.issueDate,

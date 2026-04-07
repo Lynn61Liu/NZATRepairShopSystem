@@ -205,9 +205,9 @@ export function MainColumn({
         label: (
           <span className="inline-flex items-center gap-2">
             <span>{JOB_DETAIL_TEXT.tabs.po}</span>
-            {invoiceDashboard.unreadReplyCount > 0 ? (
+            {invoiceDashboard.poPanel.unreadReplyCount > 0 ? (
               <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-[#dc2626] px-1.5 py-0.5 text-[11px] font-semibold text-white">
-                {invoiceDashboard.unreadReplyCount}
+                {invoiceDashboard.poPanel.unreadReplyCount}
               </span>
             ) : null}
           </span>
@@ -215,7 +215,7 @@ export function MainColumn({
       });
     }
     return base;
-  }, [hasPartsServices, needsPo, partsTabVisibleForCreate, invoiceDashboard.unreadReplyCount]);
+  }, [hasPartsServices, needsPo, partsTabVisibleForCreate, invoiceDashboard.poPanel.unreadReplyCount]);
 
   useEffect(() => {
     if (activeTab === "Parts" && !hasPartsServices && !partsTabVisibleForCreate) {
@@ -230,10 +230,10 @@ export function MainColumn({
   }, [activeTab, needsPo]);
 
   useEffect(() => {
-    if (activeTab === "PO" && invoiceDashboard.unreadReplyCount > 0) {
-      invoiceDashboard.markPoThreadSeen();
+    if (activeTab === "PO" && invoiceDashboard.poPanel.unreadReplyCount > 0) {
+      invoiceDashboard.poPanel.markPoThreadSeen();
     }
-  }, [activeTab, invoiceDashboard.unreadReplyCount]);
+  }, [activeTab, invoiceDashboard.poPanel.unreadReplyCount]);
 
   useEffect(() => {
     if (partsTabVisibleForCreate && activeTab !== "Parts" && !hasPartsServices) {
@@ -372,7 +372,7 @@ export function MainColumn({
         {activeTab === "Log" ? <LogPanel /> : null}
         {activeTab === "Invoice" ? (
           <InvoicePanel
-            model={invoiceDashboard}
+            model={invoiceDashboard.invoicePanel}
             hasInvoice={Boolean(jobData.invoice)}
             invoiceProcessing={jobData.invoiceProcessing}
             onCreateInvoice={onCreateXeroInvoice}
@@ -384,7 +384,7 @@ export function MainColumn({
             needsPo={needsPo}
           />
         ) : null}
-        {activeTab === "PO" && needsPo ? <PoPanel model={invoiceDashboard} /> : null}
+        {activeTab === "PO" && needsPo ? <PoPanel model={invoiceDashboard.poPanel} /> : null}
       </Card>
 
     </div>

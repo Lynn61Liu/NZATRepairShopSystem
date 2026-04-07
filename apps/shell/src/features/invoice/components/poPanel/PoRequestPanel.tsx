@@ -1,16 +1,12 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useRef, type ReactNode } from "react";
 import { ChevronDown, Clock3, FileSearch, MailCheck, MessageSquareText, Paperclip, Send, Settings2, X } from "lucide-react";
 import { Button, Card, Input, Select, Textarea } from "@/components/ui";
 import { withApiBase } from "@/utils/api";
 import { PoDetectionPanel } from "./PoDetectionPanel";
 import { StatusBadge } from "./StatusBadge";
-import type { EmailState, EmailTimelineEvent, InvoiceItem, MerchantEmailRecipient, PoDetection } from "../types";
+import type { EmailState, EmailTimelineEvent, InvoiceItem, MerchantEmailRecipient, PoDetection } from "../../types";
 
 const PO_REQUEST_SEND_LOCK_PREFIX = "po-request-send-lock:";
-
-function getPoRequestSendLockKey(correlationId: string) {
-  return `${PO_REQUEST_SEND_LOCK_PREFIX}${correlationId.trim()}`;
-}
 
 function getPoRequestSendLockExpiration(correlationId: string) {
   if (typeof window === "undefined") return null;
@@ -33,6 +29,10 @@ function getPoRequestSendLockExpiration(correlationId: string) {
   }
 }
 
+function getPoRequestSendLockKey(correlationId: string) {
+  return `${PO_REQUEST_SEND_LOCK_PREFIX}${correlationId.trim()}`;
+}
+
 function formatSendLockRemaining(expiresAtMs: number | null) {
   if (!expiresAtMs) return "";
   const remainingMs = Math.max(0, expiresAtMs - Date.now());
@@ -45,6 +45,8 @@ type Props = {
   selectedMerchantEmail: string;
   correlationId: string;
   vehicleRego: string;
+  // 【新增并修改】加回了年份，加上问号表示它是可选的，这样就算外部没传也不会报错
+  vehicleYear: string; 
   vehicleModel: string;
   vehicleMake: string;
   snapshotTotal: number;
@@ -72,6 +74,7 @@ export function PoRequestPanel({
   selectedMerchantEmail,
   correlationId,
   vehicleRego,
+  vehicleYear, // 【新增】接收年份
   vehicleModel,
   vehicleMake,
   snapshotTotal,
@@ -107,8 +110,6 @@ export function PoRequestPanel({
   const recipientOptions = useMemo(() => {
     const hasBusiness = merchantEmailRecipients.some((item) => item.kind === "business");
     if (hasBusiness) return merchantEmailRecipients;
-
-    // Fallback for old data shape.
     return [
       ...merchantEmailRecipients,
       {
@@ -120,25 +121,15 @@ export function PoRequestPanel({
     ];
   }, [merchantEmailRecipients, selectedMerchantEmail]);
 
+  // 【修改】按你的要求调整顺序，加上年份，并且去掉了 from NZAT
   const vehicleLabel = useMemo(
-    () => `${[vehicleRego, vehicleModel, vehicleMake].filter(Boolean).join(" ")} from NZAT`,
-    [vehicleMake, vehicleModel, vehicleRego]
+    () => `${[vehicleRego, vehicleYear, vehicleMake, vehicleModel].filter(Boolean).join(" ")}`,
+    [vehicleRego, vehicleYear, vehicleMake, vehicleModel]
   );
 
   const defaultSubject = useMemo(
     () => `PO Request for ${vehicleLabel} [${correlationId}]`,
     [correlationId, vehicleLabel]
-  );
-
-  const invoiceItemsText = useMemo(
-    () =>
-      items
-        .map(
-          (item, index) =>
-            `${index + 1}. ${item.itemCode || "-"} | ${item.description} | Qty: ${item.quantity} | $${item.unitPrice.toFixed(2)} `
-        )
-        .join("\n"),
-    [items]
   );
 
   const [to, setTo] = useState(selectedMerchantEmail);
@@ -150,20 +141,68 @@ export function PoRequestPanel({
         .filter(Boolean),
     [to]
   );
+  
   const normalizedToValue = useMemo(() => selectedEmails.join(", "), [selectedEmails]);
+  
   const selectedRecipient = useMemo(
     () => recipientOptions.find((item) => item.email === selectedEmails[0]) ?? recipientOptions[0],
     [recipientOptions, selectedEmails]
   );
+  
   const greetingName =
     selectedEmails.length === 1 && selectedRecipient?.kind === "staff" && selectedRecipient.name.trim()
       ? selectedRecipient.name.trim()
-      : "team";
-  const defaultBody = useMemo(
-    () =>
-      `Hi ${greetingName},\n\nPlease find the server items below:\n${invoiceItemsText}\n\nTotal: $${snapshotTotal.toFixed(2)}.\n\nKind regards,\n\nEric Zhao\nAUTO TECH REPAIR & SERVICES\n\n486 Ellerslie Panmure Highway\nMount Wellington, Auckland 1060\n\nM: 021 029 88666\nT: 09 213 1988`,
-    [greetingName, invoiceItemsText, snapshotTotal]
-  );
+      : "Team";
+
+  // 【修改】正文模板，保留了空行，完美排版，加入了年份
+  const defaultBody = useMemo(() => {
+    const itemsHtml = items
+      .map(
+        (item) => `
+        <tr>
+          <td style="padding: 4px 12px 4px 0; text-align: left; vertical-align: top;">${item.description}</td>
+          <td style="padding: 4px 0 4px 0; text-align: right; vertical-align: top; width: 120px; white-space: nowrap;">$${item.unitPrice.toFixed(2)}</td>
+        </tr>
+      `
+      )
+      .join("");
+
+    return `
+      <div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">
+        <div style="margin-bottom: 20px;">Hi ${greetingName},</div>
+        <div style="margin-bottom: 20px;">Could you please issue a PO number for the jobs on the vehicle below? Much appreciated.</div>
+        
+        <div style="margin-bottom: 8px;">
+          <div style="margin-bottom: 6px;"><strong>- Rego:</strong> ${vehicleRego || ""}</div>
+          <div style="margin-bottom: 6px;"><strong>- Make & Model:</strong> ${[vehicleYear, vehicleMake, vehicleModel].filter(Boolean).join(" ")}</div>
+          <div style="margin-bottom: 6px;"><strong>- Total Amount:</strong> $${snapshotTotal.toFixed(2)}</div>
+          <div style="margin-bottom: 6px;"><strong>- Job Details:</strong></div>
+        </div>
+        
+        <table style="width: 100%; max-width: 600px; border-collapse: collapse; margin-bottom: 30px;">
+          ${itemsHtml}
+        </table>
+        
+        <div style="direction: ltr; font-family: tahoma, sans-serif; color: rgb(34, 34, 34);">
+            <p style="line-height: normal; margin: 0px;"><b>Kind regards</b></p>
+            <p style="line-height: normal; margin: 0px;"><br></p>
+            <p style="line-height: normal; margin: 0px;"><b>Eric Zhao</b></p>
+            <p style="line-height: normal; margin: 0px;"><br></p>
+            <p style="line-height: normal; margin: 0px;"><b>AUTO TECH REPAIR &amp; SERVICES</b></p>
+            <p style="line-height: normal; margin: 0px;"><br></p>
+            <p style="line-height: normal; margin: 0px;"><b style="color: rgb(11, 83, 148);">Add:</b> 486 Ellerslie Panmure Highway, Mount Wellington, Auckland 1060</p>
+            <p style="line-height: normal; margin: 0px;"><b style="color: rgb(11, 83, 148);">Ph:</b> &nbsp;021 029 88666&nbsp; 09 213 1988</p>
+            <br>
+            <div style="margin: 0px 0px 0px 36pt; font-family: Calibri, sans-serif;">
+                <p style="font-size: 8pt; color: black; margin: 0px;"><b>CAUTION</b></p>
+                <p style="font-size: 8pt; color: black; margin: 0px;">
+                    This email may contain confidential and/or privileged material and the information contained in this message and or attachments is intended only for the person or entity to which it is addressed. If you are not the intended recipient, please notify the sender and delete the email. If you no longer wish to receive emails from Auto Tech Repair &amp; Services or if this message is a commercial electronic message for the purposes of the Unsolicited Electronic Messages Act 2007, please let the sender of this email know.
+                </p>
+            </div>
+        </div>
+      </div>
+    `;
+  }, [greetingName, vehicleRego, vehicleYear, vehicleMake, vehicleModel, snapshotTotal, items]);
 
   const [subject, setSubject] = useState(defaultSubject);
   const [body, setBody] = useState(defaultBody);
@@ -175,10 +214,13 @@ export function PoRequestPanel({
   const [previewAttachment, setPreviewAttachment] = useState<{ fileName: string; mimeType: string; url: string } | null>(null);
   const [sendLockExpiresAt, setSendLockExpiresAt] = useState<number | null>(() => getPoRequestSendLockExpiration(correlationId));
 
+  const editorRef = useRef<HTMLDivElement>(null);
+
   const threadEvents = useMemo(
     () => timelineEvents.filter((event) => ["sent", "reminder", "reply"].includes(event.type)),
     [timelineEvents]
   );
+  
   const stateRounds = useMemo(() => {
     type FlowStep = { key: string; label: string };
     const rounds: FlowStep[][] = [];
@@ -261,6 +303,7 @@ export function PoRequestPanel({
 
     return rounds;
   }, [threadEvents, hasConfirmedPo]);
+
   const flattenedStateSteps = useMemo(
     () =>
       stateRounds.flatMap((round, roundIndex) =>
@@ -272,6 +315,7 @@ export function PoRequestPanel({
       ),
     [stateRounds]
   );
+
   const supplierReplyCount = threadEvents.filter((event) => event.type === "reply").length;
   const lastThreadTimestamp = threadEvents[0]?.timestamp ?? "暂无记录";
   const latestThreadEvent = threadEvents[0];
@@ -286,13 +330,21 @@ export function PoRequestPanel({
       setSubject(defaultSubject);
       return;
     }
-
-    setSubject(ensureReplySubject(latestThreadEvent?.subject));
+    
+    const trimmed = latestThreadEvent?.subject?.trim() || defaultSubject;
+    const replySubject = /^re:/i.test(trimmed) ? trimmed : `Re: ${trimmed}`;
+    setSubject(replySubject);
   }, [defaultSubject, isDraftRound, latestThreadEvent?.subject]);
 
   useEffect(() => {
     setBody(defaultBody);
   }, [defaultBody]);
+
+  useEffect(() => {
+    if (editorRef.current && editorRef.current.innerHTML !== body) {
+      editorRef.current.innerHTML = body;
+    }
+  }, [body]);
 
   useEffect(() => {
     setSendLockExpiresAt(getPoRequestSendLockExpiration(correlationId));
@@ -367,39 +419,20 @@ export function PoRequestPanel({
     return emailMatch?.[0]?.trim() || value.trim();
   };
 
-  const ensureReplySubject = (value: string | undefined) => {
-    const trimmed = value?.trim() || defaultSubject;
-    return /^re:/i.test(trimmed) ? trimmed : `Re: ${trimmed}`;
-  };
-
   const handleReplyInThread = () => {
     const replyTarget =
       latestThreadEvent?.type === "reply"
         ? extractEmailAddress(latestThreadEvent.from) || selectedMerchantEmail
         : extractEmailAddress(latestThreadEvent?.to) || selectedMerchantEmail;
-    const replySubject = ensureReplySubject(latestThreadEvent?.subject);
+        
+    const trimmed = latestThreadEvent?.subject?.trim() || defaultSubject;
+    const replySubject = /^re:/i.test(trimmed) ? trimmed : `Re: ${trimmed}`;
 
     setTo(replyTarget);
     setSubject(replySubject);
     setBody("");
     setQuickAddRecipient("");
     setActiveTab("compose");
-  };
-
-  const getThreadEventContent = (event: EmailTimelineEvent) => {
-    const lines = [
-      event.from ? `发件人: ${event.from}` : "",
-      event.to ? `收件人: ${event.to}` : "",
-      event.subject ? `主题: ${event.subject}` : "",
-      "",
-      event.body || event.description,
-    ].filter(Boolean);
-
-    if (event.type === "reminder" && !event.body) {
-      return `提醒邮件已发给 ${selectedMerchantEmail}。\n\n请尽快回复当前 PO 请求（${correlationId}）。`;
-    }
-
-    return lines.join("\n");
   };
 
   const canInlinePreview = (mimeType: string) =>
@@ -436,8 +469,6 @@ export function PoRequestPanel({
         </div>
       ) : null}
 
-      {/* <div className="text-[28px] font-semibold tracking-[-0.03em] text-slate-900">Request Purchase Order</div> */}
-
       <div className={`${readOnly ? "mt-4" : "mt-6"} space-y-3`}>
         {stateRounds.length === 0 ? (
           <div className="flex items-center gap-2">
@@ -460,7 +491,6 @@ export function PoRequestPanel({
           </div>
         )}
       </div>
-      {/* <div className="mt-2 text-xs text-slate-500">每次新的 Sent 会开启新一轮催发流程，直到 Get Reply 或 Escalation Required。</div> */}
 
       <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
         <div className="flex flex-wrap border-b border-slate-200 bg-white">
@@ -552,7 +582,6 @@ export function PoRequestPanel({
                     ))}
                   </Select>
                 </div>
-                <div className="mt-1 text-xs text-slate-500">支持多个收件人，使用逗号、分号或换行分隔。</div>
               </div>
               <div>
                 <div className="mb-1 font-semibold text-slate-900">Subject</div>
@@ -561,17 +590,20 @@ export function PoRequestPanel({
                   onChange={(event) => setSubject(event.target.value)}
                   disabled={readOnly || !isDraftRound}
                 />
-                {!isDraftRound ? (
-                  <div className="mt-1 text-xs text-slate-500">
-                    只有首次 Draft 邮件可以修改主题；后续 round 只能在线程中回复，主题保持当前邮件线程。
-                  </div>
-                ) : null}
               </div>
               <div>
-                <div className="mb-1 font-semibold text-slate-900">Body</div>
-                <Textarea rows={12} value={body} onChange={(event) => setBody(event.target.value)} disabled={readOnly} />
+                <div className="mb-1 font-semibold text-slate-900">正文</div>
+                <div
+                  ref={editorRef}
+                  contentEditable={!readOnly}
+                  className={`min-h-[280px] w-full rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950 ${readOnly ? "cursor-not-allowed opacity-50" : ""}`}
+                  onInput={(e) => setBody(e.currentTarget.innerHTML)}
+                />
+                <div className="mt-1 text-xs text-slate-500">
+                  支持直接复制并粘贴截图/图片到上方正文中。
+                </div>
               </div>
-              <div className="flex items-center justify-end gap-2">
+              <div className="flex items-center justify-end gap-2 mt-4">
                 {isModified && !readOnly ? (
                   <Button className="h-10 px-4" leftIcon={<X className="h-4 w-4" />} onClick={handleCancel}>
                     Cancel
@@ -589,38 +621,21 @@ export function PoRequestPanel({
                 >
                   {sending
                     ? "Sending..."
-                    : draftSendBlocked
-                      ? "External Send Detected"
-                    : draftSendLocked
-                      ? "PO Request Locked"
-                      : sendDisabled
+	                    : draftSendBlocked
+	                      ? "External Send Detected"
+	                    : draftSendLocked
+	                      ? `PO Request Locked${sendLockHint ? ` (${sendLockHint})` : ""}`
+	                      : sendDisabled
                         ? "PO Request Sent"
                         : "Send PO Request"}
                 </Button>
               </div>
-              {draftSendBlocked ? (
-                <div className="text-right text-xs text-amber-700">
-                  {draftSendBlockedReason}
-                </div>
-              ) : null}
-              {draftSendLocked ? (
-                <div className="text-right text-xs text-slate-500">
-                  Same PO request was sent recently. Retry is blocked for another {sendLockHint}.
-                </div>
-              ) : null}
             </div>
           ) : null}
 
           {activeTab === "thread" ? (
             <div>
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  
-                  {/* <div className="mt-2 flex items-center gap-2 text-sm font-mono text-slate-500">
-                    <span>{syntheticThreadId}</span>
-                    <Copy className="h-4 w-4" />
-                  </div> */}
-                </div>
                 <div className="flex items-center gap-3 text-sm">
                   <div className="inline-flex items-center gap-1 text-slate-500">
                     <Clock3 className="h-4 w-4" />
@@ -655,7 +670,6 @@ export function PoRequestPanel({
                                     ? "bg-amber-100 text-amber-700"
                                     : "bg-blue-100 text-blue-700"
                               }`}
-                              title={event.type === "reply" ? "商户回复" : event.type === "reminder" ? "催发邮件" : "系统发出"}
                             >
                               {event.type === "reply" ? (
                                 <MailCheck className="h-3.5 w-3.5" />
@@ -687,8 +701,24 @@ export function PoRequestPanel({
                         </div>
                       </button>
                       {expandedEventId === event.id ? (
-                        <div className="mt-4 whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                          {getThreadEventContent(event)}
+                        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                          <div className="mb-4 text-slate-500 font-medium space-y-1">
+                            {event.from && <div>发件人: {event.from}</div>}
+                            {event.to && <div>收件人: {event.to}</div>}
+                            {event.subject && <div>主题: {event.subject}</div>}
+                          </div>
+                          
+                          {event.type === "reminder" && !event.body ? (
+                            <div className="whitespace-pre-wrap">
+                              提醒邮件已发给 {selectedMerchantEmail}。\n\n请尽快回复当前 PO 请求（{correlationId}）。
+                            </div>
+                          ) : (
+                            <div 
+                              className="email-content-preview overflow-hidden" 
+                              dangerouslySetInnerHTML={{ __html: event.body || event.description || "" }} 
+                            />
+                          )}
+                          
                           {event.attachments?.length ? (
                             <div className="mt-4 space-y-2 border-t border-slate-200 pt-3">
                               <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Attachments</div>

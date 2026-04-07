@@ -1,4 +1,4 @@
-import type { InvoiceStatus, PoSource, XeroInvoiceStatus } from "../types";
+import type { InvoiceStatus, PoSource, XeroInvoiceStatus } from "../../types";
 
 type Props = {
   kind: "invoice" | "source" | "state" | "xero";

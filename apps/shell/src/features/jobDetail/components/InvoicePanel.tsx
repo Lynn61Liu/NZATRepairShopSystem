@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { Button, Input, Select } from "@/components/ui";
-import { InvoiceDashboard } from "@/features/invoice/components/InvoiceDashboard";
-import type { InvoiceDashboardModel } from "@/features/invoice/hooks/useInvoiceDashboardState";
+import { InvoiceDashboard } from "@/features/invoice/components/invoicePanel/InvoiceDashboard";
+import type { InvoicePanelModel } from "@/features/invoice/hooks/useInvoiceDashboardState";
 
 type InvoicePanelProps = {
-  model?: InvoiceDashboardModel;
+  model?: InvoicePanelModel;
   hasInvoice?: boolean;
   invoiceProcessing?: {
     status: string;

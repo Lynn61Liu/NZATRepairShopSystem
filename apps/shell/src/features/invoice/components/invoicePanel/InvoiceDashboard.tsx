@@ -1,8 +1,8 @@
-import { useInvoiceDashboardState, type InvoiceDashboardModel } from "../hooks/useInvoiceDashboardState";
+import { useInvoiceDashboardState, type InvoicePanelModel } from "../../hooks/useInvoiceDashboardState";
 import { XeroReadOnlyInvoiceView } from "./XeroReadOnlyInvoiceView";
 
 type InvoiceDashboardProps = {
-  model?: InvoiceDashboardModel;
+  model?: InvoicePanelModel;
   hasInvoice?: boolean;
   onCreateInvoice?: () => Promise<{ success: boolean; message?: string }>;
   isCreatingInvoice?: boolean;
@@ -10,7 +10,8 @@ type InvoiceDashboardProps = {
 };
 
 export function InvoiceDashboard({ model, hasInvoice, onCreateInvoice, isCreatingInvoice }: InvoiceDashboardProps) {
-  const dashboard = model ?? useInvoiceDashboardState();
+  const fallbackDashboard = useInvoiceDashboardState().invoicePanel;
+  const dashboard = model ?? fallbackDashboard;
   return (
     <InvoiceDashboardContent
       model={dashboard}
@@ -25,7 +26,7 @@ export function InvoiceDashboardContent({
   model,
   hasInvoice,
 }: {
-  model: InvoiceDashboardModel;
+  model: InvoicePanelModel;
   hasInvoice?: boolean;
   onCreateInvoice?: () => Promise<{ success: boolean; message?: string }>;
   isCreatingInvoice?: boolean;

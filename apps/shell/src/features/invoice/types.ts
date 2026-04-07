@@ -134,6 +134,7 @@ export type MerchantEmailRecipient = {
 };
 
 export type InvoiceDashboardState = {
+  // year: string;
   contact: string;
   merchantUserName: string;
   issueDate: string;
@@ -155,6 +156,7 @@ export type InvoiceDashboardState = {
   vehicleRego: string;
   vehicleModel: string;
   vehicleMake: string;
+  vehicleYear: string;
   snapshotTotal: number;
   emailStates: EmailState[];
   remindersSent: number;

@@ -1,8 +1,8 @@
-import { PoDashboard } from "@/features/invoice/components/PoDashboard";
-import type { InvoiceDashboardModel } from "@/features/invoice/hooks/useInvoiceDashboardState";
+import { PoDashboard } from "@/features/invoice/components/poPanel/PoDashboard";
+import type { PoPanelModel } from "@/features/invoice/hooks/useInvoiceDashboardState";
 
 type PoPanelProps = {
-  model: InvoiceDashboardModel;
+  model: PoPanelModel;
 };
 
 export function PoPanel({ model }: PoPanelProps) {

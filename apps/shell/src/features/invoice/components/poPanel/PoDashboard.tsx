@@ -1,8 +1,8 @@
-import type { InvoiceDashboardModel } from "../hooks/useInvoiceDashboardState";
+import type { PoPanelModel } from "../../hooks/useInvoiceDashboardState";
 import { PoRequestPanel } from "./PoRequestPanel";
 
 type PoDashboardProps = {
-  model: InvoiceDashboardModel;
+  model: PoPanelModel;
 };
 
 export function PoDashboard({ model }: PoDashboardProps) {
@@ -16,6 +16,7 @@ export function PoDashboard({ model }: PoDashboardProps) {
           vehicleRego={model.invoice.vehicleRego}
           vehicleModel={model.invoice.vehicleModel}
           vehicleMake={model.invoice.vehicleMake}
+          vehicleYear={model.invoice.vehicleYear}
           snapshotTotal={model.totalAmount}
           items={model.items}
           emailStates={model.invoice.emailStates}

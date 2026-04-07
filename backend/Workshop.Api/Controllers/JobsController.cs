@@ -64,55 +64,8 @@ public class JobsController : ControllerBase
 
     private async Task<string?> BuildJobsListResponseJsonAsync(JobsListRequest request, CancellationToken ct)
     {
-        var firstInvoiceByJob = _db.JobInvoices.AsNoTracking()
-            .GroupBy(x => x.JobId)
-            .Select(group => group
-                .OrderBy(x => x.Id)
-                .Select(x => new
-                {
-                    x.JobId,
-                    x.ExternalInvoiceId
-                })
-                .FirstOrDefault());
-
-        var paintServiceByJob = _db.JobPaintServices.AsNoTracking()
-            .GroupBy(x => x.JobId)
-            .Select(group => group
-                .OrderByDescending(x => x.UpdatedAt)
-                .ThenByDescending(x => x.Id)
-                .Select(x => new
-                {
-                    x.JobId,
-                    x.Status,
-                    PaintCurrentStage = (int?)x.CurrentStage,
-                    PaintPanels = (int?)x.Panels
-                })
-                .FirstOrDefault());
-
-        var latestWofRecordByJob = _db.JobWofRecords.AsNoTracking()
-            .GroupBy(x => x.JobId)
-            .Select(group => group
-                .OrderByDescending(x => x.OccurredAt)
-                .ThenByDescending(x => x.Id)
-                .Select(x => new
-                {
-                    x.JobId,
-                    LatestWofUiState = (WofUiState?)x.WofUiState,
-                    HasWofRecord = true
-                })
-                .FirstOrDefault());
-
-        var latestWofStateByJob = _db.JobWofStates.AsNoTracking()
-            .GroupBy(x => x.JobId)
-            .Select(group => group
-                .OrderByDescending(x => x.UpdatedAt)
-                .ThenByDescending(x => x.Id)
-                .Select(x => new
-                {
-                    x.JobId,
-                    x.ManualStatus
-                })
-                .FirstOrDefault());
+        var paintServices = _db.JobPaintServices.AsNoTracking();
+        var wofRecords = _db.JobWofRecords.AsNoTracking();
 
         var wofServiceJobIds = (
                 from selection in _db.JobServiceSelections.AsNoTracking()
@@ -126,41 +79,213 @@ public class JobsController : ControllerBase
             from j in _db.Jobs.AsNoTracking()
             join v in _db.Vehicles.AsNoTracking() on j.VehicleId equals v.Id
             join c in _db.Customers.AsNoTracking() on j.CustomerId equals c.Id
-            join ji in firstInvoiceByJob on j.Id equals ji!.JobId into invoiceGroup
+            join ji in _db.JobInvoices.AsNoTracking() on j.Id equals ji.JobId into invoiceGroup
             from ji in invoiceGroup.DefaultIfEmpty()
-            join p in paintServiceByJob on j.Id equals p!.JobId into paintGroup
-            from p in paintGroup.DefaultIfEmpty()
-            join wr in latestWofRecordByJob on j.Id equals wr!.JobId into latestWofRecordGroup
-            from wr in latestWofRecordGroup.DefaultIfEmpty()
-            join ws in latestWofStateByJob on j.Id equals ws!.JobId into latestWofStateGroup
+            join ws in _db.JobWofStates.AsNoTracking() on j.Id equals ws.JobId into latestWofStateGroup
             from ws in latestWofStateGroup.DefaultIfEmpty()
-            join wof in wofServiceJobIds on j.Id equals wof.JobId into wofServiceGroup
-            from wof in wofServiceGroup.DefaultIfEmpty()
-            select new JobsListProjection(
-                j.Id,
-                j.Status,
-                j.IsUrgent,
-                j.NeedsPo,
-                j.CreatedAt,
-                j.Notes,
-                ji != null ? ji.ExternalInvoiceId : null,
-                p != null ? p.Status : null,
-                p != null ? p.PaintCurrentStage : null,
-                p != null ? p.PaintPanels : null,
-                wof != null,
-                wr != null,
-                wr != null ? wr.LatestWofUiState : null,
-                ws != null ? ws.ManualStatus : null,
-                v.Plate,
-                v.Make,
-                v.Model,
-                v.Year,
-                c.Name,
-                c.BusinessCode,
-                c.Phone
-            );
+            select new
+            {
+                Job = j,
+                Vehicle = v,
+                Customer = c,
+                Invoice = ji,
+                WofState = ws
+            };
 
-        query = ApplyJobsListFilters(query, request);
+        if (string.IsNullOrWhiteSpace(request.JobType))
+        {
+            query = query.Where(x => x.Job.Status != null && !EF.Functions.ILike(x.Job.Status, "Archived"));
+        }
+        else
+        {
+            query = request.JobType switch
+            {
+                "In Progress" => query.Where(x => x.Job.Status != null && (EF.Functions.ILike(x.Job.Status, "InProgress") || EF.Functions.ILike(x.Job.Status, "In Progress"))),
+                "Ready" => query.Where(x => x.Job.Status != null && (EF.Functions.ILike(x.Job.Status, "Delivered") || EF.Functions.ILike(x.Job.Status, "Ready"))),
+                _ => query.Where(x => x.Job.Status != null && EF.Functions.ILike(x.Job.Status, request.JobType))
+            };
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Search))
+        {
+            var pattern = $"%{request.Search}%";
+            var parsedId = long.TryParse(request.Search, NumberStyles.None, CultureInfo.InvariantCulture, out var jobId)
+                ? jobId
+                : (long?)null;
+
+            query = query.Where(x =>
+                (parsedId.HasValue && x.Job.Id == parsedId.Value)
+                || EF.Functions.ILike(x.Vehicle.Plate ?? "", pattern)
+                || EF.Functions.ILike((x.Vehicle.Make ?? "") + " " + (x.Vehicle.Model ?? ""), pattern)
+                || EF.Functions.ILike(x.Customer.BusinessCode ?? "", pattern)
+                || EF.Functions.ILike(x.Customer.Name ?? "", pattern)
+                || EF.Functions.ILike(x.Job.Notes ?? "", pattern));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Customer))
+        {
+            var customerPattern = $"%{request.Customer}%";
+            query = query.Where(x =>
+                EF.Functions.ILike(x.Customer.BusinessCode ?? "", customerPattern)
+                || EF.Functions.ILike(x.Customer.Name ?? "", customerPattern));
+        }
+
+        if (request.RangeStartUtc.HasValue)
+            query = query.Where(x => x.Job.CreatedAt >= request.RangeStartUtc.Value);
+
+        if (request.RangeEndUtcExclusive.HasValue)
+            query = query.Where(x => x.Job.CreatedAt < request.RangeEndUtcExclusive.Value);
+
+        if (!string.IsNullOrWhiteSpace(request.WofStatus))
+        {
+            query = request.WofStatus switch
+            {
+                "Recorded" => query.Where(x =>
+                    wofRecords
+                        .Any(record => record.JobId == x.Job.Id)
+                    || (wofServiceJobIds.Any(wofJob => wofJob.JobId == x.Job.Id)
+                        && x.WofState != null
+                        && x.WofState.ManualStatus != null
+                        && EF.Functions.ILike(x.WofState.ManualStatus, "Recorded"))),
+                "Checked" => query.Where(x =>
+                    !wofRecords.Any(record => record.JobId == x.Job.Id)
+                    && wofServiceJobIds.Any(wofJob => wofJob.JobId == x.Job.Id)
+                    && x.WofState != null
+                    && x.WofState.ManualStatus != null
+                    && EF.Functions.ILike(x.WofState.ManualStatus, "Checked")),
+                "Todo" => query.Where(x =>
+                    !wofRecords.Any(record => record.JobId == x.Job.Id)
+                    && wofServiceJobIds.Any(wofJob => wofJob.JobId == x.Job.Id)
+                    && (x.WofState == null
+                        || x.WofState.ManualStatus == null
+                        || (!EF.Functions.ILike(x.WofState.ManualStatus, "Checked")
+                            && !EF.Functions.ILike(x.WofState.ManualStatus, "Recorded")))),
+                _ => query
+            };
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.PaintStatus))
+        {
+            query = request.PaintStatus switch
+            {
+                "on_hold" => query.Where(x =>
+                    paintServices
+                        .Where(paint => paint.JobId == x.Job.Id)
+                        .OrderByDescending(paint => paint.UpdatedAt)
+                        .ThenByDescending(paint => paint.Id)
+                        .Select(paint => (int?)paint.CurrentStage)
+                        .FirstOrDefault() <= -2),
+                "waiting" => query.Where(x =>
+                    paintServices
+                        .Where(paint => paint.JobId == x.Job.Id)
+                        .OrderByDescending(paint => paint.UpdatedAt)
+                        .ThenByDescending(paint => paint.Id)
+                        .Select(paint => paint.Status)
+                        .FirstOrDefault() != null
+                    && (paintServices
+                            .Where(paint => paint.JobId == x.Job.Id)
+                            .OrderByDescending(paint => paint.UpdatedAt)
+                            .ThenByDescending(paint => paint.Id)
+                            .Select(paint => (int?)paint.CurrentStage)
+                            .FirstOrDefault() == null
+                        || (paintServices
+                                .Where(paint => paint.JobId == x.Job.Id)
+                                .OrderByDescending(paint => paint.UpdatedAt)
+                                .ThenByDescending(paint => paint.Id)
+                                .Select(paint => (int?)paint.CurrentStage)
+                                .FirstOrDefault() < 0
+                            && paintServices
+                                .Where(paint => paint.JobId == x.Job.Id)
+                                .OrderByDescending(paint => paint.UpdatedAt)
+                                .ThenByDescending(paint => paint.Id)
+                                .Select(paint => (int?)paint.CurrentStage)
+                                .FirstOrDefault() > -2))),
+                "sheet" => query.Where(x => paintServices
+                    .Where(paint => paint.JobId == x.Job.Id)
+                    .OrderByDescending(paint => paint.UpdatedAt)
+                    .ThenByDescending(paint => paint.Id)
+                    .Select(paint => (int?)paint.CurrentStage)
+                    .FirstOrDefault() == 0),
+                "undercoat" => query.Where(x => paintServices
+                    .Where(paint => paint.JobId == x.Job.Id)
+                    .OrderByDescending(paint => paint.UpdatedAt)
+                    .ThenByDescending(paint => paint.Id)
+                    .Select(paint => (int?)paint.CurrentStage)
+                    .FirstOrDefault() == 1),
+                "sanding" => query.Where(x => paintServices
+                    .Where(paint => paint.JobId == x.Job.Id)
+                    .OrderByDescending(paint => paint.UpdatedAt)
+                    .ThenByDescending(paint => paint.Id)
+                    .Select(paint => (int?)paint.CurrentStage)
+                    .FirstOrDefault() == 2),
+                "painting" => query.Where(x => paintServices
+                    .Where(paint => paint.JobId == x.Job.Id)
+                    .OrderByDescending(paint => paint.UpdatedAt)
+                    .ThenByDescending(paint => paint.Id)
+                    .Select(paint => (int?)paint.CurrentStage)
+                    .FirstOrDefault() == 3),
+                "assembly" => query.Where(x =>
+                    paintServices
+                        .Where(paint => paint.JobId == x.Job.Id)
+                        .OrderByDescending(paint => paint.UpdatedAt)
+                        .ThenByDescending(paint => paint.Id)
+                        .Select(paint => (int?)paint.CurrentStage)
+                        .FirstOrDefault() >= 4
+                    && (paintServices
+                            .Where(paint => paint.JobId == x.Job.Id)
+                            .OrderByDescending(paint => paint.UpdatedAt)
+                            .ThenByDescending(paint => paint.Id)
+                            .Select(paint => paint.Status)
+                            .FirstOrDefault() == null
+                        || (!EF.Functions.ILike(
+                                paintServices
+                                    .Where(paint => paint.JobId == x.Job.Id)
+                                    .OrderByDescending(paint => paint.UpdatedAt)
+                                    .ThenByDescending(paint => paint.Id)
+                                    .Select(paint => paint.Status)
+                                    .FirstOrDefault() ?? "",
+                                "done")
+                            && !EF.Functions.ILike(
+                                paintServices
+                                    .Where(paint => paint.JobId == x.Job.Id)
+                                    .OrderByDescending(paint => paint.UpdatedAt)
+                                    .ThenByDescending(paint => paint.Id)
+                                    .Select(paint => paint.Status)
+                                    .FirstOrDefault() ?? "",
+                                "delivered")))),
+                "done" => query.Where(x => EF.Functions.ILike(
+                    paintServices
+                        .Where(paint => paint.JobId == x.Job.Id)
+                        .OrderByDescending(paint => paint.UpdatedAt)
+                        .ThenByDescending(paint => paint.Id)
+                        .Select(paint => paint.Status)
+                        .FirstOrDefault() ?? "",
+                    "done")),
+                "delivered" => query.Where(x => EF.Functions.ILike(
+                    paintServices
+                        .Where(paint => paint.JobId == x.Job.Id)
+                        .OrderByDescending(paint => paint.UpdatedAt)
+                        .ThenByDescending(paint => paint.Id)
+                        .Select(paint => paint.Status)
+                        .FirstOrDefault() ?? "",
+                    "delivered")),
+                _ => query
+            };
+        }
+
+        if (request.SelectedTags.Length > 0)
+        {
+            var selectedTags = request.SelectedTags.Select(x => x.ToLowerInvariant()).ToArray();
+            var taggedJobIds = (
+                    from jt in _db.JobTags.AsNoTracking()
+                    join t in _db.Tags.AsNoTracking() on jt.TagId equals t.Id
+                    where t.IsActive && selectedTags.Contains(t.Name.ToLower())
+                    select jt.JobId
+                )
+                .Distinct();
+
+            query = query.Where(x => taggedJobIds.Contains(x.Job.Id));
+        }
 
         var totalItems = await query.CountAsync(ct);
         var totalPages = Math.Max(1, (int)Math.Ceiling(totalItems / (double)request.PageSize));
@@ -168,10 +293,53 @@ public class JobsController : ControllerBase
         var skip = (currentPage - 1) * request.PageSize;
 
         var pageRows = await query
-            .OrderByDescending(x => x.IsUrgent)
-            .ThenByDescending(x => x.CreatedAt)
+            .OrderByDescending(x => x.Job.IsUrgent)
+            .ThenByDescending(x => x.Job.CreatedAt)
             .Skip(skip)
             .Take(request.PageSize)
+            .Select(x => new JobsListProjection(
+                x.Job.Id,
+                x.Job.Status,
+                x.Job.IsUrgent,
+                x.Job.NeedsPo,
+                x.Job.CreatedAt,
+                x.Job.Notes,
+                x.Invoice != null ? x.Invoice.ExternalInvoiceId : null,
+                paintServices
+                    .Where(paint => paint.JobId == x.Job.Id)
+                    .OrderByDescending(paint => paint.UpdatedAt)
+                    .ThenByDescending(paint => paint.Id)
+                    .Select(paint => paint.Status)
+                    .FirstOrDefault(),
+                paintServices
+                    .Where(paint => paint.JobId == x.Job.Id)
+                    .OrderByDescending(paint => paint.UpdatedAt)
+                    .ThenByDescending(paint => paint.Id)
+                    .Select(paint => (int?)paint.CurrentStage)
+                    .FirstOrDefault(),
+                paintServices
+                    .Where(paint => paint.JobId == x.Job.Id)
+                    .OrderByDescending(paint => paint.UpdatedAt)
+                    .ThenByDescending(paint => paint.Id)
+                    .Select(paint => (int?)paint.Panels)
+                    .FirstOrDefault(),
+                wofServiceJobIds.Any(wofJob => wofJob.JobId == x.Job.Id),
+                wofRecords.Any(record => record.JobId == x.Job.Id),
+                wofRecords
+                    .Where(record => record.JobId == x.Job.Id)
+                    .OrderByDescending(record => record.OccurredAt)
+                    .ThenByDescending(record => record.Id)
+                    .Select(record => (WofUiState?)record.WofUiState)
+                    .FirstOrDefault(),
+                x.WofState != null ? x.WofState.ManualStatus : null,
+                x.Vehicle.Plate,
+                x.Vehicle.Make,
+                x.Vehicle.Model,
+                x.Vehicle.Year,
+                x.Customer.Name,
+                x.Customer.BusinessCode,
+                x.Customer.Phone
+            ))
             .ToListAsync(ct);
 
         var pageJobIds = pageRows.Select(x => x.Id).ToArray();
@@ -232,113 +400,6 @@ public class JobsController : ControllerBase
             currentPage,
             pageSize = request.PageSize
         });
-    }
-
-    private IQueryable<JobsListProjection> ApplyJobsListFilters(IQueryable<JobsListProjection> query, JobsListRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.JobType))
-        {
-            query = query.Where(x => x.Status != null && !EF.Functions.ILike(x.Status, "Archived"));
-        }
-        else
-        {
-            query = request.JobType switch
-            {
-                "In Progress" => query.Where(x => x.Status != null && (EF.Functions.ILike(x.Status, "InProgress") || EF.Functions.ILike(x.Status, "In Progress"))),
-                "Ready" => query.Where(x => x.Status != null && (EF.Functions.ILike(x.Status, "Delivered") || EF.Functions.ILike(x.Status, "Ready"))),
-                _ => query.Where(x => x.Status != null && EF.Functions.ILike(x.Status, request.JobType))
-            };
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.Search))
-        {
-            var pattern = $"%{request.Search}%";
-            var parsedId = long.TryParse(request.Search, NumberStyles.None, CultureInfo.InvariantCulture, out var jobId)
-                ? jobId
-                : (long?)null;
-
-            query = query.Where(x =>
-                (parsedId.HasValue && x.Id == parsedId.Value)
-                || EF.Functions.ILike(x.Plate ?? "", pattern)
-                || EF.Functions.ILike((x.Make ?? "") + " " + (x.Model ?? ""), pattern)
-                || EF.Functions.ILike(x.CustomerCode ?? "", pattern)
-                || EF.Functions.ILike(x.CustomerName ?? "", pattern)
-                || EF.Functions.ILike(x.Notes ?? "", pattern));
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.Customer))
-        {
-            var customerPattern = $"%{request.Customer}%";
-            query = query.Where(x =>
-                EF.Functions.ILike(x.CustomerCode ?? "", customerPattern)
-                || EF.Functions.ILike(x.CustomerName ?? "", customerPattern));
-        }
-
-        if (request.RangeStartUtc.HasValue)
-            query = query.Where(x => x.CreatedAt >= request.RangeStartUtc.Value);
-
-        if (request.RangeEndUtcExclusive.HasValue)
-            query = query.Where(x => x.CreatedAt < request.RangeEndUtcExclusive.Value);
-
-        if (!string.IsNullOrWhiteSpace(request.WofStatus))
-        {
-            query = request.WofStatus switch
-            {
-                "Recorded" => query.Where(x =>
-                    x.LatestWofUiState.HasValue
-                    || (x.HasWofService && x.LatestWofManualStatus != null && EF.Functions.ILike(x.LatestWofManualStatus, "Recorded"))),
-                "Checked" => query.Where(x =>
-                    !x.LatestWofUiState.HasValue
-                    && x.HasWofService
-                    && x.LatestWofManualStatus != null
-                    && EF.Functions.ILike(x.LatestWofManualStatus, "Checked")),
-                "Todo" => query.Where(x =>
-                    !x.LatestWofUiState.HasValue
-                    && x.HasWofService
-                    && (x.LatestWofManualStatus == null
-                        || (!EF.Functions.ILike(x.LatestWofManualStatus, "Checked")
-                            && !EF.Functions.ILike(x.LatestWofManualStatus, "Recorded")))),
-                _ => query
-            };
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.PaintStatus))
-        {
-            query = request.PaintStatus switch
-            {
-                "on_hold" => query.Where(x => x.PaintCurrentStage.HasValue && x.PaintCurrentStage.Value <= -2),
-                "waiting" => query.Where(x =>
-                    x.PaintStatus != null
-                    && (x.PaintCurrentStage == null || (x.PaintCurrentStage.Value < 0 && x.PaintCurrentStage.Value > -2))),
-                "sheet" => query.Where(x => x.PaintCurrentStage == 0),
-                "undercoat" => query.Where(x => x.PaintCurrentStage == 1),
-                "sanding" => query.Where(x => x.PaintCurrentStage == 2),
-                "painting" => query.Where(x => x.PaintCurrentStage == 3),
-                "assembly" => query.Where(x =>
-                    x.PaintCurrentStage.HasValue
-                    && x.PaintCurrentStage.Value >= 4
-                    && (x.PaintStatus == null || (!EF.Functions.ILike(x.PaintStatus, "done") && !EF.Functions.ILike(x.PaintStatus, "delivered")))),
-                "done" => query.Where(x => x.PaintStatus != null && EF.Functions.ILike(x.PaintStatus, "done")),
-                "delivered" => query.Where(x => x.PaintStatus != null && EF.Functions.ILike(x.PaintStatus, "delivered")),
-                _ => query
-            };
-        }
-
-        if (request.SelectedTags.Length > 0)
-        {
-            var selectedTags = request.SelectedTags.Select(x => x.ToLowerInvariant()).ToArray();
-            var taggedJobIds = (
-                    from jt in _db.JobTags.AsNoTracking()
-                    join t in _db.Tags.AsNoTracking() on jt.TagId equals t.Id
-                    where t.IsActive && selectedTags.Contains(t.Name.ToLower())
-                    select jt.JobId
-                )
-                .Distinct();
-
-            query = query.Where(x => taggedJobIds.Contains(x.Id));
-        }
-
-        return query;
     }
 
     private async Task<string> GetJobsListVersionAsync(CancellationToken ct)

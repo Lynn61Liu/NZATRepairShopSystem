@@ -3,7 +3,7 @@ import { Check, ExternalLink, Link2, X } from "lucide-react";
 import { Button, Card, Input } from "@/components/ui";
 import { withApiBase } from "@/utils/api";
 import { StatusBadge } from "./StatusBadge";
-import type { PoDetection } from "../types";
+import type { PoDetection } from "../../types";
 
 type Props = {
   detections: PoDetection[];
