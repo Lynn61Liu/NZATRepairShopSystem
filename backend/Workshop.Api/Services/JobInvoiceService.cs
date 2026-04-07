@@ -781,22 +781,22 @@ public sealed class JobInvoiceService
     {
         var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
         if (jobInvoice is null)
-            return JobInvoiceDeleteResult.Success(false);
+            return JobInvoiceDeleteResult.Success(false, "没有找到关联的 invoice，跳过 Xero 删除。");
 
         if (!string.Equals(jobInvoice.Provider, "xero", StringComparison.OrdinalIgnoreCase))
-            return JobInvoiceDeleteResult.Success(false);
+            return JobInvoiceDeleteResult.Success(false, "不是 Xero invoice，跳过 Xero 删除。");
 
         if (string.Equals(jobInvoice.ExternalStatus, "DELETED", StringComparison.OrdinalIgnoreCase))
-            return JobInvoiceDeleteResult.Success(true);
+            return JobInvoiceDeleteResult.Success(false, "Xero invoice 已经是 DELETED，跳过 Xero 删除。");
 
         if (string.IsNullOrWhiteSpace(jobInvoice.ExternalInvoiceId) || !Guid.TryParse(jobInvoice.ExternalInvoiceId, out var invoiceId))
-            return JobInvoiceDeleteResult.Fail(400, "Missing Xero invoice id.");
+            return JobInvoiceDeleteResult.Success(false, "没有找到 Xero invoice id，跳过 Xero 删除。");
 
         var remoteInvoiceResult = await _xeroInvoiceService.GetInvoiceByIdAsync(invoiceId, ct);
         if (!remoteInvoiceResult.Ok)
         {
             if (remoteInvoiceResult.StatusCode == 404)
-                return JobInvoiceDeleteResult.Success(true);
+                return JobInvoiceDeleteResult.Success(false, "Xero 中没有找到 invoice，跳过 Xero 删除。");
 
             return JobInvoiceDeleteResult.Fail(
                 remoteInvoiceResult.StatusCode,
@@ -806,7 +806,7 @@ public sealed class JobInvoiceService
 
         var remoteInvoice = ExtractInvoiceSummary(remoteInvoiceResult.Payload);
         if (string.Equals(remoteInvoice.Status, "DELETED", StringComparison.OrdinalIgnoreCase))
-            return JobInvoiceDeleteResult.Success(true);
+            return JobInvoiceDeleteResult.Success(false, "Xero invoice 已经是 DELETED，跳过 Xero 删除。");
 
         if (!string.Equals(jobInvoice.ExternalStatus, "DRAFT", StringComparison.OrdinalIgnoreCase))
         {
@@ -819,12 +819,12 @@ public sealed class JobInvoiceService
         if (!deleteResult.Ok)
         {
             if (deleteResult.StatusCode == 404)
-                return JobInvoiceDeleteResult.Success(true);
+                return JobInvoiceDeleteResult.Success(false, "Xero 中没有找到 invoice，跳过 Xero 删除。");
 
             return JobInvoiceDeleteResult.Fail(deleteResult.StatusCode, deleteResult.Error ?? "Failed to delete Xero draft invoice.", deleteResult.Payload);
         }
 
-        return JobInvoiceDeleteResult.Success(true);
+        return JobInvoiceDeleteResult.Success(true, "Xero draft 已删除。");
     }
 
     private async Task<JobInvoiceCreateResult> SyncInvoiceStatusAsync(JobInvoice jobInvoice, string targetStatus, CancellationToken ct)
@@ -1647,13 +1647,15 @@ public sealed class JobInvoiceDeleteResult
     public string? Error { get; private init; }
     public object? Payload { get; private init; }
     public bool DeletedInXero { get; private init; }
+    public string? Message { get; private init; }
 
-    public static JobInvoiceDeleteResult Success(bool deletedInXero) =>
+    public static JobInvoiceDeleteResult Success(bool deletedInXero, string? message = null) =>
         new()
         {
             Ok = true,
             StatusCode = 200,
             DeletedInXero = deletedInXero,
+            Message = message,
         };
 
     public static JobInvoiceDeleteResult Fail(int statusCode, string error, object? payload = null) =>

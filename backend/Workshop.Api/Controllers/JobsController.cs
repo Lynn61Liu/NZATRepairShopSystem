@@ -741,6 +741,8 @@ public class JobsController : ControllerBase
                             status = x.Status,
                             attemptCount = x.AttemptCount,
                             lastError = x.LastError,
+                            availableAt = FormatDateTime(x.AvailableAt),
+                            lockedAt = x.LockedAt.HasValue ? FormatDateTime(x.LockedAt.Value) : null,
                             createdAt = FormatDateTime(x.CreatedAt),
                             updatedAt = FormatDateTime(x.UpdatedAt),
                             processedAt = x.ProcessedAt.HasValue ? FormatDateTime(x.ProcessedAt.Value) : null,
@@ -1676,7 +1678,7 @@ public class JobsController : ControllerBase
         _db.ChangeTracker.Clear();
         var xeroStepMessage = xeroDeleteResult.DeletedInXero
             ? "Xero draft 已删除。"
-            : "没有需要删除的 Xero draft。";
+            : xeroDeleteResult.Message ?? "没有需要删除的 Xero draft。";
 
         try
         {

@@ -3,6 +3,7 @@ import { Plus } from "lucide-react";
 import { Button, Input, Select } from "@/components/ui";
 import { InvoiceDashboard } from "@/features/invoice/components/invoicePanel/InvoiceDashboard";
 import type { InvoicePanelModel } from "@/features/invoice/hooks/useInvoiceDashboardState";
+import { formatNzDateTime } from "@/utils/date";
 
 type InvoicePanelProps = {
   model?: InvoicePanelModel;
@@ -12,6 +13,11 @@ type InvoicePanelProps = {
     messageType: string;
     attemptCount: number;
     lastError?: string | null;
+    availableAt?: string;
+    lockedAt?: string | null;
+    createdAt?: string;
+    updatedAt?: string;
+    processedAt?: string | null;
   } | null;
   onCreateInvoice?: () => Promise<{ success: boolean; message?: string }>;
   isCreatingInvoice?: boolean;
@@ -153,9 +159,23 @@ export function InvoicePanel({
                   : "border-[rgba(37,99,235,0.14)] bg-[rgba(239,246,255,0.9)] text-blue-700",
               ].join(" ")}
             >
-              {invoiceProcessing.status === "failed"
-                ? `Invoice background processing failed${invoiceProcessing.lastError ? `: ${invoiceProcessing.lastError}` : "."}`
-                : `Invoice background processing is ${invoiceProcessing.status}.`}
+              <div className="font-semibold">
+                {invoiceProcessing.status === "failed"
+                  ? `Invoice background processing failed${invoiceProcessing.lastError ? `: ${invoiceProcessing.lastError}` : "."}`
+                  : `Invoice background processing is ${invoiceProcessing.status}.`}
+              </div>
+              <div className="mt-2 grid gap-1 text-xs opacity-85 sm:grid-cols-2">
+                <div>Type: {formatInvoiceProcessingType(invoiceProcessing.messageType)}</div>
+                <div>Attempts: {invoiceProcessing.attemptCount}</div>
+                <div>Queued: {formatNzDateTime(invoiceProcessing.createdAt)}</div>
+                <div>Available: {formatNzDateTime(invoiceProcessing.availableAt)}</div>
+                <div>Last update: {formatNzDateTime(invoiceProcessing.updatedAt)}</div>
+                <div>
+                  {invoiceProcessing.lockedAt
+                    ? `Started: ${formatNzDateTime(invoiceProcessing.lockedAt)}`
+                    : "Started: not yet"}
+                </div>
+              </div>
             </div>
           ) : null}
         </div>
@@ -240,4 +260,15 @@ export function InvoicePanel({
       ) : null}
     </div>
   );
+}
+
+function formatInvoiceProcessingType(messageType: string) {
+  switch (messageType) {
+    case "job_invoice.create_draft":
+      return "Create Xero draft";
+    case "job_invoice.attach_existing":
+      return "Attach existing invoice";
+    default:
+      return messageType || "Unknown";
+  }
 }

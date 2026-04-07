@@ -15,6 +15,7 @@ services:
       Xero__ClientId: ${XERO_CLIENT_ID}
       Xero__ClientSecret: ${XERO_CLIENT_SECRET}
       Xero__RedirectUri: ${XERO_REDIRECT_URI}
+      Xero__Scopes: ${XERO_SCOPES:-}
       XeroWebhook__SigningKey: ${XERO_WEBHOOK_SIGNING_KEY:-}
       XeroPayments__DefaultAccountCode: ${XERO_PAYMENTS_DEFAULT_ACCOUNT_CODE:-}
       XeroPayments__CashAccountCode: ${XERO_PAYMENTS_CASH_ACCOUNT_CODE:-}

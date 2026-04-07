@@ -77,6 +77,7 @@ export type DeleteJobActionResult = {
   message?: string;
   steps?: {
     xero?: DeleteJobStepResult;
+    gmail?: DeleteJobStepResult;
     jobStep?: DeleteJobStepResult;
   };
 };

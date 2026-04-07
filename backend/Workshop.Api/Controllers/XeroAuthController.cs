@@ -192,6 +192,7 @@ public class XeroAuthController : ControllerBase
                     "accounting.invoices.read",
                     "accounting.invoices",
                     "accounting.payments",
+                    "accounting.settings",
                     "offline_access",
                 },
                 legacyApps = new[]

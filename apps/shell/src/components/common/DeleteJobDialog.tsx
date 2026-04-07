@@ -93,7 +93,7 @@ export function DeleteJobDialog({
 
         {phase === "confirm" ? (
           <div className="mt-3 text-sm text-[var(--ds-muted)]">
-            确认删除这个 Job 吗？该操作会同时处理 Xero draft 和本地 Job 数据。
+            确认删除这个 Job 吗？该操作会同时处理 Xero draft、Gmail 信息和本地 Job 数据。
           </div>
         ) : (
           <div className="mt-4 space-y-3">
@@ -105,6 +105,12 @@ export function DeleteJobDialog({
             />
             <StepRow
               index={2}
+              label="删除 Gmail 信息"
+              status={steps.gmail.status}
+              message={steps.gmail.message}
+            />
+            <StepRow
+              index={3}
               label="删除 Job 中"
               status={steps.job.status}
               message={steps.job.message}

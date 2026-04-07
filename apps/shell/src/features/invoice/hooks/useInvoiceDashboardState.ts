@@ -162,6 +162,11 @@ function buildReference(currentReference: string, poNumber: string) {
     return trimmedReference.replace("[PO]", trimmedPo).replace(/\s+/g, " ").trim();
   }
 
+  const pendingReference = trimmedReference.replace(/^po\s+pending\s+/i, "");
+  if (pendingReference !== trimmedReference) {
+    return `${trimmedPo} ${pendingReference}`.replace(/\s+/g, " ").trim();
+  }
+
   const parts = trimmedReference.split(/\s+/);
   if (parts.length <= 1) return trimmedPo;
   return `${trimmedPo} ${parts.slice(1).join(" ")}`.trim();
@@ -733,7 +738,7 @@ export function useInvoiceDashboardState({
       const syncRes = await syncJobXeroDraftInvoice(jobId, {
         ...buildDraftPayload(),
         reference: nextReference,
-        status: "AUTHORISED",
+        status: invoice.xeroStatus,
       });
 
       if (!syncRes.ok) {

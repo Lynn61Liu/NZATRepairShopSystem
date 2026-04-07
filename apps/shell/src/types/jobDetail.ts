@@ -216,6 +216,8 @@ export type JobDetailData = {
     status: string;
     attemptCount: number;
     lastError?: string | null;
+    availableAt?: string;
+    lockedAt?: string | null;
     createdAt?: string;
     updatedAt?: string;
     processedAt?: string | null;

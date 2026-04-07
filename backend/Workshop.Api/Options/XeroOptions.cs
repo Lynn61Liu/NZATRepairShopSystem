@@ -8,5 +8,5 @@ public sealed class XeroOptions
     public string ClientSecret { get; set; } = "";
     public string RedirectUri { get; set; } = "";
     public string Scopes { get; set; } =
-        "offline_access accounting.transactions";
+        "offline_access accounting.invoices accounting.payments accounting.settings";
 }

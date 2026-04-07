@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -641,6 +642,8 @@ public sealed class GmailThreadSyncService
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
 
         return incomingAttachments
+            .GroupBy(BuildAttachmentMergeKey)
+            .Select(group => group.First())
             .Select(item =>
             {
                 if (!existingByKey.TryGetValue(BuildAttachmentMergeKey(item), out var existing))
@@ -658,7 +661,7 @@ public sealed class GmailThreadSyncService
     }
 
     private static string BuildAttachmentMergeKey(GmailAttachmentDescriptor attachment) =>
-        $"{attachment.AttachmentId ?? ""}|{attachment.FileName}|{attachment.MimeType}";
+        $"{attachment.AttachmentId ?? ""}|{attachment.FileName}|{attachment.MimeType}|{attachment.Size?.ToString(CultureInfo.InvariantCulture) ?? ""}";
 
     private static List<GmailAttachmentDescriptor> DeserializeAttachments(string? attachmentsJson)
     {

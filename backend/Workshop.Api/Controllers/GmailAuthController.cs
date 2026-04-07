@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Diagnostics;
 using System.Security.Cryptography;
@@ -1228,6 +1229,8 @@ public class GmailAuthController : ControllerBase
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
 
         return incomingAttachments
+            .GroupBy(BuildAttachmentMergeKey)
+            .Select(group => group.First())
             .Select(item =>
             {
                 if (!existingByKey.TryGetValue(BuildAttachmentMergeKey(item), out var existing))
@@ -1245,7 +1248,7 @@ public class GmailAuthController : ControllerBase
     }
 
     private static string BuildAttachmentMergeKey(GmailAttachmentDescriptor attachment) =>
-        $"{attachment.AttachmentId ?? ""}|{attachment.FileName}|{attachment.MimeType}";
+        $"{attachment.AttachmentId ?? ""}|{attachment.FileName}|{attachment.MimeType}|{attachment.Size?.ToString(CultureInfo.InvariantCulture) ?? ""}";
 
     private static IQueryable<GmailMessageLog> FilterLogsByAccount(IQueryable<GmailMessageLog> query, long? gmailAccountId) =>
         gmailAccountId.HasValue
