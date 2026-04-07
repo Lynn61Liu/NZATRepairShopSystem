@@ -1008,6 +1008,136 @@ public class JobsController : ControllerBase
         return Content(payload ?? "{\"jobs\":[]}", "application/json");
     }
 
+    [HttpPut("wof-schedule")]
+    public async Task<IActionResult> SaveWofSchedule([FromBody] WofScheduleSaveRequest? request, CancellationToken ct)
+    {
+        if (request is null)
+            return BadRequest(new { error = "Request body is required." });
+
+        if (request.Entries is null)
+            return BadRequest(new { error = "WOF schedule entries are required." });
+
+        if (request.Entries.Length > 1000)
+            return BadRequest(new { error = "WOF schedule can save at most 1000 entries at a time." });
+
+        var normalized = new List<WofScheduleEntryWrite>();
+        foreach (var entry in request.Entries)
+        {
+            var normalizedEntry = NormalizeWofScheduleEntry(entry);
+            if (normalizedEntry.Error is not null)
+                return BadRequest(new { error = normalizedEntry.Error });
+            if (normalizedEntry.Entry is not null)
+                normalized.Add(normalizedEntry.Entry);
+        }
+
+        var jobIds = normalized
+            .Where(x => x.Kind == "job" && x.JobId.HasValue)
+            .Select(x => x.JobId!.Value)
+            .Distinct()
+            .ToArray();
+
+        if (jobIds.Length > 0)
+        {
+            var existingJobIds = await _db.Jobs.AsNoTracking()
+                .Where(x => jobIds.Contains(x.Id))
+                .Select(x => x.Id)
+                .ToArrayAsync(ct);
+            var missingJobId = jobIds.Except(existingJobIds).FirstOrDefault();
+            if (missingJobId > 0)
+                return BadRequest(new { error = $"Job '{missingJobId}' was not found." });
+        }
+
+        var now = DateTime.UtcNow;
+        var existingEntries = await _db.JobWofScheduleEntries.ToListAsync(ct);
+        var existingByJobId = existingEntries
+            .Where(x => x.EntryType == "job" && x.JobId.HasValue)
+            .ToDictionary(x => x.JobId!.Value);
+        var existingByPlaceholderKey = existingEntries
+            .Where(x => x.EntryType == "placeholder" && !string.IsNullOrWhiteSpace(x.PlaceholderKey))
+            .ToDictionary(x => x.PlaceholderKey!, StringComparer.Ordinal);
+
+        var incomingJobIds = normalized
+            .Where(x => x.Kind == "job" && x.JobId.HasValue)
+            .Select(x => x.JobId!.Value)
+            .ToHashSet();
+        var incomingPlaceholderKeys = normalized
+            .Where(x => x.Kind == "placeholder" && !string.IsNullOrWhiteSpace(x.PlaceholderId))
+            .Select(x => x.PlaceholderId!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var existing in existingEntries)
+        {
+            if (existing.EntryType == "job" && existing.JobId.HasValue && !incomingJobIds.Contains(existing.JobId.Value))
+            {
+                _db.JobWofScheduleEntries.Remove(existing);
+                continue;
+            }
+
+            if (existing.EntryType == "placeholder"
+                && !string.IsNullOrWhiteSpace(existing.PlaceholderKey)
+                && !incomingPlaceholderKeys.Contains(existing.PlaceholderKey!))
+            {
+                _db.JobWofScheduleEntries.Remove(existing);
+            }
+        }
+
+        foreach (var entry in normalized)
+        {
+            JobWofScheduleEntry target;
+            if (entry.Kind == "job")
+            {
+                if (!entry.JobId.HasValue)
+                    continue;
+
+                if (!existingByJobId.TryGetValue(entry.JobId.Value, out target!))
+                {
+                    target = new JobWofScheduleEntry
+                    {
+                        EntryType = "job",
+                        JobId = entry.JobId.Value,
+                        CreatedAt = now,
+                    };
+                    _db.JobWofScheduleEntries.Add(target);
+                }
+
+                target.PlaceholderKey = null;
+                target.Rego = null;
+                target.Contact = null;
+                target.Notes = null;
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(entry.PlaceholderId))
+                    continue;
+
+                if (!existingByPlaceholderKey.TryGetValue(entry.PlaceholderId, out target!))
+                {
+                    target = new JobWofScheduleEntry
+                    {
+                        EntryType = "placeholder",
+                        PlaceholderKey = entry.PlaceholderId,
+                        CreatedAt = entry.CreatedAt ?? now,
+                    };
+                    _db.JobWofScheduleEntries.Add(target);
+                }
+
+                target.JobId = null;
+                target.Rego = entry.Rego;
+                target.Contact = entry.Contact;
+                target.Notes = entry.Notes;
+            }
+
+            target.ScheduledDate = entry.ScheduledDate;
+            target.ScheduledHour = entry.ScheduledHour;
+            target.UpdatedAt = now;
+        }
+
+        await _db.SaveChangesAsync(ct);
+        await InvalidateWofScheduleCacheAsync(ct);
+
+        return Ok(new { saved = normalized.Count });
+    }
+
     private async Task<string?> BuildWofScheduleJsonAsync(CancellationToken ct)
     {
         var rows = await (
@@ -1033,6 +1163,12 @@ public class JobsController : ControllerBase
             )
             .ToListAsync(ct);
 
+        var scheduleEntries = await _db.JobWofScheduleEntries.AsNoTracking()
+            .OrderBy(x => x.ScheduledDate)
+            .ThenBy(x => x.ScheduledHour)
+            .ThenBy(x => x.Id)
+            .ToListAsync(ct);
+
         var jobs = rows
             .Select(row => new
             {
@@ -1050,8 +1186,139 @@ public class JobsController : ControllerBase
                     : "Todo",
             });
 
-        return JsonSerializer.Serialize(new { jobs });
+        var entries = scheduleEntries.Select(entry => new
+        {
+            id = entry.Id.ToString(CultureInfo.InvariantCulture),
+            kind = entry.EntryType,
+            jobId = entry.JobId?.ToString(CultureInfo.InvariantCulture),
+            placeholderId = entry.PlaceholderKey,
+            scheduledDate = entry.ScheduledDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            scheduledHour = entry.ScheduledHour,
+            rego = entry.Rego ?? "",
+            contact = entry.Contact ?? "",
+            notes = entry.Notes ?? "",
+            createdAt = FormatDateTime(entry.CreatedAt),
+            updatedAt = FormatDateTime(entry.UpdatedAt),
+        });
+
+        return JsonSerializer.Serialize(new { jobs, scheduleEntries = entries });
     }
+
+    private static (WofScheduleEntryWrite? Entry, string? Error) NormalizeWofScheduleEntry(WofScheduleEntryRequest entry)
+    {
+        var kind = entry.Kind?.Trim().ToLowerInvariant();
+        if (kind is not ("job" or "placeholder"))
+            return (null, "WOF schedule entry kind must be job or placeholder.");
+
+        DateOnly? scheduledDate = null;
+        int? scheduledHour = null;
+        var hasDate = !string.IsNullOrWhiteSpace(entry.ScheduledDate);
+        var hasHour = entry.ScheduledHour.HasValue;
+        if (hasDate != hasHour)
+            return (null, "Scheduled date and scheduled hour must be provided together.");
+
+        if (hasDate)
+        {
+            if (!DateOnly.TryParseExact(
+                    entry.ScheduledDate,
+                    "yyyy-MM-dd",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var parsedDate))
+            {
+                return (null, "Scheduled date must use yyyy-MM-dd format.");
+            }
+
+            if (entry.ScheduledHour is < 0 or > 23)
+                return (null, "Scheduled hour must be between 0 and 23.");
+
+            scheduledDate = parsedDate;
+            scheduledHour = entry.ScheduledHour;
+        }
+
+        DateTime? createdAt = null;
+        if (!string.IsNullOrWhiteSpace(entry.CreatedAt)
+            && DateTime.TryParse(
+                entry.CreatedAt,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out var parsedCreatedAt))
+        {
+            createdAt = parsedCreatedAt;
+        }
+
+        if (kind == "job")
+        {
+            if (string.IsNullOrWhiteSpace(entry.JobId)
+                || !long.TryParse(entry.JobId, NumberStyles.None, CultureInfo.InvariantCulture, out var jobId)
+                || jobId <= 0)
+            {
+                return (null, "Job schedule entry requires a valid job id.");
+            }
+
+            if (!scheduledDate.HasValue || !scheduledHour.HasValue)
+                return (null, "Job schedule entry requires a scheduled date and hour.");
+
+            return (new WofScheduleEntryWrite(
+                "job",
+                jobId,
+                PlaceholderId: null,
+                scheduledDate,
+                scheduledHour,
+                Rego: null,
+                Contact: null,
+                Notes: null,
+                CreatedAt: null), null);
+        }
+
+        var placeholderId = TrimMax(entry.PlaceholderId, 120);
+        if (string.IsNullOrWhiteSpace(placeholderId))
+            return (null, "Placeholder schedule entry requires a placeholder id.");
+
+        return (new WofScheduleEntryWrite(
+            "placeholder",
+            JobId: null,
+            placeholderId,
+            scheduledDate,
+            scheduledHour,
+            TrimMax(entry.Rego, 120),
+            TrimMax(entry.Contact, 240),
+            TrimMax(entry.Notes, 2000),
+            createdAt), null);
+    }
+
+    private static string? TrimMax(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var trimmed = value.Trim();
+        return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength];
+    }
+
+    public sealed record WofScheduleSaveRequest(WofScheduleEntryRequest[] Entries);
+
+    public sealed record WofScheduleEntryRequest(
+        string? Kind,
+        string? JobId,
+        string? PlaceholderId,
+        string? ScheduledDate,
+        int? ScheduledHour,
+        string? Rego,
+        string? Contact,
+        string? Notes,
+        string? CreatedAt);
+
+    private sealed record WofScheduleEntryWrite(
+        string Kind,
+        long? JobId,
+        string? PlaceholderId,
+        DateOnly? ScheduledDate,
+        int? ScheduledHour,
+        string? Rego,
+        string? Contact,
+        string? Notes,
+        DateTime? CreatedAt);
 
     [HttpGet("{id:long}/paint-service")]
     public async Task<IActionResult> GetPaintService(long id, CancellationToken ct)

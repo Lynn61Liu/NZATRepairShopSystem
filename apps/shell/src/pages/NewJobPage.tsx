@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { AlertCircle, ArrowLeft, Boxes, FileText, Loader2, Plus, ReceiptText, X } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Alert, Button, Input, SectionCard, Textarea, useToast } from "@/components/ui";
 import {
   type ChildServiceOption,
@@ -34,8 +34,9 @@ import {
 } from "@/features/lookups/lookupCache";
 import { withApiBase } from "@/utils/api";
 
+const REQUIRED_ROOT_SERVICE_TYPES: ServiceType[] = ["wof", "mech", "paint"];
+
 export function NewJobPage() {
-  const requiredRootServiceTypes: ServiceType[] = ["wof", "mech", "paint"];
   type PersonalCustomerOption = CachedPersonalCustomer;
   type CustomerMatchHint = {
     message: string;
@@ -60,6 +61,7 @@ export function NewJobPage() {
   };
 
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const toast = useToast();
   const [rego, setRego] = useState("");
   const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null);
@@ -99,6 +101,7 @@ export function NewJobPage() {
   );
   const autoNotesRef = useRef("");
   const notesRef = useRef("");
+  const appointmentPrefillAppliedRef = useRef("");
   const regoYearModelLabel = useMemo(() => {
     const parts = [rego, vehicleInfo?.year, vehicleInfo?.model]
       .map((value) => String(value ?? "").trim())
@@ -217,7 +220,7 @@ export function NewJobPage() {
     selectedPaintOptionLabels,
   ]);
 
-  const applyServiceCatalog = (catalog: CachedServiceCatalog) => {
+  const applyServiceCatalog = useCallback((catalog: CachedServiceCatalog) => {
     setLoadedServiceCatalog(catalog);
     const roots = Array.isArray(catalog.rootServices) ? catalog.rootServices : [];
     const children = Array.isArray(catalog.childServices) ? catalog.childServices : [];
@@ -278,8 +281,8 @@ export function NewJobPage() {
     );
 
     const loadedRootTypes = new Set(nextRootOptions.map((item) => item.id));
-    return requiredRootServiceTypes.every((serviceType) => loadedRootTypes.has(serviceType));
-  };
+    return REQUIRED_ROOT_SERVICE_TYPES.every((serviceType) => loadedRootTypes.has(serviceType));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -355,7 +358,7 @@ export function NewJobPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applyServiceCatalog]);
 
   useEffect(() => {
     if (getCachedInventoryItems()) {
@@ -607,6 +610,35 @@ export function NewJobPage() {
     resetImportState();
     clearCustomerMatchHint();
   };
+
+  useEffect(() => {
+    const prefillKey = searchParams.toString();
+    if (appointmentPrefillAppliedRef.current === prefillKey) return;
+    if (searchParams.get("source") !== "wof-appointment") return;
+
+    appointmentPrefillAppliedRef.current = prefillKey;
+    const prefillRego = normalizePlateInput(searchParams.get("rego") ?? "") ?? "";
+    const prefillCustomerName = (searchParams.get("customerName") ?? "").trim();
+    const prefillNotes = (searchParams.get("notes") ?? "").trim();
+
+    if (prefillRego) {
+      setRego(prefillRego);
+      setImportState("idle");
+      setImportError("");
+      setVehicleInfo(null);
+    }
+    if (prefillCustomerName) {
+      setCustomerType("personal");
+      setBusinessId("");
+      setPersonalName(prefillCustomerName);
+      setCustomerMatchHint(null);
+    }
+    if (prefillNotes) {
+      setNotes(prefillNotes);
+      notesRef.current = prefillNotes;
+    }
+    setSelectedServices((prev) => (prev.includes("wof") ? prev : [...prev, "wof"]));
+  }, [searchParams]);
 
   const handleSave = async () => {
     if (saving) return;

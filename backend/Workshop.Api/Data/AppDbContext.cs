@@ -23,6 +23,7 @@ public class AppDbContext : DbContext
     public DbSet<SystemSyncState> SystemSyncStates => Set<SystemSyncState>();
     public DbSet<JobPoState> JobPoStates => Set<JobPoState>();
     public DbSet<JobWofState> JobWofStates => Set<JobWofState>();
+    public DbSet<JobWofScheduleEntry> JobWofScheduleEntries => Set<JobWofScheduleEntry>();
     public DbSet<Tag> Tags => Set<Tag>();
     public DbSet<JobTag> JobTags => Set<JobTag>();
 
@@ -247,6 +248,25 @@ public class AppDbContext : DbContext
         jws.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         jws.HasIndex(x => x.JobId).IsUnique().HasDatabaseName("ux_job_wof_state_job_id");
         jws.HasOne<Job>().WithMany().HasForeignKey(x => x.JobId).OnDelete(DeleteBehavior.Cascade);
+
+        var jwse = modelBuilder.Entity<JobWofScheduleEntry>();
+        jwse.ToTable("job_wof_schedule_entries");
+        jwse.HasKey(x => x.Id);
+        jwse.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        jwse.Property(x => x.JobId).HasColumnName("job_id");
+        jwse.Property(x => x.EntryType).HasColumnName("entry_type").IsRequired();
+        jwse.Property(x => x.PlaceholderKey).HasColumnName("placeholder_key");
+        jwse.Property(x => x.ScheduledDate).HasColumnName("scheduled_date");
+        jwse.Property(x => x.ScheduledHour).HasColumnName("scheduled_hour");
+        jwse.Property(x => x.Rego).HasColumnName("rego");
+        jwse.Property(x => x.Contact).HasColumnName("contact");
+        jwse.Property(x => x.Notes).HasColumnName("notes");
+        jwse.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        jwse.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        jwse.HasIndex(x => x.JobId).IsUnique().HasFilter("job_id IS NOT NULL").HasDatabaseName("ux_job_wof_schedule_entries_job_id");
+        jwse.HasIndex(x => x.PlaceholderKey).IsUnique().HasFilter("placeholder_key IS NOT NULL").HasDatabaseName("ux_job_wof_schedule_entries_placeholder_key");
+        jwse.HasIndex(x => new { x.ScheduledDate, x.ScheduledHour }).HasDatabaseName("ix_job_wof_schedule_entries_slot");
+        jwse.HasOne<Job>().WithMany().HasForeignKey(x => x.JobId).OnDelete(DeleteBehavior.Cascade);
 
         var ji = modelBuilder.Entity<JobInvoice>();
         ji.ToTable("job_invoices");

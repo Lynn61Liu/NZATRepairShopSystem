@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { ChevronLeft, ChevronRight, Clock3, ExternalLink, GripVertical, RefreshCcw } from "lucide-react";
@@ -15,6 +15,7 @@ const STORAGE_KEY = "wof:schedule:placements:v1";
 const PLACEHOLDER_STORAGE_KEY = "wof:schedule:placeholders:v1";
 const DRAG_TYPE = "wof-job-card";
 const PLACEHOLDER_PLACEMENT_PREFIX = "placeholder:";
+const LOCAL_SAVE_DEBOUNCE_MS = 700;
 const DAY_START_HOUR = 8;
 const DAY_END_HOUR = 18;
 const SLOT_HOURS = Array.from({ length: DAY_END_HOUR - DAY_START_HOUR }, (_, index) => DAY_START_HOUR + index);
@@ -41,6 +42,30 @@ type WofSchedulePlaceholder = {
 };
 
 type PlaceholderDraft = Pick<WofSchedulePlaceholder, "rego" | "contact" | "notes">;
+
+type WofScheduleEntryResponse = {
+  kind?: string | null;
+  jobId?: string | null;
+  placeholderId?: string | null;
+  scheduledDate?: string | null;
+  scheduledHour?: number | null;
+  rego?: string | null;
+  contact?: string | null;
+  notes?: string | null;
+  createdAt?: string | null;
+};
+
+type WofScheduleSaveEntry = {
+  kind: "job" | "placeholder";
+  jobId?: string;
+  placeholderId?: string;
+  scheduledDate?: string;
+  scheduledHour?: number;
+  rego?: string;
+  contact?: string;
+  notes?: string;
+  createdAt?: string;
+};
 
 type Placement =
   | { kind: "backlog" }
@@ -159,6 +184,113 @@ function createPlaceholderFromDraft(draft: PlaceholderDraft): WofSchedulePlaceho
     notes: draft.notes.trim(),
     createdAt: new Date().toISOString(),
   };
+}
+
+function parseSlotKey(slotKey: string) {
+  const match = /^(\d{4}-\d{2}-\d{2})-(\d{1,2})$/.exec(slotKey);
+  if (!match) return null;
+  const hour = Number(match[2]);
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return null;
+  return { scheduledDate: match[1], scheduledHour: hour };
+}
+
+function buildScheduleSaveEntries(
+  placements: PlacementMap,
+  placeholders: WofSchedulePlaceholder[]
+): WofScheduleSaveEntry[] {
+  const entries: WofScheduleSaveEntry[] = [];
+  const placeholderMap = new Map(placeholders.map((placeholder) => [placeholder.placeholderId, placeholder]));
+  const scheduledPlaceholderIds = new Set<string>();
+
+  for (const [placementKey, placement] of Object.entries(placements)) {
+    if (placement.kind !== "slot") continue;
+    const slot = parseSlotKey(placement.slotKey);
+    if (!slot) continue;
+
+    const placeholderId = getPlaceholderIdFromPlacementKey(placementKey);
+    if (placeholderId) {
+      const placeholder = placeholderMap.get(placeholderId);
+      if (!placeholder) continue;
+      scheduledPlaceholderIds.add(placeholderId);
+      entries.push({
+        kind: "placeholder",
+        placeholderId,
+        scheduledDate: slot.scheduledDate,
+        scheduledHour: slot.scheduledHour,
+        rego: placeholder.rego,
+        contact: placeholder.contact,
+        notes: placeholder.notes,
+        createdAt: placeholder.createdAt,
+      });
+      continue;
+    }
+
+    entries.push({
+      kind: "job",
+      jobId: placementKey,
+      scheduledDate: slot.scheduledDate,
+      scheduledHour: slot.scheduledHour,
+    });
+  }
+
+  for (const placeholder of placeholders) {
+    if (scheduledPlaceholderIds.has(placeholder.placeholderId)) continue;
+    entries.push({
+      kind: "placeholder",
+      placeholderId: placeholder.placeholderId,
+      rego: placeholder.rego,
+      contact: placeholder.contact,
+      notes: placeholder.notes,
+      createdAt: placeholder.createdAt,
+    });
+  }
+
+  return entries;
+}
+
+function mapServerScheduleEntries(entries: WofScheduleEntryResponse[]) {
+  const nextPlacements: PlacementMap = {};
+  const nextPlaceholders: WofSchedulePlaceholder[] = [];
+
+  for (const entry of entries) {
+    const scheduledDate = typeof entry.scheduledDate === "string" ? entry.scheduledDate : "";
+    const scheduledHour = Number(entry.scheduledHour);
+    const hasSlot = Boolean(scheduledDate) && Number.isInteger(scheduledHour);
+    const placement: Placement = hasSlot
+      ? { kind: "slot", slotKey: `${scheduledDate}-${scheduledHour}` }
+      : { kind: "backlog" };
+
+    if (entry.kind === "job" && entry.jobId) {
+      nextPlacements[String(entry.jobId)] = placement;
+      continue;
+    }
+
+    if (entry.kind === "placeholder" && entry.placeholderId) {
+      const placeholderId = String(entry.placeholderId);
+      nextPlaceholders.push({
+        placeholderId,
+        rego: entry.rego ?? "",
+        contact: entry.contact ?? "",
+        notes: entry.notes ?? "",
+        createdAt: entry.createdAt ?? new Date().toISOString(),
+      });
+      nextPlacements[getPlaceholderPlacementKey(placeholderId)] = placement;
+    }
+  }
+
+  return { placements: nextPlacements, placeholders: nextPlaceholders };
+}
+
+async function saveWofScheduleEntries(entries: WofScheduleSaveEntry[]) {
+  const res = await fetch(withApiBase("/api/jobs/wof-schedule"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ entries }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.error || "Failed to save WOF schedule.");
+  }
 }
 
 function getNzCalendarDateParts(value: Date) {
@@ -498,8 +630,8 @@ function WofJobCard({
       className={[
         compact
           ? "group relative cursor-grab active:cursor-grabbing"
-          : "group relative rounded-xl border shadow-sm transition cursor-grab active:cursor-grabbing",
-        compact ? "space-y-1" : "space-y-3 p-3",
+          : "group relative rounded-lg border shadow-sm transition cursor-grab active:cursor-grabbing",
+        compact ? "space-y-1" : "space-y-2 p-2.5",
         compact ? "" : tone,
         isDragging ? "opacity-45" : "opacity-100",
       ].join(" ")}
@@ -508,7 +640,7 @@ function WofJobCard({
         <>
           <div
             className={[
-              "flex items-center gap-2 rounded-lg px-2 py-0.5 transition",
+              "flex items-center gap-2 rounded-md px-2 py-0.5 transition",
               compactTone.row,
             ].join(" ")}
           >
@@ -593,7 +725,7 @@ function PlaceholderFields({
 }
 
 function getPlaceholderLabel(value: PlaceholderDraft) {
-  return value.rego.trim() || value.contact.trim() || "时间占位";
+  return value.rego.trim() || value.contact.trim() || "预约";
 }
 
 function WofPlaceholderCard({
@@ -603,6 +735,7 @@ function WofPlaceholderCard({
   isTemplate = false,
   onChange,
   onRemove,
+  onCreateJob,
 }: {
   value: PlaceholderDraft;
   placeholderId?: string;
@@ -610,6 +743,7 @@ function WofPlaceholderCard({
   isTemplate?: boolean;
   onChange: (next: PlaceholderDraft) => void;
   onRemove?: () => void;
+  onCreateJob?: () => void | Promise<void>;
 }) {
   const dragRef = useRef<HTMLDivElement | null>(null);
   const closeTimerRef = useRef<number | null>(null);
@@ -699,7 +833,7 @@ function WofPlaceholderCard({
           {getPlaceholderLabel(value)}
         </div>
         <div className="text-[11px] font-medium text-sky-700">
-          {isTemplate ? "拖到日历生成新占位" : ""}
+          {isTemplate ? "拖到日历生成新预约" : ""}
         </div>
       </div>
       <GripVertical className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
@@ -720,10 +854,25 @@ function WofPlaceholderCard({
               >
                 {renderHeader(false)}
                 <PlaceholderFields value={value} onChange={onChange} compact />
-                {onRemove ? (
-                  <Button variant="ghost" className="h-8 w-full border-sky-200 text-xs text-sky-800" onClick={onRemove}>
-                    删除占位
-                  </Button>
+                {onRemove || onCreateJob ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {onRemove ? (
+                      <Button variant="ghost" className="h-8 border-sky-200 text-xs text-sky-800" onClick={onRemove}>
+                        删除预约
+                      </Button>
+                    ) : null}
+                    {onCreateJob ? (
+                      <Button
+                        variant="primary"
+                        className="h-8 text-xs"
+                        onClick={() => {
+                          void onCreateJob();
+                        }}
+                      >
+                        新工单
+                      </Button>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>,
               document.body
@@ -736,16 +885,31 @@ function WofPlaceholderCard({
   return (
     <div
       className={[
-        "space-y-3 rounded-xl border border-sky-200 bg-sky-50 p-3 shadow-sm transition hover:border-sky-300",
+        "space-y-2 rounded-lg border border-sky-200 bg-sky-50 p-2.5 shadow-sm transition hover:border-sky-300",
         isDragging ? "opacity-45" : "opacity-100",
       ].join(" ")}
     >
       {renderHeader(true)}
       <PlaceholderFields value={value} onChange={onChange} />
-      {onRemove ? (
-        <Button variant="ghost" className="h-8 w-full border-sky-200 text-xs text-sky-800" onClick={onRemove}>
-          删除占位
-        </Button>
+      {onRemove || onCreateJob ? (
+        <div className="grid grid-cols-2 gap-2">
+          {onRemove ? (
+            <Button variant="ghost" className="h-8 border-sky-200 text-xs text-sky-800" onClick={onRemove}>
+              删除预约
+            </Button>
+          ) : null}
+          {onCreateJob ? (
+            <Button
+              variant="primary"
+              className="h-8 text-xs"
+              onClick={() => {
+                void onCreateJob();
+              }}
+            >
+              新工单
+            </Button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
@@ -778,8 +942,8 @@ function DropLane({
   }, [drop]);
 
   return (
-    <Card className="flex h-full min-h-[760px] flex-col overflow-hidden">
-      <div className="border-b border-slate-200 bg-slate-50/80 px-4 py-3">
+    <Card className="flex h-full min-h-[650px] flex-col overflow-hidden">
+      <div className="border-b border-slate-200 bg-slate-50/80 px-3 py-2.5">
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-sm font-semibold text-slate-900">{title}</div>
@@ -793,7 +957,7 @@ function DropLane({
       <div
         ref={attachDropRef}
         className={[
-          "flex-1 space-y-3 overflow-y-auto px-4 py-4",
+          "flex-1 space-y-2 overflow-y-auto px-3 py-3",
           isOver ? "bg-rose-50/60" : "bg-white",
         ].join(" ")}
       >
@@ -820,6 +984,7 @@ function ScheduleSlot({
   onStatusChange,
   onPlaceholderChange,
   onPlaceholderRemove,
+  onPlaceholderCreateJob,
   statusUpdatingId,
 }: {
   slotKey: string;
@@ -833,6 +998,7 @@ function ScheduleSlot({
   onStatusChange: (jobId: string, next: "Todo" | "Checked") => void;
   onPlaceholderChange: (placeholderId: string, next: PlaceholderDraft) => void;
   onPlaceholderRemove: (placeholderId: string) => void;
+  onPlaceholderCreateJob: (placeholder: WofSchedulePlaceholder) => void | Promise<void>;
   statusUpdatingId?: string | null;
 }) {
   const dropRef = useRef<HTMLDivElement | null>(null);
@@ -852,14 +1018,14 @@ function ScheduleSlot({
     <div
       ref={attachDropRef}
       className={[
-        "relative h-full min-h-0 border-t border-slate-200 px-2 py-2 transition",
+        "relative h-full min-h-0 border-t border-slate-200 px-1.5 py-1.5 transition",
         isOver ? "bg-rose-50" : "bg-white",
       ].join(" ")}
     >
-      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">
         {getSlotLabel(hour)}
       </div>
-      <div className="h-[calc(100%-24px)] space-y-1 overflow-x-visible overflow-y-auto pr-1">
+      <div className="h-[calc(100%-18px)] space-y-1 overflow-x-visible overflow-y-auto pr-1">
         {placeholders.map((placeholder) => (
           <WofPlaceholderCard
             key={placeholder.placeholderId}
@@ -868,6 +1034,9 @@ function ScheduleSlot({
             compact
             onChange={(next) => onPlaceholderChange(placeholder.placeholderId, next)}
             onRemove={() => onPlaceholderRemove(placeholder.placeholderId)}
+            onCreateJob={() => {
+              void onPlaceholderCreateJob(placeholder);
+            }}
           />
         ))}
         {jobs.map((job) => (
@@ -900,6 +1069,7 @@ function ScheduleSlot({
 
 export function WofSchedulePage() {
   const toast = useToast();
+  const navigate = useNavigate();
   const [jobs, setJobs] = useState<WofScheduleJob[]>([]);
   const [placeholders, setPlaceholders] = useState<WofSchedulePlaceholder[]>(() => loadPlaceholders());
   const [placeholderTemplate, setPlaceholderTemplate] = useState<PlaceholderDraft>({
@@ -914,6 +1084,130 @@ export function WofSchedulePage() {
   const [now, setNow] = useState(() => new Date());
   const [weekOffset, setWeekOffset] = useState(0);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
+  const pendingPlacementsRef = useRef<PlacementMap | null>(null);
+  const pendingPlaceholdersRef = useRef<WofSchedulePlaceholder[] | null>(null);
+  const latestPlacementsRef = useRef<PlacementMap>(placements);
+  const latestPlaceholdersRef = useRef<WofSchedulePlaceholder[]>(placeholders);
+  const placementSaveTimerRef = useRef<number | null>(null);
+  const placeholderSaveTimerRef = useRef<number | null>(null);
+  const remoteSaveTimerRef = useRef<number | null>(null);
+  const pendingRemoteSaveRef = useRef<{
+    placements: PlacementMap;
+    placeholders: WofSchedulePlaceholder[];
+  } | null>(null);
+
+  const saveRemoteSnapshot = useCallback(async (snapshot: {
+    placements: PlacementMap;
+    placeholders: WofSchedulePlaceholder[];
+  }) => {
+    try {
+      await saveWofScheduleEntries(buildScheduleSaveEntries(snapshot.placements, snapshot.placeholders));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save WOF schedule.");
+    }
+  }, [toast]);
+
+  const flushLocalScheduleSaves = useCallback(async () => {
+    if (placementSaveTimerRef.current !== null) {
+      window.clearTimeout(placementSaveTimerRef.current);
+      placementSaveTimerRef.current = null;
+    }
+    if (placeholderSaveTimerRef.current !== null) {
+      window.clearTimeout(placeholderSaveTimerRef.current);
+      placeholderSaveTimerRef.current = null;
+    }
+    if (pendingPlacementsRef.current) {
+      savePlacements(pendingPlacementsRef.current);
+      pendingPlacementsRef.current = null;
+    }
+    if (pendingPlaceholdersRef.current) {
+      savePlaceholders(pendingPlaceholdersRef.current);
+      pendingPlaceholdersRef.current = null;
+    }
+    if (remoteSaveTimerRef.current !== null) {
+      window.clearTimeout(remoteSaveTimerRef.current);
+      remoteSaveTimerRef.current = null;
+    }
+    if (pendingRemoteSaveRef.current) {
+      const snapshot = pendingRemoteSaveRef.current;
+      pendingRemoteSaveRef.current = null;
+      await saveRemoteSnapshot(snapshot);
+    }
+  }, [saveRemoteSnapshot]);
+
+  const scheduleRemoteSave = useCallback((
+    nextPlacements: PlacementMap,
+    nextPlaceholders: WofSchedulePlaceholder[]
+  ) => {
+    pendingRemoteSaveRef.current = {
+      placements: nextPlacements,
+      placeholders: nextPlaceholders,
+    };
+    if (typeof window === "undefined") {
+      void saveRemoteSnapshot(pendingRemoteSaveRef.current);
+      pendingRemoteSaveRef.current = null;
+      return;
+    }
+    if (remoteSaveTimerRef.current !== null) {
+      window.clearTimeout(remoteSaveTimerRef.current);
+    }
+    remoteSaveTimerRef.current = window.setTimeout(() => {
+      if (pendingRemoteSaveRef.current) {
+        void saveRemoteSnapshot(pendingRemoteSaveRef.current);
+        pendingRemoteSaveRef.current = null;
+      }
+      remoteSaveTimerRef.current = null;
+    }, LOCAL_SAVE_DEBOUNCE_MS);
+  }, [saveRemoteSnapshot]);
+
+  const schedulePlacementsSave = useCallback((next: PlacementMap, syncRemote = true) => {
+    latestPlacementsRef.current = next;
+    pendingPlacementsRef.current = next;
+    if (typeof window === "undefined") {
+      savePlacements(next);
+      pendingPlacementsRef.current = null;
+      if (syncRemote) scheduleRemoteSave(next, latestPlaceholdersRef.current);
+      return;
+    }
+    if (placementSaveTimerRef.current !== null) {
+      window.clearTimeout(placementSaveTimerRef.current);
+    }
+    placementSaveTimerRef.current = window.setTimeout(() => {
+      if (pendingPlacementsRef.current) {
+        savePlacements(pendingPlacementsRef.current);
+        pendingPlacementsRef.current = null;
+      }
+      placementSaveTimerRef.current = null;
+    }, LOCAL_SAVE_DEBOUNCE_MS);
+    if (syncRemote) scheduleRemoteSave(next, latestPlaceholdersRef.current);
+  }, [scheduleRemoteSave]);
+
+  const schedulePlaceholdersSave = useCallback((next: WofSchedulePlaceholder[], syncRemote = true) => {
+    latestPlaceholdersRef.current = next;
+    pendingPlaceholdersRef.current = next;
+    if (typeof window === "undefined") {
+      savePlaceholders(next);
+      pendingPlaceholdersRef.current = null;
+      if (syncRemote) scheduleRemoteSave(latestPlacementsRef.current, next);
+      return;
+    }
+    if (placeholderSaveTimerRef.current !== null) {
+      window.clearTimeout(placeholderSaveTimerRef.current);
+    }
+    placeholderSaveTimerRef.current = window.setTimeout(() => {
+      if (pendingPlaceholdersRef.current) {
+        savePlaceholders(pendingPlaceholdersRef.current);
+        pendingPlaceholdersRef.current = null;
+      }
+      placeholderSaveTimerRef.current = null;
+    }, LOCAL_SAVE_DEBOUNCE_MS);
+    if (syncRemote) scheduleRemoteSave(latestPlacementsRef.current, next);
+  }, [scheduleRemoteSave]);
+
+  const changeWeekOffset = useCallback(async (delta: number) => {
+    await flushLocalScheduleSaves();
+    setWeekOffset((prev) => prev + delta);
+  }, [flushLocalScheduleSaves]);
 
   const workingDays = useMemo(() => buildWorkingDays(weekOffset), [weekOffset]);
   const visibleSlotKeys = useMemo(
@@ -931,24 +1225,35 @@ export function WofSchedulePage() {
         throw new Error(data?.error || "Failed to load WOF schedule.");
       }
       const rows = Array.isArray(data?.jobs) ? (data.jobs as WofScheduleJob[]) : [];
+      const scheduleEntries = Array.isArray(data?.scheduleEntries)
+        ? (data.scheduleEntries as WofScheduleEntryResponse[])
+        : null;
       setJobs(rows);
-      setPlacements((prev) => {
-        const validIds = new Set(rows.map((job) => job.jobId));
-        const next = Object.fromEntries(
-          Object.entries(prev).filter(([placementKey]) =>
-            getPlaceholderIdFromPlacementKey(placementKey) || validIds.has(placementKey)
-          )
-        ) as PlacementMap;
-        savePlacements(next);
-        return next;
-      });
+      if (scheduleEntries && scheduleEntries.length > 0) {
+        const mapped = mapServerScheduleEntries(scheduleEntries);
+        setPlaceholders(mapped.placeholders);
+        schedulePlaceholdersSave(mapped.placeholders, false);
+        setPlacements(mapped.placements);
+        schedulePlacementsSave(mapped.placements, false);
+      } else {
+        setPlacements((prev) => {
+          const validIds = new Set(rows.map((job) => job.jobId));
+          const next = Object.fromEntries(
+            Object.entries(prev).filter(([placementKey]) =>
+              getPlaceholderIdFromPlacementKey(placementKey) || validIds.has(placementKey)
+            )
+          ) as PlacementMap;
+          schedulePlacementsSave(next);
+          return next;
+        });
+      }
     } catch (err) {
       setJobs([]);
       setError(err instanceof Error ? err.message : "Failed to load WOF schedule.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [schedulePlacementsSave, schedulePlaceholdersSave]);
 
   useEffect(() => {
     loadJobs();
@@ -965,6 +1270,25 @@ export function WofSchedulePage() {
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const handlePageHide = () => {
+      void flushLocalScheduleSaves();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        void flushLocalScheduleSaves();
+      }
+    };
+
+    window.addEventListener("pagehide", handlePageHide);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      void flushLocalScheduleSaves();
+      window.removeEventListener("pagehide", handlePageHide);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [flushLocalScheduleSaves]);
 
   const syncGoogleSheet = useCallback(async () => {
     setSyncing(true);
@@ -1010,7 +1334,7 @@ export function WofSchedulePage() {
       });
       setPlacements((prev) => {
         const normalized = enforceSingleCheckedPerSlot(prev, nextJobsSnapshot, next === "Checked" ? jobId : undefined);
-        savePlacements(normalized);
+        schedulePlacementsSave(normalized);
         return normalized;
       });
       notifyWofScheduleRefresh();
@@ -1021,7 +1345,7 @@ export function WofSchedulePage() {
     } finally {
       setStatusUpdatingId(null);
     }
-  }, [toast]);
+  }, [schedulePlacementsSave, toast]);
 
   const updatePlaceholder = useCallback((placeholderId: string, nextDraft: PlaceholderDraft) => {
     setPlaceholders((prev) => {
@@ -1030,25 +1354,38 @@ export function WofSchedulePage() {
           ? { ...placeholder, ...nextDraft }
           : placeholder
       );
-      savePlaceholders(next);
+      schedulePlaceholdersSave(next);
       return next;
     });
-  }, []);
+  }, [schedulePlaceholdersSave]);
 
   const removePlaceholder = useCallback((placeholderId: string) => {
     const placementKey = getPlaceholderPlacementKey(placeholderId);
     setPlaceholders((prev) => {
       const next = prev.filter((placeholder) => placeholder.placeholderId !== placeholderId);
-      savePlaceholders(next);
+      schedulePlaceholdersSave(next);
       return next;
     });
     setPlacements((prev) => {
       const next = { ...prev };
       delete next[placementKey];
-      savePlacements(next);
+      schedulePlacementsSave(next);
       return next;
     });
-  }, []);
+  }, [schedulePlacementsSave, schedulePlaceholdersSave]);
+
+  const createJobFromPlaceholder = useCallback(async (placeholder: WofSchedulePlaceholder) => {
+    await flushLocalScheduleSaves();
+    const params = new URLSearchParams();
+    params.set("source", "wof-appointment");
+    const rego = placeholder.rego.trim();
+    const customerName = placeholder.contact.trim();
+    const notesText = placeholder.notes.trim();
+    if (rego) params.set("rego", rego);
+    if (customerName) params.set("customerName", customerName);
+    if (notesText) params.set("notes", notesText);
+    navigate(`/jobs/new?${params.toString()}`);
+  }, [flushLocalScheduleSaves, navigate]);
 
   const moveToBacklog = useCallback((item: DragItem) => {
     if (item.kind === "placeholder-template") return;
@@ -1057,10 +1394,10 @@ export function WofSchedulePage() {
       : item.jobId;
     setPlacements((prev) => {
       const next = { ...prev, [placementKey]: { kind: "backlog" } as Placement };
-      savePlacements(next);
+      schedulePlacementsSave(next);
       return next;
     });
-  }, []);
+  }, [schedulePlacementsSave]);
 
   const jobMap = useMemo(
     () => new Map(jobs.map((job) => [job.jobId, job])),
@@ -1078,12 +1415,12 @@ export function WofSchedulePage() {
       const placementKey = getPlaceholderPlacementKey(placeholder.placeholderId);
       setPlaceholders((prev) => {
         const next = [...prev, placeholder];
-        savePlaceholders(next);
+        schedulePlaceholdersSave(next);
         return next;
       });
       setPlacements((prev) => {
         const next = { ...prev, [placementKey]: { kind: "slot", slotKey } as Placement };
-        savePlacements(next);
+        schedulePlacementsSave(next);
         return next;
       });
       return;
@@ -1093,7 +1430,7 @@ export function WofSchedulePage() {
       const placementKey = getPlaceholderPlacementKey(item.placeholderId);
       setPlacements((prev) => {
         const next = { ...prev, [placementKey]: { kind: "slot", slotKey } as Placement };
-        savePlacements(next);
+        schedulePlacementsSave(next);
         return next;
       });
       return;
@@ -1118,10 +1455,10 @@ export function WofSchedulePage() {
 
       next[jobId] = { kind: "slot", slotKey } as Placement;
       const normalized = enforceSingleCheckedPerSlot(next, jobs, movingStatus === "Checked" ? jobId : undefined);
-      savePlacements(normalized);
+      schedulePlacementsSave(normalized);
       return normalized;
     });
-  }, [jobMap, jobs, placeholderTemplate]);
+  }, [jobMap, jobs, placeholderTemplate, schedulePlacementsSave, schedulePlaceholdersSave]);
 
   const backlogJobs = useMemo(
     () =>
@@ -1130,11 +1467,10 @@ export function WofSchedulePage() {
         return (
           !placement ||
           placement.kind === "backlog" ||
-          placement.kind === "completed" ||
-          (placement.kind === "slot" && !visibleSlotKeys.has(placement.slotKey))
+          placement.kind === "completed"
         );
       }),
-    [jobs, placements, visibleSlotKeys]
+    [jobs, placements]
   );
 
   const backlogPlaceholders = useMemo(
@@ -1144,11 +1480,10 @@ export function WofSchedulePage() {
         return (
           !placement ||
           placement.kind === "backlog" ||
-          placement.kind === "completed" ||
-          (placement.kind === "slot" && !visibleSlotKeys.has(placement.slotKey))
+          placement.kind === "completed"
         );
       }),
-    [placeholders, placements, visibleSlotKeys]
+    [placeholders, placements]
   );
 
   const jobsBySlot = useMemo(() => {
@@ -1212,9 +1547,9 @@ export function WofSchedulePage() {
 
   if (loading) {
     return (
-      <div className="space-y-6 p-6">
+      <div className="space-y-4 p-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">WOF 排班表</h1>
+          <h1 className="text-xl font-semibold text-slate-900">WOF 排班表</h1>
           <p className="mt-1 text-sm text-slate-500">Loading schedule board…</p>
         </div>
       </div>
@@ -1223,10 +1558,10 @@ export function WofSchedulePage() {
 
   return (
     <DndProvider backend={HTML5Backend}>
-      <div className="mx-auto flex max-h-[1200px] max-w-[2000px] flex-col space-y-6 p-6">
+      <div className="mx-auto flex max-h-[calc(100vh-24px)] max-w-[1800px] flex-col space-y-4 p-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">WOF 排班表</h1>
+            <h1 className="text-xl font-semibold text-slate-900">WOF 排班表</h1>
             <p className="mt-1 text-sm text-slate-500">
               Drag WOF jobs from the backlog into the next 7 working days and update their inspection status as they move.
             </p>
@@ -1247,14 +1582,14 @@ export function WofSchedulePage() {
 
         {jobs.length === 0 ? (
           <Card className="border-sky-200 bg-sky-50 p-4 text-sm text-sky-800">
-            No active WOF jobs are available right now. You can still use the blue placeholder card for time holds.
+            No active WOF jobs are available right now. You can still use the blue appointment card for time holds.
           </Card>
         ) : null}
 
-        <div className="grid min-h-[820px] grid-cols-[320px_minmax(0,1fr)] gap-6">
+        <div className="grid min-h-[650px] flex-1 grid-cols-[280px_minmax(0,1fr)] gap-4">
             <DropLane
               title="WOF 待办栏"
-              subtitle="Drag the blue placeholder or WOF jobs into the schedule"
+              subtitle=""
               itemCount={backlogJobs.length + backlogPlaceholders.length + 1}
               onDropItem={moveToBacklog}
             >
@@ -1270,12 +1605,16 @@ export function WofSchedulePage() {
                   placeholderId={placeholder.placeholderId}
                   onChange={(next) => updatePlaceholder(placeholder.placeholderId, next)}
                   onRemove={() => removePlaceholder(placeholder.placeholderId)}
+                  onCreateJob={() => {
+                    void createJobFromPlaceholder(placeholder);
+                  }}
                 />
               ))}
               {backlogJobs.map((job) => (
                 <WofJobCard
                   key={job.jobId}
                   job={job}
+                  compact
                   onNzta={() => openNztaAndCopyVin(job.vin, toast)}
                   onStatusChange={(next) => handleStatusChange(job.jobId, next)}
                   statusUpdating={statusUpdatingId === job.jobId}
@@ -1284,8 +1623,8 @@ export function WofSchedulePage() {
               ))}
             </DropLane>
 
-            <Card className="overflow-hidden max-w-[2000px]">
-              <div className="border-b border-slate-200 bg-slate-50/80 px-5 py-4">
+            <Card className="max-w-[1800px] overflow-hidden">
+              <div className="border-b border-slate-200 bg-slate-50/80 px-4 py-3">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <div className="text-sm font-semibold text-slate-900">7 个工作日</div>
@@ -1298,7 +1637,9 @@ export function WofSchedulePage() {
                     <Button
                       variant="ghost"
                       className="h-8 px-2"
-                      onClick={() => setWeekOffset((prev) => prev - 1)}
+                      onClick={() => {
+                        void changeWeekOffset(-1);
+                      }}
                       title="Previous week"
                     >
                       <ChevronLeft className="h-4 w-4" />
@@ -1309,7 +1650,9 @@ export function WofSchedulePage() {
                     <Button
                       variant="ghost"
                       className="h-8 px-2"
-                      onClick={() => setWeekOffset((prev) => prev + 1)}
+                      onClick={() => {
+                        void changeWeekOffset(1);
+                      }}
                       title="Next week"
                     >
                       <ChevronRight className="h-4 w-4" />
@@ -1322,16 +1665,16 @@ export function WofSchedulePage() {
               </div>
 
               <div className="overflow-x-auto">
-                <div className="grid min-w-[980px] grid-cols-7">
+                <div className="grid min-w-[900px] grid-cols-7">
                   {workingDays.map((day) => (
                     <div key={day.key} className="border-r border-slate-200 last:border-r-0">
-                      <div className="border-b border-slate-200 bg-white px-3 py-3">
+                      <div className="border-b border-slate-200 bg-white px-2.5 py-2">
                         <div className="text-sm font-semibold text-slate-900">{day.label}</div>
                         <div className="mt-1 text-xs text-slate-500">{day.shortDate}</div>
                       </div>
                       <div
                         className="grid"
-                        style={{ gridTemplateRows: `repeat(${SLOT_HOURS.length}, minmax(0, 1fr))`, height: "930px" }}
+                        style={{ gridTemplateRows: `repeat(${SLOT_HOURS.length}, minmax(0, 1fr))`, height: "720px" }}
                       >
                         {SLOT_HOURS.map((hour) => {
                           const slotKey = `${day.key}-${hour}`;
@@ -1353,6 +1696,7 @@ export function WofSchedulePage() {
                             onStatusChange={handleStatusChange}
                             onPlaceholderChange={updatePlaceholder}
                             onPlaceholderRemove={removePlaceholder}
+                            onPlaceholderCreateJob={createJobFromPlaceholder}
                             statusUpdatingId={statusUpdatingId}
                           />
                           );
