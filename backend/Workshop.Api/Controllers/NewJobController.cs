@@ -22,20 +22,23 @@ public class NewJobController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IAppCache _cache;
     private readonly InvoiceOutboxService _invoiceOutboxService;
-    private readonly NztaExpiryLookupService _nztaExpiryLookupService;
+    private readonly InvoiceOutboxKickService _invoiceOutboxKickService;
+    private readonly NztaExpiryBackfillService _nztaExpiryBackfillService;
     private readonly ILogger<NewJobController> _logger;
 
     public NewJobController(
         AppDbContext db,
         IAppCache cache,
         InvoiceOutboxService invoiceOutboxService,
-        NztaExpiryLookupService nztaExpiryLookupService,
+        InvoiceOutboxKickService invoiceOutboxKickService,
+        NztaExpiryBackfillService nztaExpiryBackfillService,
         ILogger<NewJobController> logger)
     {
         _db = db;
         _cache = cache;
         _invoiceOutboxService = invoiceOutboxService;
-        _nztaExpiryLookupService = nztaExpiryLookupService;
+        _invoiceOutboxKickService = invoiceOutboxKickService;
+        _nztaExpiryBackfillService = nztaExpiryBackfillService;
         _logger = logger;
     }
 
@@ -80,46 +83,15 @@ public class NewJobController : ControllerBase
         }
 
         var plate = NormalizePlate(req.Plate);
-        NztaExpiryLookupResult? nztaExpiry = null;
-        var nztaExpiryStopwatch = Stopwatch.StartNew();
-        try
-        {
-            nztaExpiry = await _nztaExpiryLookupService.LookupInspectionExpiryAsync(plate, ct);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        finally
-        {
-            nztaExpiryStopwatch.Stop();
-        }
-
-        if (nztaExpiry?.ExpiryDate is not null)
-        {
-            _logger.LogInformation(
-                "New job NZTA {InspectionType} expiry lookup completed in {ElapsedMs} ms for plate {Plate}: {ExpiryDate}",
-                nztaExpiry.InspectionType ?? "inspection",
-                nztaExpiryStopwatch.Elapsed.TotalMilliseconds,
-                plate,
-                nztaExpiry.ExpiryDate);
-        }
-        else
-        {
-            _logger.LogWarning(
-                "New job NZTA expiry lookup did not return a WOF/COF expiry in {ElapsedMs} ms for plate {Plate}: {Error}",
-                nztaExpiryStopwatch.Elapsed.TotalMilliseconds,
-                plate,
-                nztaExpiry?.Error ?? "unknown error");
-        }
 
         var now = DateTime.UtcNow;
+        var reservedJobId = await ReserveNextJobIdAsync(ct);
         var transactionStopwatch = Stopwatch.StartNew();
         using var tx = await _db.Database.BeginTransactionAsync(ct);
 
         Customer? customer = null;
         if (!isBusiness)
-            customer = await UpsertCustomerAsync(req.Customer, ct);
+            customer = BuildCustomer(req.Customer);
 
         long? jobCustomerId = customer?.Id;
         if (isBusiness)
@@ -152,20 +124,11 @@ public class NewJobController : ControllerBase
                 Customer = customer,
                 UpdatedAt = now,
             };
-            ApplyNztaInspectionExpiry(vehicle, nztaExpiry, now);
-        }
-        else if (ApplyNztaInspectionExpiry(vehicle, nztaExpiry, now))
-        {
-            _logger.LogInformation(
-                "Vehicle {VehicleId} {InspectionType} expiry updated from NZTA for plate {Plate}: {ExpiryDate}",
-                vehicle.Id,
-                nztaExpiry?.InspectionType ?? "inspection",
-                plate,
-                nztaExpiry?.ExpiryDate);
         }
 
         var job = new Job
         {
+            Id = reservedJobId,
             Status = "InProgress",
             IsUrgent = false,
             NeedsPo = req.NeedsPo ?? false,
@@ -180,8 +143,6 @@ public class NewJobController : ControllerBase
         };
 
         _db.Jobs.Add(job);
-        await _db.SaveChangesAsync(ct);
-        jobCustomerId = job.CustomerId;
 
         var wofCreated = HasRequestedOrSelectedService(
             req.Services,
@@ -312,6 +273,7 @@ public class NewJobController : ControllerBase
             : _invoiceOutboxService.BuildAttachExistingMessage(job.Id, req.ExistingInvoiceNumber!, DateTime.UtcNow);
         _db.OutboxMessages.Add(invoiceOutboxMessage);
         await _db.SaveChangesAsync(ct);
+        jobCustomerId = job.CustomerId;
 
         await tx.CommitAsync(ct);
         await InvalidateJobsOverviewCachesAsync(hasPaint, wofCreated, job.NeedsPo, ct);
@@ -344,13 +306,57 @@ public class NewJobController : ControllerBase
             invoiceOutboxMessage.Id,
             req.CreateNewInvoice ? "create_draft" : "attach_existing");
 
+        var coreRequestElapsedMs = totalStopwatch.Elapsed.TotalMilliseconds;
+        var invoiceKickDispatchStopwatch = Stopwatch.StartNew();
+        var invoiceStartedAsync = await _invoiceOutboxService.TryStartMessageNowAsync(invoiceOutboxMessage.Id, ct);
+        _invoiceOutboxKickService.Dispatch(
+            invoiceOutboxMessage.Id,
+            job.Id,
+            "invoice_outbox_async_kick",
+            alreadyStarted: invoiceStartedAsync);
+        invoiceKickDispatchStopwatch.Stop();
+        var invoiceKickDispatchElapsedMs = invoiceKickDispatchStopwatch.Elapsed.TotalMilliseconds;
+
+        _nztaExpiryBackfillService.Dispatch(vehicle.Id, plate);
+
+        double? poKickDispatchElapsedMs = null;
+        bool? poStartedAsync = null;
+        if (poOutboxMessage is not null)
+        {
+            var poKickDispatchStopwatch = Stopwatch.StartNew();
+            poStartedAsync = await _invoiceOutboxService.TryStartMessageNowAsync(poOutboxMessage.Id, ct);
+            _invoiceOutboxKickService.Dispatch(
+                poOutboxMessage.Id,
+                job.Id,
+                "po_state_outbox_async_kick",
+                alreadyStarted: poStartedAsync == true);
+            poKickDispatchStopwatch.Stop();
+            poKickDispatchElapsedMs = poKickDispatchStopwatch.Elapsed.TotalMilliseconds;
+        }
+
         totalStopwatch.Stop();
+        var totalResponseElapsedMs = totalStopwatch.Elapsed.TotalMilliseconds;
+        Response.Headers["X-NewJob-Core-Time"] = $"{coreRequestElapsedMs:F0}ms";
+        Response.Headers["X-NewJob-Total-Time"] = $"{totalResponseElapsedMs:F0}ms";
+        Response.Headers["X-NewJob-Invoice-Kick-Time"] = $"{invoiceKickDispatchElapsedMs:F0}ms";
+        Response.Headers["X-NewJob-Invoice-Processed-Inline"] = invoiceStartedAsync ? "async-started" : "async-pending";
+        if (poOutboxMessage is not null)
+        {
+            Response.Headers["X-NewJob-Po-Kick-Time"] = poKickDispatchElapsedMs.HasValue
+                ? $"{poKickDispatchElapsedMs.Value:F0}ms"
+                : "n/a";
+            Response.Headers["X-NewJob-Po-Processed-Inline"] = poStartedAsync == true ? "async-started" : "async-pending";
+        }
+
         _logger.LogInformation(
-            "New job request completed in {ElapsedMs} ms for job {JobId}, vehicle {VehicleId}, customer {CustomerId}",
-            totalStopwatch.Elapsed.TotalMilliseconds,
+            "New job request completed in {ElapsedMs} ms for job {JobId}, vehicle {VehicleId}, customer {CustomerId} (core: {CoreElapsedMs} ms, invoiceKickDispatch: {InvoiceKickDispatchElapsedMs} ms, poKickDispatch: {PoKickDispatchElapsedMs} ms)",
+            totalResponseElapsedMs,
             job.Id,
             vehicle.Id,
-            jobCustomerId);
+            jobCustomerId,
+            coreRequestElapsedMs,
+            invoiceKickDispatchElapsedMs,
+            poKickDispatchElapsedMs);
 
         return Ok(new
         {
@@ -364,6 +370,15 @@ public class NewJobController : ControllerBase
             invoiceLinked = false,
             invoiceAlreadyExists = false,
             invoiceError = (string?)null,
+            performance = new
+            {
+                coreRequestMs = Math.Round(coreRequestElapsedMs),
+                totalResponseMs = Math.Round(totalResponseElapsedMs),
+                invoiceImmediateKickMs = Math.Round(invoiceKickDispatchElapsedMs),
+                poImmediateKickMs = poKickDispatchElapsedMs is null ? (double?)null : Math.Round(poKickDispatchElapsedMs.Value),
+                invoiceProcessedInline = invoiceStartedAsync ? "async-started" : "async-pending",
+                poProcessedInline = poOutboxMessage is null ? null : (poStartedAsync == true ? "async-started" : "async-pending"),
+            },
         });
     }
 
@@ -384,6 +399,11 @@ public class NewJobController : ControllerBase
         if (needsPo)
             await _cache.RemoveAsync(PoUnreadSummaryCacheKey, ct);
     }
+
+    private async Task<long> ReserveNextJobIdAsync(CancellationToken ct)
+        => await _db.Database
+            .SqlQuery<long>($"SELECT nextval(pg_get_serial_sequence('jobs', 'id')) AS \"Value\"")
+            .SingleAsync(ct);
 
     private static List<string> ParsePartsDescriptions(NewJobRequest req)
     {
@@ -528,27 +548,9 @@ public class NewJobController : ControllerBase
             UpdatedAt = now,
         };
 
-    private async Task<Customer> UpsertCustomerAsync(NewJobRequest.CustomerInput input, CancellationToken ct)
+    private static Customer BuildCustomer(NewJobRequest.CustomerInput input)
     {
-        Customer? existing = null;
-        if (!string.IsNullOrWhiteSpace(input.Phone))
-        {
-            existing = await _db.Customers.FirstOrDefaultAsync(x => x.Phone == input.Phone, ct);
-        }
-
-        if (existing is not null)
-        {
-            existing.Type = input.Type;
-            existing.Name = string.IsNullOrWhiteSpace(input.Name) ? (input.Notes ?? "") : input.Name;
-            existing.Phone = input.Phone;
-            existing.Email = input.Email;
-            existing.Address = input.Address;
-            existing.BusinessCode = "WI";
-            existing.Notes = input.Notes?.Trim();
-            return existing;
-        }
-
-        existing = new Customer
+        return new Customer
         {
             Type = input.Type,
             Name = string.IsNullOrWhiteSpace(input.Name) ? (input.Notes ?? "") : input.Name,
@@ -558,29 +560,10 @@ public class NewJobController : ControllerBase
             BusinessCode = "WI",
             Notes = input.Notes?.Trim(),
         };
-        _db.Customers.Add(existing);
-
-        return existing;
     }
 
     private static string NormalizePlate(string plate)
         => new string(plate.Trim().ToUpperInvariant().Where(char.IsLetterOrDigit).ToArray());
-
-    private static bool ApplyNztaInspectionExpiry(Vehicle vehicle, NztaExpiryLookupResult? nztaExpiry, DateTime now)
-    {
-        if (nztaExpiry?.ExpiryDate is null)
-            return false;
-
-        if (string.Equals(nztaExpiry.InspectionType, "COF", StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        if (vehicle.WofExpiry == nztaExpiry.ExpiryDate)
-            return false;
-
-        vehicle.WofExpiry = nztaExpiry.ExpiryDate;
-        vehicle.UpdatedAt = now;
-        return true;
-    }
 
     private sealed record SelectedServiceCatalogItems(
         IReadOnlyList<ServiceCatalogItem> RootItems,

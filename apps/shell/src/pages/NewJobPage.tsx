@@ -840,6 +840,17 @@ export function NewJobPage() {
         throw new Error(data?.error || "工单保存失败，请稍后重试");
       }
 
+      console.info("[new-job-performance]", {
+        xResponseTime: res.headers.get("X-Response-Time"),
+        newJobCoreTime: res.headers.get("X-NewJob-Core-Time"),
+        newJobTotalTime: res.headers.get("X-NewJob-Total-Time"),
+        invoiceKickTime: res.headers.get("X-NewJob-Invoice-Kick-Time"),
+        invoiceProcessedInline: res.headers.get("X-NewJob-Invoice-Processed-Inline"),
+        poKickTime: res.headers.get("X-NewJob-Po-Kick-Time"),
+        poProcessedInline: res.headers.get("X-NewJob-Po-Processed-Inline"),
+        payloadPerformance: data?.performance ?? null,
+      });
+
      
       const invoiceCreated = data?.invoiceCreated === true;
       const invoiceLinked = data?.invoiceLinked === true;

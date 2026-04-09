@@ -40,7 +40,8 @@ public sealed class XeroTokenService
             {
                 return XeroTokenRefreshResult.Fail(
                     400,
-                    $"Missing configuration: {string.Join(", ", missing)}");
+                    $"Missing configuration: {string.Join(", ", missing)}",
+                    state.TenantId ?? "");
             }
 
             if (!string.IsNullOrWhiteSpace(state.AccessToken)
@@ -52,7 +53,8 @@ public sealed class XeroTokenService
                     state.RefreshToken,
                     Math.Max(0, (int)(state.AccessTokenExpiresAt.Value - DateTime.UtcNow).TotalSeconds),
                     state.Scope ?? "",
-                    refreshTokenUpdated: false);
+                    refreshTokenUpdated: false,
+                    state.TenantId ?? "");
             }
 
             var client = _httpClientFactory.CreateClient();
@@ -68,11 +70,11 @@ public sealed class XeroTokenService
             using var response = await client.SendAsync(request, ct);
             var payload = await response.Content.ReadAsStringAsync(ct);
             if (!response.IsSuccessStatusCode)
-                return XeroTokenRefreshResult.Fail((int)response.StatusCode, BuildFriendlyError(payload));
+                return XeroTokenRefreshResult.Fail((int)response.StatusCode, BuildFriendlyError(payload), state.TenantId ?? "");
 
             var token = JsonSerializer.Deserialize<RefreshTokenResponse>(payload, JsonOptions);
             if (token is null || string.IsNullOrWhiteSpace(token.AccessToken))
-                return XeroTokenRefreshResult.Fail(502, "Refresh token response was empty or invalid.");
+                return XeroTokenRefreshResult.Fail(502, "Refresh token response was empty or invalid.", state.TenantId ?? "");
 
             await _xeroTokenStore.SaveRefreshResultAsync(
                 state.RecordId,
@@ -89,7 +91,8 @@ public sealed class XeroTokenService
                 token.RefreshToken,
                 token.ExpiresIn,
                 token.Scope,
-                refreshTokenUpdated: !string.Equals(token.RefreshToken, state.RefreshToken, StringComparison.Ordinal));
+                refreshTokenUpdated: !string.Equals(token.RefreshToken, state.RefreshToken, StringComparison.Ordinal),
+                state.TenantId ?? "");
         }
         finally
         {
@@ -152,13 +155,15 @@ public sealed class XeroTokenRefreshResult
     public int ExpiresIn { get; private init; }
     public string Scope { get; private init; } = "";
     public bool RefreshTokenUpdated { get; private init; }
+    public string TenantId { get; private init; } = "";
 
-    public static XeroTokenRefreshResult Fail(int statusCode, string error) =>
+    public static XeroTokenRefreshResult Fail(int statusCode, string error, string tenantId) =>
         new()
         {
             Ok = false,
             StatusCode = statusCode,
             Error = error,
+            TenantId = tenantId,
         };
 
     public static XeroTokenRefreshResult Success(
@@ -166,7 +171,8 @@ public sealed class XeroTokenRefreshResult
         string refreshToken,
         int expiresIn,
         string scope,
-        bool refreshTokenUpdated) =>
+        bool refreshTokenUpdated,
+        string tenantId) =>
         new()
         {
             Ok = true,
@@ -176,5 +182,6 @@ public sealed class XeroTokenRefreshResult
             ExpiresIn = expiresIn,
             Scope = scope,
             RefreshTokenUpdated = refreshTokenUpdated,
+            TenantId = tenantId,
         };
 }

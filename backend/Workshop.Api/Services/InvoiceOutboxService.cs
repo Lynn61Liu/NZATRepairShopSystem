@@ -13,21 +13,26 @@ public sealed class InvoiceOutboxService
     public const string RemoveWofDraftItemsMessageType = "job_invoice.remove_wof_draft_items";
     public const string SyncPoStateMessageType = "job_po.sync_state";
     public const string JobAggregateType = "job";
+    private const string JobsListVersionCacheKey = "jobs:list:version:v1";
+    private static readonly TimeSpan JobsListVersionCacheDuration = TimeSpan.FromDays(30);
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly AppDbContext _db;
+    private readonly IAppCache _cache;
     private readonly JobInvoiceService _jobInvoiceService;
     private readonly JobPoStateService _jobPoStateService;
     private readonly ILogger<InvoiceOutboxService> _logger;
 
     public InvoiceOutboxService(
         AppDbContext db,
+        IAppCache cache,
         JobInvoiceService jobInvoiceService,
         JobPoStateService jobPoStateService,
         ILogger<InvoiceOutboxService> logger)
     {
         _db = db;
+        _cache = cache;
         _jobInvoiceService = jobInvoiceService;
         _jobPoStateService = jobPoStateService;
         _logger = logger;
@@ -138,6 +143,8 @@ public sealed class InvoiceOutboxService
 
         await _db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
+        foreach (var message in messages)
+            await InvalidateJobCachesAsync(message.AggregateType, message.AggregateId, ct);
         return messages;
     }
 
@@ -161,8 +168,70 @@ public sealed class InvoiceOutboxService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Invoice outbox processing threw for message {MessageId}", message.Id);
-            await MarkFailedAsync(message.Id, ex.Message, retryable: true, ct);
+            await MarkFailedAsync(message.Id, FormatExceptionForDisplay(ex), retryable: true, ct);
         }
+    }
+
+    public async Task<bool> TryStartMessageNowAsync(long messageId, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+
+        var message = await _db.OutboxMessages
+            .FromSqlInterpolated($@"
+                SELECT *
+                FROM outbox_messages
+                WHERE id = {messageId}
+                  AND status = 'pending'
+                  AND available_at <= {now}
+                  AND message_type IN ({CreateDraftMessageType}, {AttachExistingMessageType}, {SyncWofDraftMessageType}, {RemoveWofDraftItemsMessageType}, {SyncPoStateMessageType})
+                FOR UPDATE SKIP LOCKED")
+            .FirstOrDefaultAsync(ct);
+
+        if (message is null)
+        {
+            await transaction.CommitAsync(ct);
+            return false;
+        }
+
+        message.Status = "processing";
+        message.LockedAt = now;
+        message.UpdatedAt = now;
+
+        await _db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        await InvalidateJobCachesAsync(message.AggregateType, message.AggregateId, ct);
+        return true;
+    }
+
+    public async Task<bool> TryProcessClaimedMessageNowAsync(long messageId, CancellationToken ct)
+    {
+        var message = await _db.OutboxMessages
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.Id == messageId &&
+                     x.Status == "processing" &&
+                     (x.MessageType == CreateDraftMessageType ||
+                      x.MessageType == AttachExistingMessageType ||
+                      x.MessageType == SyncWofDraftMessageType ||
+                      x.MessageType == RemoveWofDraftItemsMessageType ||
+                      x.MessageType == SyncPoStateMessageType),
+                ct);
+
+        if (message is null)
+            return false;
+
+        await ProcessAsync(message, ct);
+        return true;
+    }
+
+    public async Task<bool> TryProcessMessageNowAsync(long messageId, CancellationToken ct)
+    {
+        var started = await TryStartMessageNowAsync(messageId, ct);
+        if (!started)
+            return false;
+
+        return await TryProcessClaimedMessageNowAsync(messageId, ct);
     }
 
     private async Task<InvoiceOutboxDispatchResult> DispatchAsync(OutboxMessage message, CancellationToken ct)
@@ -260,6 +329,7 @@ public sealed class InvoiceOutboxService
         message.LastError = null;
         message.UpdatedAt = now;
         await _db.SaveChangesAsync(ct);
+        await InvalidateJobCachesAsync(message.AggregateType, message.AggregateId, ct);
     }
 
     private async Task MarkFailedAsync(long messageId, string error, bool retryable, CancellationToken ct)
@@ -284,6 +354,7 @@ public sealed class InvoiceOutboxService
         }
 
         await _db.SaveChangesAsync(ct);
+        await InvalidateJobCachesAsync(message.AggregateType, message.AggregateId, ct);
     }
 
     private async Task<OutboxMessage?> FindActiveMessageAsync(long jobId, string messageType, CancellationToken ct)
@@ -312,15 +383,42 @@ public sealed class InvoiceOutboxService
     private static TimeSpan GetRetryDelay(int attemptCount)
         => attemptCount switch
         {
-            1 => TimeSpan.FromSeconds(30),
-            2 => TimeSpan.FromMinutes(2),
-            3 => TimeSpan.FromMinutes(10),
-            4 => TimeSpan.FromMinutes(30),
-            _ => TimeSpan.FromHours(2),
+            1 => TimeSpan.FromSeconds(10),
+            2 => TimeSpan.FromSeconds(30),
+            3 => TimeSpan.FromMinutes(1),
+            4 => TimeSpan.FromMinutes(2),
+            _ => TimeSpan.FromMinutes(5),
         };
 
     private static bool IsRetryableStatusCode(int statusCode)
         => statusCode == 0 || statusCode == 408 || statusCode == 429 || statusCode >= 500;
+
+    private static string FormatExceptionForDisplay(Exception ex)
+    {
+        var typeName = ex.GetType().Name;
+        var message = string.IsNullOrWhiteSpace(ex.Message) ? "Unexpected error." : ex.Message.Trim();
+
+        if (ex.InnerException is not null && !string.IsNullOrWhiteSpace(ex.InnerException.Message))
+            return $"{typeName}: {message} | Inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message.Trim()}";
+
+        return $"{typeName}: {message}";
+    }
+
+    private async Task InvalidateJobCachesAsync(string aggregateType, long aggregateId, CancellationToken ct)
+    {
+        if (!string.Equals(aggregateType, JobAggregateType, StringComparison.OrdinalIgnoreCase) || aggregateId <= 0)
+            return;
+
+        await _cache.RemoveAsync(GetJobDetailCacheKey(aggregateId), ct);
+        await _cache.SetStringAsync(
+            JobsListVersionCacheKey,
+            DateTime.UtcNow.Ticks.ToString(),
+            JobsListVersionCacheDuration,
+            ct);
+    }
+
+    private static string GetJobDetailCacheKey(long jobId)
+        => $"job:detail:{jobId}:v1";
 
     private sealed record CreateDraftPayload(long JobId);
     private sealed record AttachExistingPayload(long JobId, string InvoiceNumber);

@@ -4,6 +4,9 @@ namespace Workshop.Api.Services;
 
 public sealed class InvoiceOutboxBackgroundService : BackgroundService
 {
+    private static readonly TimeSpan IdlePollDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan ErrorPollDelay = TimeSpan.FromSeconds(3);
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<InvoiceOutboxBackgroundService> _logger;
 
@@ -27,7 +30,7 @@ public sealed class InvoiceOutboxBackgroundService : BackgroundService
 
                 if (messages.Count == 0)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                    await Task.Delay(IdlePollDelay, stoppingToken);
                     continue;
                 }
 
@@ -43,12 +46,12 @@ public sealed class InvoiceOutboxBackgroundService : BackgroundService
             catch (PostgresException ex)
             {
                 _logger.LogWarning(ex, "Invoice outbox processor hit a PostgreSQL error.");
-                await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
+                await Task.Delay(ErrorPollDelay, stoppingToken);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Invoice outbox processor loop failed.");
-                await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
+                await Task.Delay(ErrorPollDelay, stoppingToken);
             }
         }
     }

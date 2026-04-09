@@ -23,6 +23,7 @@ public class JobsController : ControllerBase
     private static readonly TimeSpan JobsListCacheDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan JobsListVersionCacheDuration = TimeSpan.FromDays(30);
     private static readonly TimeSpan JobDetailCacheDuration = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan JobDetailProcessingCacheDuration = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan PaintServiceCacheDuration = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan PoUnreadSummaryCacheDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan PaintBoardCacheDuration = TimeSpan.FromSeconds(30);
@@ -597,9 +598,10 @@ public class JobsController : ControllerBase
     [HttpGet("{id:long}")]
     public async Task<IActionResult> GetById(long id, CancellationToken ct)
     {
+        var cacheDuration = await ResolveJobDetailCacheDurationAsync(id, ct);
         var payload = await _appCache.GetOrCreateJsonAsync(
             GetJobDetailCacheKey(id),
-            JobDetailCacheDuration,
+            cacheDuration,
             token => BuildJobDetailResponseJsonAsync(id, token),
             ct
         );
@@ -608,6 +610,39 @@ public class JobsController : ControllerBase
             return NotFound(new { error = "Job not found." });
 
         return Content(payload, "application/json");
+    }
+
+    private async Task<TimeSpan> ResolveJobDetailCacheDurationAsync(long id, CancellationToken ct)
+    {
+        var snapshot = await (
+                from j in _db.Jobs.AsNoTracking()
+                where j.Id == id
+                select new
+                {
+                    HasInvoice = _db.JobInvoices.AsNoTracking().Any(x => x.JobId == j.Id),
+                    InvoiceProcessingStatus = _db.OutboxMessages.AsNoTracking()
+                        .Where(x => x.AggregateType == InvoiceOutboxService.JobAggregateType
+                            && x.AggregateId == j.Id
+                            && (x.MessageType == InvoiceOutboxService.CreateDraftMessageType
+                                || x.MessageType == InvoiceOutboxService.AttachExistingMessageType))
+                        .OrderByDescending(x => x.CreatedAt)
+                        .Select(x => x.Status)
+                        .FirstOrDefault(),
+                }
+            )
+            .FirstOrDefaultAsync(ct);
+
+        if (snapshot is null)
+            return JobDetailCacheDuration;
+
+        if (!snapshot.HasInvoice &&
+            (string.Equals(snapshot.InvoiceProcessingStatus, "pending", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(snapshot.InvoiceProcessingStatus, "processing", StringComparison.OrdinalIgnoreCase)))
+        {
+            return JobDetailProcessingCacheDuration;
+        }
+
+        return JobDetailCacheDuration;
     }
 
     private async Task<string?> BuildJobDetailResponseJsonAsync(long id, CancellationToken ct)

@@ -10,11 +10,31 @@ type InvoiceDashboardProps = {
 };
 
 export function InvoiceDashboard({ model, hasInvoice, onCreateInvoice, isCreatingInvoice }: InvoiceDashboardProps) {
+  if (model) {
+    return (
+      <InvoiceDashboardContent
+        model={model}
+        hasInvoice={hasInvoice}
+        onCreateInvoice={onCreateInvoice}
+        isCreatingInvoice={isCreatingInvoice}
+      />
+    );
+  }
+
+  return (
+    <InvoiceDashboardFallback
+      hasInvoice={hasInvoice}
+      onCreateInvoice={onCreateInvoice}
+      isCreatingInvoice={isCreatingInvoice}
+    />
+  );
+}
+
+function InvoiceDashboardFallback({ hasInvoice, onCreateInvoice, isCreatingInvoice }: InvoiceDashboardProps) {
   const fallbackDashboard = useInvoiceDashboardState().invoicePanel;
-  const dashboard = model ?? fallbackDashboard;
   return (
     <InvoiceDashboardContent
-      model={dashboard}
+      model={fallbackDashboard}
       hasInvoice={hasInvoice}
       onCreateInvoice={onCreateInvoice}
       isCreatingInvoice={isCreatingInvoice}

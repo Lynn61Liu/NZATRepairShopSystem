@@ -119,7 +119,6 @@ public sealed class JobInvoiceService
                     partsServices,
                     paintService,
                     ct);
-                request.LineItems = await SanitizeLineItemsAsync(request.LineItems, ct);
             }
             catch (InvalidOperationException ex)
             {
@@ -206,11 +205,14 @@ public sealed class JobInvoiceService
                 scope: createResult.Scope,
                 expiresIn: createResult.ExpiresIn);
         }
-        catch
+        catch (Exception ex)
         {
             _logger.LogWarning(
-                "Job invoice draft creation threw an exception for job {JobId}",
-                jobId);
+                ex,
+                "Job invoice draft creation threw an exception for job {JobId} ({ExceptionType}: {ExceptionMessage})",
+                jobId,
+                ex.GetType().Name,
+                ex.Message);
             throw;
         }
     }
@@ -940,17 +942,19 @@ public sealed class JobInvoiceService
         if (string.IsNullOrWhiteSpace(contactName))
             throw new InvalidOperationException("Unable to derive contact name for invoice.");
 
-        var lineItems = await BuildCatalogMappedServiceLineItemsAsync(customer, serviceSelections, paintService, ct);
-
-        var requestedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var serviceContext = await LoadCatalogMappedServiceContextAsync(customer, serviceSelections, ct);
+        var requestedCodes = new HashSet<string>(serviceContext.RequestedCodes, StringComparer.OrdinalIgnoreCase);
         if (partsServices.Any(x => !string.IsNullOrWhiteSpace(x.Description)))
             requestedCodes.Add(JobInvoicePartsLineItemBuilder.DefaultItemCode);
 
-        var inventoryByCode = requestedCodes.Count == 0
-            ? new Dictionary<string, InventoryItem>(StringComparer.OrdinalIgnoreCase)
-            : await _db.InventoryItems.AsNoTracking()
-                .Where(x => requestedCodes.Contains(x.ItemCode))
-                .ToDictionaryAsync(x => x.ItemCode, x => x, StringComparer.OrdinalIgnoreCase, ct);
+        var inventoryByCode = await LoadInventoryByCodesAsync(requestedCodes, ct);
+        var lineItems = BuildCatalogMappedServiceLineItems(
+            customer,
+            serviceSelections,
+            paintService,
+            serviceContext.CatalogItemsById,
+            serviceContext.OverrideByServiceId,
+            inventoryByCode);
 
         inventoryByCode.TryGetValue(JobInvoicePartsLineItemBuilder.DefaultItemCode, out var partsInventoryItem);
         lineItems.AddRange(JobInvoicePartsLineItemBuilder.Build(partsServices, partsInventoryItem));
@@ -966,6 +970,8 @@ public sealed class JobInvoiceService
                 UnitAmount = 0m,
             });
         }
+
+        lineItems = await SanitizeLineItemsAsync(lineItems, ct, inventoryByCode);
 
         return new CreateXeroInvoiceRequest
         {
@@ -988,57 +994,15 @@ public sealed class JobInvoiceService
         JobPaintService? paintService,
         CancellationToken ct)
     {
-        var selectionIds = serviceSelections
-            .Select(x => x.ServiceCatalogItemId)
-            .Distinct()
-            .ToArray();
-
-        var catalogItemsById = selectionIds.Length == 0
-            ? new Dictionary<long, ServiceCatalogItem>()
-            : await _db.ServiceCatalogItems.AsNoTracking()
-                .Where(x => selectionIds.Contains(x.Id))
-                .ToDictionaryAsync(x => x.Id, ct);
-
-        var overrideByServiceId = selectionIds.Length == 0
-            ? new Dictionary<long, string>()
-            : (await _db.CustomerServicePrices.AsNoTracking()
-                .Where(x => x.CustomerId == customer.Id && x.IsActive && selectionIds.Contains(x.ServiceCatalogItemId))
-                .OrderByDescending(x => x.UpdatedAt)
-                .ThenByDescending(x => x.Id)
-                .ToListAsync(ct))
-                .GroupBy(x => x.ServiceCatalogItemId)
-                .ToDictionary(x => x.Key, x => x.First().XeroItemCode.Trim());
-
-        var requestedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var selection in serviceSelections)
-        {
-            if (!catalogItemsById.TryGetValue(selection.ServiceCatalogItemId, out var catalogItem))
-                continue;
-
-            var resolvedCode = ResolveCatalogItemCode(customer, catalogItem, overrideByServiceId);
-            if (!string.IsNullOrWhiteSpace(resolvedCode))
-                requestedCodes.Add(resolvedCode);
-        }
-
-        var inventoryByCode = requestedCodes.Count == 0
-            ? new Dictionary<string, InventoryItem>(StringComparer.OrdinalIgnoreCase)
-            : await _db.InventoryItems.AsNoTracking()
-                .Where(x => requestedCodes.Contains(x.ItemCode))
-                .ToDictionaryAsync(x => x.ItemCode, x => x, StringComparer.OrdinalIgnoreCase, ct);
-
-        var lineItems = new List<XeroInvoiceLineItemInput>();
-        foreach (var selection in serviceSelections)
-        {
-            if (!catalogItemsById.TryGetValue(selection.ServiceCatalogItemId, out var catalogItem))
-                continue;
-
-            var itemCode = ResolveCatalogItemCode(customer, catalogItem, overrideByServiceId);
-            var description = ResolveSelectionDescription(selection, catalogItem, paintService);
-            inventoryByCode.TryGetValue(itemCode ?? "", out var inventoryItem);
-            lineItems.Add(BuildConfiguredLineItem(itemCode, description, inventoryItem, fallbackUnitAmount: 0m, useInventoryPrice: true));
-        }
-
-        return lineItems;
+        var serviceContext = await LoadCatalogMappedServiceContextAsync(customer, serviceSelections, ct);
+        var inventoryByCode = await LoadInventoryByCodesAsync(serviceContext.RequestedCodes, ct);
+        return BuildCatalogMappedServiceLineItems(
+            customer,
+            serviceSelections,
+            paintService,
+            serviceContext.CatalogItemsById,
+            serviceContext.OverrideByServiceId,
+            inventoryByCode);
     }
 
     private static void AppendJobNoteLineItem(List<XeroInvoiceLineItemInput> lineItems, string? jobNotes)
@@ -1057,7 +1021,8 @@ public sealed class JobInvoiceService
 
     private async Task<List<XeroInvoiceLineItemInput>> SanitizeLineItemsAsync(
         IEnumerable<XeroInvoiceLineItemInput> lineItems,
-        CancellationToken ct)
+        CancellationToken ct,
+        IReadOnlyDictionary<string, InventoryItem>? preloadedInventoryByCode = null)
     {
         var normalized = lineItems
             .Where(item => !string.IsNullOrWhiteSpace(item.Description))
@@ -1086,15 +1051,17 @@ public sealed class JobInvoiceService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        Dictionary<string, InventoryItem> inventoryByCode = new(StringComparer.OrdinalIgnoreCase);
-        if (requestedCodes.Count > 0)
+        var inventoryByCode = preloadedInventoryByCode is null
+            ? new Dictionary<string, InventoryItem>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, InventoryItem>(preloadedInventoryByCode, StringComparer.OrdinalIgnoreCase);
+        var missingCodes = requestedCodes
+            .Where(code => !inventoryByCode.ContainsKey(code))
+            .ToArray();
+
+        if (missingCodes.Length > 0)
         {
-            var matchedInventoryItems = await _db.InventoryItems.AsNoTracking()
-                .Where(x => requestedCodes.Contains(x.ItemCode))
-                .ToListAsync(ct);
-            inventoryByCode = matchedInventoryItems
-                .GroupBy(x => x.ItemCode, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in await LoadInventoryByCodesAsync(missingCodes, ct))
+                inventoryByCode[entry.Key] = entry.Value;
         }
 
         return normalized
@@ -1120,6 +1087,99 @@ public sealed class JobInvoiceService
             })
             .ToList();
     }
+
+    private async Task<CatalogMappedServiceContext> LoadCatalogMappedServiceContextAsync(
+        Customer customer,
+        IReadOnlyList<JobServiceSelection> serviceSelections,
+        CancellationToken ct)
+    {
+        var selectionIds = serviceSelections
+            .Select(x => x.ServiceCatalogItemId)
+            .Distinct()
+            .ToArray();
+
+        if (selectionIds.Length == 0)
+        {
+            return new CatalogMappedServiceContext(
+                new Dictionary<long, ServiceCatalogItem>(),
+                new Dictionary<long, string>(),
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        }
+
+        var catalogItemsById = await _db.ServiceCatalogItems.AsNoTracking()
+            .Where(x => selectionIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, ct);
+        var overrideByServiceId = (await _db.CustomerServicePrices.AsNoTracking()
+            .Where(x => x.CustomerId == customer.Id && x.IsActive && selectionIds.Contains(x.ServiceCatalogItemId))
+            .OrderByDescending(x => x.UpdatedAt)
+            .ThenByDescending(x => x.Id)
+            .ToListAsync(ct))
+            .GroupBy(x => x.ServiceCatalogItemId)
+            .ToDictionary(x => x.Key, x => x.First().XeroItemCode.Trim());
+
+        var requestedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var selection in serviceSelections)
+        {
+            if (!catalogItemsById.TryGetValue(selection.ServiceCatalogItemId, out var catalogItem))
+                continue;
+
+            var resolvedCode = ResolveCatalogItemCode(customer, catalogItem, overrideByServiceId);
+            if (!string.IsNullOrWhiteSpace(resolvedCode))
+                requestedCodes.Add(resolvedCode);
+        }
+
+        return new CatalogMappedServiceContext(catalogItemsById, overrideByServiceId, requestedCodes);
+    }
+
+    private async Task<Dictionary<string, InventoryItem>> LoadInventoryByCodesAsync(
+        IEnumerable<string> requestedCodes,
+        CancellationToken ct)
+    {
+        var normalizedCodes = requestedCodes
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .Select(code => code.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (normalizedCodes.Length == 0)
+            return new Dictionary<string, InventoryItem>(StringComparer.OrdinalIgnoreCase);
+
+        var matchedInventoryItems = await _db.InventoryItems.AsNoTracking()
+            .Where(x => normalizedCodes.Contains(x.ItemCode))
+            .ToListAsync(ct);
+
+        return matchedInventoryItems
+            .GroupBy(x => x.ItemCode, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static List<XeroInvoiceLineItemInput> BuildCatalogMappedServiceLineItems(
+        Customer customer,
+        IReadOnlyList<JobServiceSelection> serviceSelections,
+        JobPaintService? paintService,
+        IReadOnlyDictionary<long, ServiceCatalogItem> catalogItemsById,
+        IReadOnlyDictionary<long, string> overrideByServiceId,
+        IReadOnlyDictionary<string, InventoryItem> inventoryByCode)
+    {
+        var lineItems = new List<XeroInvoiceLineItemInput>();
+        foreach (var selection in serviceSelections)
+        {
+            if (!catalogItemsById.TryGetValue(selection.ServiceCatalogItemId, out var catalogItem))
+                continue;
+
+            var itemCode = ResolveCatalogItemCode(customer, catalogItem, overrideByServiceId);
+            var description = ResolveSelectionDescription(selection, catalogItem, paintService);
+            inventoryByCode.TryGetValue(itemCode ?? "", out var inventoryItem);
+            lineItems.Add(BuildConfiguredLineItem(itemCode, description, inventoryItem, fallbackUnitAmount: 0m, useInventoryPrice: true));
+        }
+
+        return lineItems;
+    }
+
+    private sealed record CatalogMappedServiceContext(
+        Dictionary<long, ServiceCatalogItem> CatalogItemsById,
+        Dictionary<long, string> OverrideByServiceId,
+        HashSet<string> RequestedCodes);
 
     private static string? ResolveCatalogItemCode(
         Customer customer,

@@ -712,7 +712,7 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
 
     const timer = window.setInterval(() => {
       void refreshJobSummary();
-    }, 5000);
+    }, 2000);
 
     return () => window.clearInterval(timer);
   }, [jobData, refreshJobSummary]);
