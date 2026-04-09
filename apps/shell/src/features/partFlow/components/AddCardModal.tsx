@@ -15,9 +15,14 @@ export function AddCardModal({ onClose, onAdd }: AddCardModalProps) {
   const [details, setDetails] = useState<CarDetails>({
     owner: '',
     phone: '',
+    email: '',
     vin: '',
     mileage: '',
-    issue: ''
+    issue: '',
+    plate: '',
+    make: '',
+    model: '',
+    year: ''
   });
 
   const handleAddPart = () => {

@@ -131,6 +131,7 @@ builder.Services.AddScoped<JobInvoiceService>();
 builder.Services.AddScoped<InvoiceOutboxService>();
 builder.Services.AddScoped<GmailAccountService>();
 builder.Services.AddScoped<GmailTokenService>();
+builder.Services.AddScoped<GmailMessageSenderService>();
 builder.Services.AddScoped<GmailThreadSyncService>();
 builder.Services.AddScoped<BusinessHoursService>();
 builder.Services.AddScoped<JobPoStateService>();

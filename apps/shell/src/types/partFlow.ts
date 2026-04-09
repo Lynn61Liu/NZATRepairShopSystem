@@ -9,9 +9,22 @@ export interface Note {
 export interface CarDetails {
   owner: string;
   phone: string;
+  email: string;
   vin: string;
   mileage: string;
   issue: string;
+  plate: string;
+  make: string;
+  model: string;
+  year: string;
+}
+
+export interface ArrivalNotice {
+  correlationId: string;
+  recipientEmail: string;
+  sentAt: string | null;
+  lastSubject: string;
+  lastBody: string;
 }
 
 export interface WorkCard {
@@ -23,4 +36,5 @@ export interface WorkCard {
   notes: Note[];
   createdAt: string;
   details: CarDetails;
+  arrivalNotice: ArrivalNotice;
 }

@@ -9,10 +9,12 @@ namespace Workshop.Api.Services;
 public class PartsServicesService
 {
     private readonly AppDbContext _db;
+    private readonly GmailMessageSenderService _gmailMessageSenderService;
 
-    public PartsServicesService(AppDbContext db)
+    public PartsServicesService(AppDbContext db, GmailMessageSenderService gmailMessageSenderService)
     {
         _db = db;
+        _gmailMessageSenderService = gmailMessageSenderService;
     }
 
     public async Task<WofServiceResult> GetServices(long jobId, CancellationToken ct)
@@ -230,6 +232,28 @@ public class PartsServicesService
             .GroupBy(x => x.PartsServiceId)
             .ToDictionary(g => g.Key, g => g.ToList());
 
+        var pickupOrTransitServices = services
+            .Where(x => x.Status == PartsServiceStatus.PickupOrTransit)
+            .ToList();
+        var arrivalNoticeCorrelationIds = pickupOrTransitServices
+            .Select(x => BuildArrivalNoticeCorrelationId(x.JobId, x.Id))
+            .Distinct()
+            .ToList();
+        var arrivalNoticeLogs = arrivalNoticeCorrelationIds.Count == 0
+            ? new List<GmailMessageLog>()
+            : await _db.GmailMessageLogs.AsNoTracking()
+                .Where(x => x.Direction == "sent")
+                .Where(x => x.CorrelationId != null && arrivalNoticeCorrelationIds.Contains(x.CorrelationId))
+                .ToListAsync(ct);
+        var arrivalNoticeLogByCorrelation = arrivalNoticeLogs
+            .Where(x => !string.IsNullOrWhiteSpace(x.CorrelationId))
+            .GroupBy(x => x.CorrelationId!)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(GetMessageOccurredAtUtc)
+                    .ThenByDescending(x => x.Id)
+                    .First());
+
         var jobIds = services.Select(x => x.JobId).Distinct().ToList();
         var jobInfo = await (
             from j in _db.Jobs.AsNoTracking()
@@ -248,6 +272,11 @@ public class PartsServicesService
             jobMap.TryGetValue(service.JobId, out var info);
             var vehicle = info?.Vehicle;
             var customer = info?.Customer;
+            var arrivalNoticeCorrelationId = BuildArrivalNoticeCorrelationId(service.JobId, service.Id);
+            arrivalNoticeLogByCorrelation.TryGetValue(arrivalNoticeCorrelationId, out var arrivalNoticeLog);
+            var arrivalNoticeSentAt = arrivalNoticeLog is null
+                ? null
+                : FormatDateTime(GetMessageOccurredAtUtc(arrivalNoticeLog));
 
             var parts = ParseParts(service.Description);
             var notesPayload = notesByService.TryGetValue(service.Id, out var list)
@@ -274,14 +303,93 @@ public class PartsServicesService
                 {
                     owner = customer?.Name ?? "",
                     phone = customer?.Phone ?? "",
+                    email = customer?.Email ?? "",
                     vin = vehicle?.Vin ?? "",
                     mileage = vehicle?.Odometer?.ToString(CultureInfo.InvariantCulture) ?? "",
-                    issue = service.Description ?? ""
+                    issue = service.Description ?? "",
+                    plate = vehicle?.Plate ?? "",
+                    make = vehicle?.Make ?? "",
+                    model = vehicle?.Model ?? "",
+                    year = vehicle?.Year?.ToString(CultureInfo.InvariantCulture) ?? ""
+                },
+                arrivalNotice = new
+                {
+                    correlationId = arrivalNoticeCorrelationId,
+                    recipientEmail = arrivalNoticeLog?.ToAddress ?? customer?.Email ?? "",
+                    sentAt = arrivalNoticeSentAt,
+                    lastSubject = arrivalNoticeLog?.Subject ?? "",
+                    lastBody = arrivalNoticeLog?.Body ?? ""
                 }
             };
         }).ToList();
 
         return WofServiceResult.Ok(payload);
+    }
+
+    public async Task<WofServiceResult> SendArrivalNotice(
+        long jobId,
+        long serviceId,
+        SendArrivalNoticeRequest request,
+        CancellationToken ct)
+    {
+        if (request is null)
+            return WofServiceResult.BadRequest("Missing payload.");
+
+        var serviceInfo = await (
+            from ps in _db.JobPartsServices.AsNoTracking()
+            join j in _db.Jobs.AsNoTracking() on ps.JobId equals j.Id
+            join v in _db.Vehicles.AsNoTracking() on j.VehicleId equals v.Id into vj
+            from v in vj.DefaultIfEmpty()
+            join c in _db.Customers.AsNoTracking() on j.CustomerId equals c.Id into cj
+            from c in cj.DefaultIfEmpty()
+            where ps.JobId == jobId && ps.Id == serviceId
+            select new
+            {
+                Service = ps,
+                Vehicle = v,
+                Customer = c,
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (serviceInfo is null)
+            return WofServiceResult.NotFound("Parts service not found.");
+
+        if (serviceInfo.Service.Status != PartsServiceStatus.PickupOrTransit)
+            return WofServiceResult.BadRequest("Arrival notice is only available for 待取/在途 cards.");
+
+        var recipientEmail = request.To?.Trim() ?? serviceInfo.Customer?.Email?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(recipientEmail))
+            return WofServiceResult.BadRequest("Recipient email is required.");
+
+        var correlationId = BuildArrivalNoticeCorrelationId(jobId, serviceId);
+        var sendResult = await _gmailMessageSenderService.SendAsync(
+            new GmailMessageSendRequest(
+                recipientEmail,
+                request.Subject,
+                request.Body,
+                correlationId,
+                null,
+                null,
+                null,
+                request.GmailAccountId,
+                IsHtmlBody: true,
+                HtmlBodyOverride: request.HtmlBody),
+            ct);
+
+        if (!sendResult.Ok)
+            return new WofServiceResult(sendResult.StatusCode, null, sendResult.Error);
+
+        return WofServiceResult.Ok(new
+        {
+            arrivalNotice = new
+            {
+                correlationId,
+                recipientEmail = sendResult.RecipientEmail,
+                sentAt = FormatDateTime(sendResult.SentAtUtc ?? DateTime.UtcNow),
+                lastSubject = sendResult.Subject,
+                lastBody = sendResult.Body,
+            }
+        });
     }
 
     private static PartsServiceStatus? ParseStatus(string? value)
@@ -341,8 +449,28 @@ public class PartsServicesService
 
         return parts;
     }
+
+    private static string BuildArrivalNoticeCorrelationId(long jobId, long serviceId) =>
+        $"PARTS-ARRIVAL-{jobId.ToString(CultureInfo.InvariantCulture)}-{serviceId.ToString(CultureInfo.InvariantCulture)}";
+
+    private static DateTime GetMessageOccurredAtUtc(GmailMessageLog log)
+    {
+        if (log.InternalDateMs.HasValue && log.InternalDateMs.Value > 0)
+        {
+            try
+            {
+                return DateTimeOffset.FromUnixTimeMilliseconds(log.InternalDateMs.Value).UtcDateTime;
+            }
+            catch
+            {
+            }
+        }
+
+        return log.UpdatedAt != default ? log.UpdatedAt : log.CreatedAt;
+    }
 }
 
 public record CreatePartsServiceRequest(string Description, string? Status);
 public record UpdatePartsServiceRequest(string? Description, string? Status);
 public record NoteRequest(string Note);
+public record SendArrivalNoticeRequest(string To, string Subject, string? Body, string? HtmlBody = null, long? GmailAccountId = null);

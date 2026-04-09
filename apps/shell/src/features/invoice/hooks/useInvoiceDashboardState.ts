@@ -627,6 +627,7 @@ export function useInvoiceDashboardState({
         to,
         subject,
         body,
+        isHtmlBody: true,
         correlationId: invoice.correlationId,
         threadId: latestThreadEvent?.threadId || null,
         replyToRfcMessageId: latestThreadEvent?.rfcMessageId || null,

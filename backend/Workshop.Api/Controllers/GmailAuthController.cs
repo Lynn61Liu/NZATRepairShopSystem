@@ -33,6 +33,7 @@ public class GmailAuthController : ControllerBase
     private readonly IWebHostEnvironment _environment;
     private readonly GmailOptions _options;
     private readonly GmailAccountService _gmailAccountService;
+    private readonly GmailMessageSenderService _gmailMessageSenderService;
     private readonly GmailTokenService _gmailTokenService;
     private readonly GmailThreadSyncService _gmailThreadSyncService;
     private readonly AppleVisionImageOcrService _imageOcrService;
@@ -45,6 +46,7 @@ public class GmailAuthController : ControllerBase
         IWebHostEnvironment environment,
         IOptions<GmailOptions> options,
         GmailAccountService gmailAccountService,
+        GmailMessageSenderService gmailMessageSenderService,
         GmailTokenService gmailTokenService,
         GmailThreadSyncService gmailThreadSyncService,
         AppleVisionImageOcrService imageOcrService,
@@ -56,6 +58,7 @@ public class GmailAuthController : ControllerBase
         _environment = environment;
         _options = options.Value;
         _gmailAccountService = gmailAccountService;
+        _gmailMessageSenderService = gmailMessageSenderService;
         _gmailTokenService = gmailTokenService;
         _gmailThreadSyncService = gmailThreadSyncService;
         _imageOcrService = imageOcrService;
@@ -266,125 +269,43 @@ public class GmailAuthController : ControllerBase
     [HttpPost("send")]
     public async Task<IActionResult> Send([FromBody] GmailSendRequest req, CancellationToken ct)
     {
-        if (req is null || string.IsNullOrWhiteSpace(req.To))
-            return BadRequest(new { error = "To is required." });
-        if (string.IsNullOrWhiteSpace(req.Subject))
-            return BadRequest(new { error = "Subject is required." });
+        if (req is null)
+            return BadRequest(new { error = "Missing payload." });
 
-        var correlatedJobId = JobPoStateService.TryExtractJobIdFromCorrelationId(req.CorrelationId?.Trim());
-        if (correlatedJobId.HasValue)
+        var sendResult = await _gmailMessageSenderService.SendAsync(
+            new GmailMessageSendRequest(
+                req.To,
+                req.Subject,
+                req.Body,
+                req.CorrelationId,
+                req.ThreadId,
+                req.ReplyToRfcMessageId,
+                req.ReferencesHeader,
+                req.GmailAccountId,
+                req.IsHtmlBody),
+            ct);
+
+        if (!sendResult.Ok)
         {
-            var hasPaidInvoice = await _db.JobInvoices.AsNoTracking()
-                .AnyAsync(x => x.JobId == correlatedJobId.Value && x.ExternalStatus != null && x.ExternalStatus.ToUpper() == "PAID", ct);
-            if (hasPaidInvoice)
-                return BadRequest(new { error = "PO Request data is locked because the invoice is already marked as Paid in Xero." });
-        }
-
-        var recipients = NormalizeRecipientAddresses(req.To);
-        if (recipients.Length == 0)
-            return BadRequest(new { error = "At least one valid recipient email is required." });
-
-        var normalizedCorrelationId = req.CorrelationId?.Trim();
-        var normalizedSubject = req.Subject.Trim();
-        var normalizedRecipientList = NormalizeRecipientListForComparison(recipients);
-        if (!string.IsNullOrWhiteSpace(normalizedCorrelationId))
-        {
-            var duplicateThreshold = DateTime.UtcNow.Subtract(DuplicateSendWindow);
-            var recentSentLogs = await _db.GmailMessageLogs.AsNoTracking()
-                .Where(x => x.Direction == "sent")
-                .Where(x => x.CorrelationId == normalizedCorrelationId)
-                .Where(x => x.CreatedAt >= duplicateThreshold)
-                .Select(x => new
-                {
-                    x.Subject,
-                    x.ToAddress,
-                    x.CreatedAt,
-                })
-                .ToListAsync(ct);
-
-            var recentDuplicate = recentSentLogs.FirstOrDefault(x =>
-                string.Equals((x.Subject ?? "").Trim(), normalizedSubject, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(NormalizeRecipientListForComparison(x.ToAddress), normalizedRecipientList, StringComparison.OrdinalIgnoreCase));
-            if (recentDuplicate is not null)
+            return StatusCode(sendResult.StatusCode, new
             {
-                return Conflict(new
-                {
-                    error = $"Duplicate PO request blocked. The same email was already sent at {recentDuplicate.CreatedAt:yyyy-MM-dd HH:mm:ss} UTC.",
-                });
-            }
-        }
-
-        var tokenResult = await _gmailTokenService.RefreshAccessTokenAsync(req.GmailAccountId, ct);
-        if (!tokenResult.Ok)
-            return StatusCode(tokenResult.StatusCode, new { error = tokenResult.Error });
-
-        var rawMessage = BuildRawMessage(
-            string.Join(", ", recipients),
-            req.Subject,
-            req.Body ?? "",
-            req.ReplyToRfcMessageId,
-            req.ReferencesHeader);
-        var client = _httpClientFactory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Post, "https://gmail.googleapis.com/gmail/v1/users/me/messages/send");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenResult.AccessToken);
-        request.Content = JsonContent.Create(new GmailSendApiRequest(rawMessage, req.ThreadId?.Trim()));
-
-        using var response = await client.SendAsync(request, ct);
-        var payload = await response.Content.ReadAsStringAsync(ct);
-        if (!response.IsSuccessStatusCode)
-            return StatusCode((int)response.StatusCode, new
-            {
-                error = payload,
-                grantedScopes = SplitScopes(tokenResult.Scope),
-                configuredScopes = SplitScopes(_options.Scopes),
+                error = sendResult.Error,
+                grantedScopes = sendResult.GrantedScopes,
+                configuredScopes = sendResult.ConfiguredScopes,
             });
-
-        var sendResult = JsonSerializer.Deserialize<GmailSendApiResponse>(payload, JsonOptions);
-        var subject = req.Subject.Trim();
-        var body = req.Body ?? "";
-        var sentMessageId = sendResult?.Id ?? "";
-        string? sentRfcMessageId = null;
-        string? sentReferencesHeader = null;
-        if (!string.IsNullOrWhiteSpace(sentMessageId))
-        {
-            var sentDetails = await LoadMessageDetailsAsync(client, tokenResult.AccessToken, sentMessageId, ct);
-            sentRfcMessageId = sentDetails?.RfcMessageId;
-            sentReferencesHeader = sentDetails?.ReferencesHeader;
-
-            await UpsertMessageLogAsync(
-                gmailMessageId: sentMessageId,
-                gmailThreadId: sendResult?.ThreadId,
-                internalDateMs: sendResult?.InternalDate is long internalDate ? internalDate : null,
-                gmailAccountId: tokenResult.AccountId,
-                gmailAccountEmail: tokenResult.AccountEmail,
-                direction: "sent",
-                counterpartyEmail: string.Join(", ", recipients),
-                fromAddress: null,
-                toAddress: string.Join(", ", recipients),
-                subject: normalizedSubject,
-                body: body,
-                snippet: body.Length > 240 ? body[..240] : body,
-                correlationId: normalizedCorrelationId,
-                rfcMessageId: sentRfcMessageId,
-                referencesHeader: sentReferencesHeader,
-                attachments: [],
-                isSystemInitiated: true,
-                ct: ct);
-
-            await _jobPoStateService.SyncStateByCorrelationAsync(normalizedCorrelationId, ct);
         }
 
         return Ok(new
         {
             message = "Email sent via Gmail API.",
-            id = sentMessageId,
-            threadId = sendResult?.ThreadId ?? "",
-            rfcMessageId = sentRfcMessageId ?? "",
-            referencesHeader = sentReferencesHeader ?? "",
-            gmailAccountId = tokenResult.AccountId,
-            gmailAccountEmail = tokenResult.AccountEmail,
-            scope = tokenResult.Scope,
-            accessTokenExpiresIn = tokenResult.ExpiresIn,
+            id = sendResult.MessageId,
+            threadId = sendResult.ThreadId,
+            rfcMessageId = sendResult.RfcMessageId,
+            referencesHeader = sendResult.ReferencesHeader,
+            gmailAccountId = sendResult.GmailAccountId,
+            gmailAccountEmail = sendResult.GmailAccountEmail,
+            scope = sendResult.Scope,
+            accessTokenExpiresIn = sendResult.AccessTokenExpiresIn,
         });
     }
 
@@ -1130,7 +1051,8 @@ public class GmailAuthController : ControllerBase
         string? ThreadId,
         string? ReplyToRfcMessageId,
         string? ReferencesHeader,
-        long? GmailAccountId);
+        long? GmailAccountId,
+        bool IsHtmlBody = false);
     public sealed record GmailThreadReadRequest(string CounterpartyEmail, string? CorrelationId, long? GmailAccountId);
     public sealed record PoDetectionResponse(
         string Id,

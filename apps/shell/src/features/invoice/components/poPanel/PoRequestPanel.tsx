@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef, type ClipboardEvent, type DragEvent, type MouseEvent, type ReactNode } from "react";
 import { ChevronDown, Clock3, FileSearch, MailCheck, MessageSquareText, Paperclip, Send, Settings2, X } from "lucide-react";
 import { Button, Card, Input, Select, Textarea } from "@/components/ui";
+import { buildSharedEmailSignatureHtml } from "@/features/email/emailSignature";
 import { withApiBase } from "@/utils/api";
 import { PoDetectionPanel } from "./PoDetectionPanel";
 import { StatusBadge } from "./StatusBadge";
@@ -225,23 +226,7 @@ export function PoRequestPanel({
           ${itemsHtml}
         </table>
         
-        <div style="direction: ltr; font-family: tahoma, sans-serif; color: rgb(34, 34, 34);">
-            <p style="line-height: normal; margin: 0px;"><b>Kind regards</b></p>
-            <p style="line-height: normal; margin: 0px;"><br></p>
-            <p style="line-height: normal; margin: 0px;"><b>Eric Zhao</b></p>
-            <p style="line-height: normal; margin: 0px;"><br></p>
-            <p style="line-height: normal; margin: 0px;"><b>AUTO TECH REPAIR &amp; SERVICES</b></p>
-            <p style="line-height: normal; margin: 0px;"><br></p>
-            <p style="line-height: normal; margin: 0px;"><b style="color: rgb(11, 83, 148);">Add:</b> 486 Ellerslie Panmure Highway, Mount Wellington, Auckland 1060</p>
-            <p style="line-height: normal; margin: 0px;"><b style="color: rgb(11, 83, 148);">Ph:</b> &nbsp;021 029 88666&nbsp; 09 213 1988</p>
-            <br>
-            <div style="margin: 0px 0px 0px 36pt; font-family: Calibri, sans-serif;">
-                <p style="font-size: 8pt; color: black; margin: 0px;"><b>CAUTION</b></p>
-                <p style="font-size: 8pt; color: black; margin: 0px;">
-                    This email may contain confidential and/or privileged material and the information contained in this message and or attachments is intended only for the person or entity to which it is addressed. If you are not the intended recipient, please notify the sender and delete the email. If you no longer wish to receive emails from Auto Tech Repair &amp; Services or if this message is a commercial electronic message for the purposes of the Unsolicited Electronic Messages Act 2007, please let the sender of this email know.
-                </p>
-            </div>
-        </div>
+        ${buildSharedEmailSignatureHtml()}
       </div>
     `;
   }, [greetingName, vehicleRego, vehicleYear, vehicleMake, vehicleModel, snapshotTotal, items]);

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/ui";
-import type { WorkCard, Status } from "@/types";
+import type { ArrivalNotice, WorkCard, Status } from "@/types";
 import { PartFlowColumn } from "./PartFlowColum";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
@@ -126,6 +126,12 @@ console.log(`===star fun ===Moving card ${cardId} to status ${newStatus}=====`);
     toast.success("备注已删除");
   };
 
+  const updateArrivalNotice = (cardId: string, arrivalNotice: ArrivalNotice) => {
+    setCards((prev) =>
+      prev.map((item) => (item.id === cardId ? { ...item, arrivalNotice } : item))
+    );
+  };
+
   const activeCards = cards.filter((card) => !archivedIds.has(card.id));
 
   return (
@@ -158,6 +164,7 @@ console.log(`===star fun ===Moving card ${cardId} to status ${newStatus}=====`);
               onArchiveCard={archiveCard}
               onAddNote={addNote}
               onDeleteNote={deleteNote}
+              onArrivalNoticeSent={updateArrivalNotice}
             />
           ))}
         </div>

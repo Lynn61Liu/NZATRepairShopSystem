@@ -1,3 +1,4 @@
+import type { ArrivalNotice } from "@/types";
 import { requestJson } from "@/utils/api";
 
 export function fetchPartsServices(jobId: string) {
@@ -50,4 +51,19 @@ export function deletePartsNote(jobId: string, noteId: string) {
   return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}/parts-notes/${encodeURIComponent(noteId)}`, {
     method: "DELETE",
   });
+}
+
+export function sendArrivalNotice(
+  jobId: string,
+  serviceId: string,
+  payload: { to: string; subject: string; body?: string; htmlBody?: string; gmailAccountId?: number | null }
+) {
+  return requestJson<{ arrivalNotice: ArrivalNotice }>(
+    `/api/jobs/${encodeURIComponent(jobId)}/parts-services/${encodeURIComponent(serviceId)}/arrival-notice`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
 }

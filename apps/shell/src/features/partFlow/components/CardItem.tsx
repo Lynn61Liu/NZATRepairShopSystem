@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
 import { useDrag } from 'react-dnd';
-import { Trash2, Archive, Car, Wrench, MessageSquare, Send, Clock, Info, X } from 'lucide-react';
-import type { WorkCard } from '@/types';
-import { CarDetailsModal } from './CarDetailsModal';
+import { Link } from 'react-router-dom';
+import { Trash2, Archive, Car, Wrench, MessageSquare, Send, Clock, Mail, X } from 'lucide-react';
+import type { ArrivalNotice, WorkCard } from '@/types';
+import { ArrivalEmailDraftModal } from './ArrivalEmailDraftModal';
 
 interface CardItemProps {
   card: WorkCard;
@@ -10,12 +11,13 @@ interface CardItemProps {
   onArchive: (cardId: string) => void;
   onAddNote: (cardId: string, noteText: string) => void;
   onDeleteNote: (cardId: string, noteId: string) => void;
+  onArrivalNoticeSent: (cardId: string, arrivalNotice: ArrivalNotice) => void;
 }
 
-export function CardItem({ card, onDelete, onArchive, onAddNote, onDeleteNote }: CardItemProps) {
+export function CardItem({ card, onDelete, onArchive, onAddNote, onDeleteNote, onArrivalNoticeSent }: CardItemProps) {
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [noteText, setNoteText] = useState('');
-  const [showDetails, setShowDetails] = useState(false);
+  const [showArrivalEmailDraft, setShowArrivalEmailDraft] = useState(false);
   const dragRef = useRef<HTMLDivElement | null>(null);
 
   const [{ isDragging }, drag] = useDrag(() => ({
@@ -56,6 +58,9 @@ export function CardItem({ card, onDelete, onArchive, onAddNote, onDeleteNote }:
     }
   };
 
+  const isPickupOrTransit = card.status === 'pickup_or_transit';
+  const arrivalNoticeSentAt = card.arrivalNotice.sentAt;
+
   const cardContent = (
     <div
       ref={dragRef}
@@ -87,7 +92,7 @@ export function CardItem({ card, onDelete, onArchive, onAddNote, onDeleteNote }:
                 {card.parts.map((part, index) => (
                   <span
                     key={index}
-                    className="inline-block rounded bg-gray-100 px-2 py-1 text-[30px] leading-tight text-gray-700"
+                    className="inline-block rounded bg-gray-100 px-2 py-1 text-[23px] leading-tight text-gray-700"
                   >
                     {part}
                   </span>
@@ -150,42 +155,64 @@ export function CardItem({ card, onDelete, onArchive, onAddNote, onDeleteNote }:
           )}
 
           {/* 操作按钮 */}
-          <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
-            {!isAddingNote && (
-              <button
-                onClick={() => setIsAddingNote(true)}
-                className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 transition-colors"
+          <div className="pt-3 border-t border-gray-100 space-y-2">
+            <div className="flex items-center gap-3">
+              {!isAddingNote && (
+                <button
+                  onClick={() => setIsAddingNote(true)}
+                  className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 transition-colors"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  添加备注
+                </button>
+              )}
+              <Link
+                to={`/jobs/${card.jobId}`}
+                className="flex items-center gap-1 text-sm text-purple-600 hover:text-purple-700 transition-colors"
               >
-                <MessageSquare className="w-4 h-4" />
-                添加备注
+                job#{card.jobId}
+              </Link>
+              <div className="flex-1" />
+              {isPickupOrTransit && arrivalNoticeSentAt ? (
+                <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+                  已发送 {formatTime(arrivalNoticeSentAt)}
+                </span>
+              ) : null}
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              {isPickupOrTransit ? (
+                <button
+                  onClick={() => setShowArrivalEmailDraft(true)}
+                  className={`p-2 rounded transition-colors ${
+                    arrivalNoticeSentAt
+                      ? 'text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700'
+                      : 'text-gray-500 hover:bg-sky-50 hover:text-sky-600'
+                  }`}
+                  title={arrivalNoticeSentAt ? '查看或再次发送提醒邮件' : '发送客户提醒邮件'}
+                >
+                  <Mail className="w-4 h-4" />
+                </button>
+              ) : null}
+              <button
+                onClick={() => onArchive(card.id)}
+                className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                title="归档"
+              >
+                <Archive className="w-4 h-4" />
               </button>
-            )}
-            <button
-              onClick={() => setShowDetails(true)}
-              className="flex items-center gap-1 text-sm text-purple-600 hover:text-purple-700 transition-colors"
-            >
-              <Info className="w-4 h-4" />
-              详情
-            </button>
-            <div className="flex-1"></div>
-            <button
-              onClick={() => onArchive(card.id)}
-              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-              title="归档"
-            >
-              <Archive className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => {
-                if (confirm('确定要删除这个工单吗？')) {
-                  onDelete(card.id);
-                }
-              }}
-              className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-              title="删除"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+              <button
+                onClick={() => {
+                  if (confirm('确定要删除这个工单吗？')) {
+                    onDelete(card.id);
+                  }
+                }}
+                className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                title="删除"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
           </div>
       </div>
     </div>
@@ -195,10 +222,11 @@ export function CardItem({ card, onDelete, onArchive, onAddNote, onDeleteNote }:
     <>
       {cardContent}
 
-      {showDetails && (
-        <CarDetailsModal
+      {showArrivalEmailDraft && (
+        <ArrivalEmailDraftModal
           card={card}
-          onClose={() => setShowDetails(false)}
+          onClose={() => setShowArrivalEmailDraft(false)}
+          onSent={(arrivalNotice) => onArrivalNoticeSent(card.id, arrivalNotice)}
         />
       )}
     </>

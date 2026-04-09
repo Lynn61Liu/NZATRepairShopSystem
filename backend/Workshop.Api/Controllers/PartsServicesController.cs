@@ -8,6 +8,7 @@ namespace Workshop.Api.Controllers;
 public class PartsServicesController : ControllerBase
 {
     private static readonly TimeSpan PartsServicesCacheDuration = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan PartsFlowCacheDuration = TimeSpan.FromSeconds(20);
 
     private readonly IAppCache _cache;
     private readonly PartsServicesService _partsService;
@@ -44,7 +45,34 @@ public class PartsServicesController : ControllerBase
     [HttpGet("~/api/parts-flow")]
     public async Task<IActionResult> GetPartFlow(CancellationToken ct)
     {
-        var result = await _partsService.GetPartFlow(ct);
+        var payload = await _cache.GetOrCreateJsonAsync(
+            GetPartsFlowCacheKey(),
+            PartsFlowCacheDuration,
+            async token =>
+            {
+                var result = await _partsService.GetPartFlow(token);
+                if (result.StatusCode != 200)
+                    return null;
+
+                return System.Text.Json.JsonSerializer.Serialize(result.Payload);
+            },
+            ct
+        );
+
+        if (payload is null)
+            return StatusCode(500, new { error = "Failed to load parts flow." });
+
+        return Content(payload, "application/json");
+    }
+
+    [HttpPost("{serviceId:long}/arrival-notice")]
+    public async Task<IActionResult> SendArrivalNotice(long id, long serviceId, [FromBody] SendArrivalNoticeRequest? request, CancellationToken ct)
+    {
+        if (request is null)
+            return BadRequest(new { error = "Missing payload." });
+
+        var result = await _partsService.SendArrivalNotice(id, serviceId, request, ct);
+        await InvalidatePartsCachesAsync(id, result, ct);
         return ToActionResult(result);
     }
 
@@ -115,6 +143,7 @@ public class PartsServicesController : ControllerBase
 
         await _cache.RemoveAsync(GetPartsServicesCacheKey(jobId), ct);
         await _cache.RemoveAsync(GetJobDetailCacheKey(jobId), ct);
+        await _cache.RemoveAsync(GetPartsFlowCacheKey(), ct);
     }
 
     private static string GetPartsServicesCacheKey(long jobId)
@@ -122,6 +151,9 @@ public class PartsServicesController : ControllerBase
 
     private static string GetJobDetailCacheKey(long jobId)
         => $"job:detail:{jobId}:v1";
+
+    private static string GetPartsFlowCacheKey()
+        => "parts-flow:v1";
 
     private IActionResult ToActionResult(WofServiceResult result)
     {

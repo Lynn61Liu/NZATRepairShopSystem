@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { useDrop } from 'react-dnd';
-import type { WorkCard, Status } from '@/types';
+import type { ArrivalNotice, WorkCard, Status } from '@/types';
 // import { CardItem } from './CardItem';
 import { CardItem } from "@/features/partFlow/components/CardItem";
 
@@ -12,6 +12,7 @@ interface PartFlowColumnProps {
   onArchiveCard: (cardId: string) => void;
   onAddNote: (cardId: string, noteText: string) => void;
   onDeleteNote: (cardId: string, noteId: string) => void;
+  onArrivalNoticeSent: (cardId: string, arrivalNotice: ArrivalNotice) => void;
 }
 
 const statusLabels: Record<Status, string> = {
@@ -42,7 +43,8 @@ export function PartFlowColumn({
   onDeleteCard,
   onArchiveCard,
   onAddNote,
-  onDeleteNote
+  onDeleteNote,
+  onArrivalNoticeSent
 }: PartFlowColumnProps) {
   const dropRef = useRef<HTMLDivElement | null>(null);
   const [{ isOver }, drop] = useDrop<{ id: string; status: Status }, void, { isOver: boolean }>(() => ({
@@ -82,6 +84,7 @@ export function PartFlowColumn({
             onArchive={onArchiveCard}
             onAddNote={onAddNote}
             onDeleteNote={onDeleteNote}
+            onArrivalNoticeSent={onArrivalNoticeSent}
           />
         ))}
       </div>
