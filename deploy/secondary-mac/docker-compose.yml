@@ -7,6 +7,7 @@ services:
       - redis_data:/data
 
   api:
+    platform: linux/amd64
     image: ghcr.io/lynn61liu/nzat-api:latest
     restart: unless-stopped
     env_file:
@@ -42,6 +43,7 @@ services:
       - api_data:/app/App_Data
 
   web:
+    platform: linux/amd64
     image: ghcr.io/lynn61liu/nzat-web:latest
     restart: unless-stopped
     depends_on:
