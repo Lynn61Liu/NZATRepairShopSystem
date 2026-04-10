@@ -1,6 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
+import { withApiBase } from '@/utils/api';
 import ProductCard from './ProductCard';
 import './Shopfront.css';
+
+const procurementApi = (path: string) => withApiBase(`/api/procurement${path}`);
 
 const Shopfront = () => {
   const [products, setProducts] = useState<any[]>([]);
@@ -14,7 +17,7 @@ const Shopfront = () => {
 
   useEffect(() => {
     // 获取后端真实数据（现在后端会带上 categoryName 了）
-    fetch('http://localhost:5227/api/procurement/products')
+    fetch(procurementApi('/products'))
       .then(res => res.json())
       .then(data => {
         const formattedData = data.map((p: any) => ({
@@ -67,7 +70,7 @@ const Shopfront = () => {
     };
 
     try {
-      const response = await fetch('http://localhost:5227/api/procurement/requests', {
+      const response = await fetch(procurementApi('/requests'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody)

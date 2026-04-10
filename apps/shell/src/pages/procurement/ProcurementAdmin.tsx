@@ -1,4 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { withApiBase } from '@/utils/api';
+
+const procurementApi = (path: string) => withApiBase(`/api/procurement${path}`);
 
 export function ProcurementAdmin() {
   const [activeTab, setActiveTab] = useState<'requests' | 'inventory' | 'restock' | 'stocktake'>('requests');
@@ -41,7 +44,7 @@ export function ProcurementAdmin() {
 
   const loadRequests = () => {
     setLoadingRequests(true);
-    fetch('http://localhost:5227/api/procurement/requests')
+    fetch(procurementApi('/requests'))
       .then(res => res.json())
       .then(data => { setRequests(data); setLoadingRequests(false); })
       .catch(err => { console.error(err); setLoadingRequests(false); });
@@ -49,14 +52,14 @@ export function ProcurementAdmin() {
 
   const loadProducts = () => {
     setLoadingProducts(true);
-    fetch('http://localhost:5227/api/procurement/products')
+    fetch(procurementApi('/products'))
       .then(res => res.json())
       .then(data => { setProducts(data); setLoadingProducts(false); })
       .catch(err => { console.error(err); setLoadingProducts(false); });
   };
 
-  const loadSuppliers = () => fetch('http://localhost:5227/api/procurement/suppliers').then(res => res.json()).then(setSuppliers);
-  const loadRestockOrders = () => fetch('http://localhost:5227/api/procurement/restock-orders').then(res => res.json()).then(setRestockOrders);
+  const loadSuppliers = () => fetch(procurementApi('/suppliers')).then(res => res.json()).then(setSuppliers);
+  const loadRestockOrders = () => fetch(procurementApi('/restock-orders')).then(res => res.json()).then(setRestockOrders);
 
   useEffect(() => {
     if (activeTab === 'requests') loadRequests();
@@ -87,7 +90,7 @@ export function ProcurementAdmin() {
     if (!window.confirm(confirmMsg)) return;
 
     try {
-      const response = await fetch(`http://localhost:5227/api/procurement/requests/${id}/process?action=${action}`, { method: 'POST' });
+      const response = await fetch(procurementApi(`/requests/${id}/process?action=${action}`), { method: 'POST' });
       const result = await response.json();
       if (response.ok) {
         alert(result.message);
@@ -111,7 +114,7 @@ export function ProcurementAdmin() {
     if (!window.confirm("📦 确定按照填写的数量收货并更新库存吗？")) return;
 
     try {
-      const response = await fetch(`http://localhost:5227/api/procurement/restock-orders/${orderId}/receive`, {
+      const response = await fetch(procurementApi(`/restock-orders/${orderId}/receive`), {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
       });
       if (response.ok) {
@@ -127,7 +130,7 @@ export function ProcurementAdmin() {
   const handleDeleteRestockOrder = async (id: number) => {
     if (!window.confirm("⚠️ 危险操作：确定要彻底删除这张补货单吗？\n（未收货的在途库存将会被自动回退！）")) return;
     try {
-      const response = await fetch(`http://localhost:5227/api/procurement/restock-orders/${id}`, { method: 'DELETE' });
+      const response = await fetch(procurementApi(`/restock-orders/${id}`), { method: 'DELETE' });
       if (response.ok) { alert("🗑️ 删除成功，账目已平！"); loadRestockOrders(); } 
       else { alert("已完成的单据不可删除！"); }
     } catch (error) { alert("网络错误"); }
@@ -142,7 +145,7 @@ export function ProcurementAdmin() {
     fd.append('file', file);
     
     try {
-      const response = await fetch('http://localhost:5227/api/procurement/upload-products', { method: 'POST', body: fd });
+      const response = await fetch(procurementApi('/upload-products'), { method: 'POST', body: fd });
       const result = await response.json().catch(() => ({ message: "未知错误" }));
       
       if (response.ok) { 
@@ -161,7 +164,7 @@ export function ProcurementAdmin() {
   const handleDeleteProduct = async (id: number) => {
     if (!window.confirm("确定要删除这条物料吗？")) return;
     try {
-      const response = await fetch(`http://localhost:5227/api/procurement/products/${id}`, { method: 'DELETE' });
+      const response = await fetch(procurementApi(`/products/${id}`), { method: 'DELETE' });
       if (response.ok) { alert("删除成功！"); loadProducts(); } else { alert("删除失败，商品可能正被单据使用中。"); }
     } catch (error) { alert("网络错误"); }
   };
@@ -198,7 +201,7 @@ export function ProcurementAdmin() {
 
   const handleSaveProduct = async () => {
     if (!formData.name) return alert("物料名称不能为空！");
-    const url = editingId ? `http://localhost:5227/api/procurement/products/${editingId}` : `http://localhost:5227/api/procurement/products`;
+    const url = editingId ? procurementApi(`/products/${editingId}`) : procurementApi('/products');
     const payload = { ...formData, supplierId: formData.supplierId ? parseInt(formData.supplierId) : null };
     try {
       const response = await fetch(url, { method: editingId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -208,7 +211,7 @@ export function ProcurementAdmin() {
 
   const handleSmartScan = async () => {
     try {
-      const res = await fetch('http://localhost:5227/api/procurement/smart-restock');
+      const res = await fetch(procurementApi('/smart-restock'));
       if (res.ok) {
         const data = await res.json();
         setSmartRestockItems(data);
@@ -222,7 +225,7 @@ export function ProcurementAdmin() {
   const handleApplySmartRestock = async () => {
     const payload = smartRestockItems.map(i => ({ productId: i.productId, quantity: i.suggestedQuantity }));
     try {
-      const res = await fetch('http://localhost:5227/api/procurement/smart-restock/apply', {
+      const res = await fetch(procurementApi('/smart-restock/apply'), {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
       });
       if (res.ok) {
@@ -265,7 +268,7 @@ export function ProcurementAdmin() {
       const p = products.find(prod => prod.id === Number(id));
       if (p && newStock !== p.currentStock) {
         const payload = { ...p, currentStock: newStock };
-        await fetch(`http://localhost:5227/api/procurement/products/${id}`, {
+        await fetch(procurementApi(`/products/${id}`), {
           method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
         });
         updated++;
