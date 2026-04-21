@@ -12,7 +12,7 @@ function canUseStorage() {
 export function getCachedValue<T>(key: string): CacheEnvelope<T> | null {
   const fromMemory = memoryCache.get(key);
   if (fromMemory) {
-    return fromMemory as CacheEnvelope<T>;
+    return fromMemory as CacheEnvelope<T>; 
   }
 
   if (!canUseStorage()) {
