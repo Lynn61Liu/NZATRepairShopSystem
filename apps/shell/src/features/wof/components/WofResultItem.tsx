@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { WofCheckItem, WofFailReason, WofRecordUpdatePayload } from "@/types";
+import type { WofCheckItem, WofFailReason, WofRecord, WofRecordUpdatePayload } from "@/types";
 import { Button, useToast } from "@/components/ui";
 import { JOB_DETAIL_TEXT } from "@/features/jobDetail/jobDetail.constants";
 import { StatusBadge } from "@/components/common/StatusBadge";
@@ -23,7 +23,7 @@ export type WofPrintContext = {
 };
 
 type WofResultItemProps = {
-  record: WofCheckItem;
+  record: WofCheckItem | WofRecord;
   printContext?: WofPrintContext;
   onUpdate?: (id: string, payload: WofRecordUpdatePayload) => Promise<{ success: boolean; message?: string }>;
   onDelete?: (id: string) => Promise<{ success: boolean; message?: string }>;
@@ -32,6 +32,37 @@ type WofResultItemProps = {
   onCreate?: (payload: WofRecordUpdatePayload) => Promise<{ success: boolean; message?: string }>;
   onCancel?: () => void;
 };
+
+function normalizeRecord(record: WofCheckItem | WofRecord): WofCheckItem {
+  return {
+    id: record.id,
+    wofId: "wofId" in record ? record.wofId : ("jobId" in record ? record.jobId : undefined),
+    occurredAt: record.occurredAt,
+    rego: record.rego,
+    makeModel: record.makeModel,
+    recordState:
+      record.recordState === "Pass" || record.recordState === "Fail" || record.recordState === "Recheck"
+        ? record.recordState
+        : undefined,
+    isNewWof: record.isNewWof ?? null,
+    newWofDate: record.newWofDate,
+    odo: record.odo,
+    authCode: record.authCode,
+    checkSheet: record.checkSheet,
+    csNo: record.csNo,
+    wofLabel: record.wofLabel,
+    labelNo: record.labelNo,
+    failReasons: record.failReasons,
+    previousExpiryDate: record.previousExpiryDate,
+    organisationName: record.organisationName,
+    note: record.note,
+    wofUiState: record.wofUiState ?? undefined,
+    importedAt: record.importedAt,
+    source: record.source ?? ("sourceFile" in record ? record.sourceFile : undefined),
+    sourceRow: "sourceRow" in record ? record.sourceRow : ("excelRowNo" in record ? record.excelRowNo?.toString() : undefined),
+    updatedAt: record.updatedAt,
+  };
+}
 
 const toYYYYMMDD = (value?: string | null) => {
   const s = String(value ?? "").trim();
@@ -133,8 +164,11 @@ export function WofResultItem({
   onCancel,
 }: WofResultItemProps) {
   const toast = useToast();
+  const normalizedRecord = useMemo(() => normalizeRecord(record), [record]);
   const [editing, setEditing] = useState(Boolean(isDraft));
-  const [form, setForm] = useState<WofFormState>(() => (isDraft ? createEmptyWofFormState() : toWofFormState(record)));
+  const [form, setForm] = useState<WofFormState>(() =>
+    isDraft ? createEmptyWofFormState() : toWofFormState(normalizedRecord)
+  );
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -147,8 +181,8 @@ export function WofResultItem({
 
   useEffect(() => {
     if (isDraft) return;
-    setForm(toWofFormState(record));
-  }, [isDraft, record.id, record.updatedAt]);
+    setForm(toWofFormState(normalizedRecord));
+  }, [isDraft, normalizedRecord]);
 
   useEffect(() => {
     if (!message) return;
@@ -175,7 +209,7 @@ export function WofResultItem({
   }, [editing]);
 
   const mergedFailReasons = useMemo(() => {
-    const base = String(record.failReasons ?? "").trim();
+    const base = String(normalizedRecord.failReasons ?? "").trim();
     const extra = base
       ? base
           .split(/[,;|\n]+/g)
@@ -194,7 +228,7 @@ export function WofResultItem({
       }
     });
     return Array.from(map.values());
-  }, [failReasons, record.failReasons]);
+  }, [failReasons, normalizedRecord.failReasons]);
 
   const filteredFailReasons = useMemo(() => {
     const query = failReasonQuery.trim().toLowerCase();
@@ -237,7 +271,7 @@ export function WofResultItem({
       payload.rego = record.rego ?? null;
     }
     if (!payload.makeModel) {
-      payload.makeModel = record.makeModel ?? null;
+      payload.makeModel = normalizedRecord.makeModel ?? null;
     }
     const response = isDraft && onCreate ? await onCreate(payload) : await onUpdate!(record.id, payload);
     setSaving(false);
@@ -257,7 +291,7 @@ export function WofResultItem({
   };
 
   const handlePrint = () => {
-    const jobId = printContext?.jobId ?? record.wofId;
+    const jobId = printContext?.jobId ?? normalizedRecord.wofId;
     const recordId = record.id;
     if (!jobId || !recordId) {
       const message = "无法打印：缺少 jobId 或 recordId。";
@@ -265,7 +299,7 @@ export function WofResultItem({
       toast.error(message);
       return;
     }
-    const payload: WofPrintData = buildWofPrintData(record, { ...printContext, jobId: String(jobId) });
+    const payload: WofPrintData = buildWofPrintData(normalizedRecord, { ...printContext, jobId: String(jobId) });
     printTemplate({ type: "wof", data: payload });
     setMessage("已发送打印任务");
     toast.success("已发送打印任务");
@@ -432,23 +466,25 @@ export function WofResultItem({
               {editing ? (
                 <input className="ml-2 rounded border px-2 py-1" value={form.labelNo} onChange={(e) => handleChange("labelNo", e.target.value)} />
               ) : (
-                record.labelNo ?? "—"
+                normalizedRecord.labelNo ?? "—"
               )}
             </FieldRow>
             <FieldRow label="Source File">
-              {record.source ?? "—"}
+              {normalizedRecord.source ?? "—"}
             </FieldRow>
             <FieldRow label="Source Row">
-              {record.sourceRow ?? "—"}
+              {normalizedRecord.sourceRow ?? "—"}
             </FieldRow>
             <FieldRow label="Imported At">
-              {formatUtcDateTime(record.importedAt)}
+              {formatUtcDateTime(normalizedRecord.importedAt)}
             </FieldRow>
-            <FieldRow label="Updated At">{formatUtcDateTime(record.updatedAt)}</FieldRow>
+            <FieldRow label="Updated At">{formatUtcDateTime(normalizedRecord.updatedAt)}</FieldRow>
           </div>
 
           <div className="grid grid-cols-1 gap-2 text-sm md:grid-cols-2 mt-2">
-            {(editing ? ["Fail", "Recheck"].includes(form.recordState) : ["Fail", "Recheck"].includes(record.recordState ?? "")) ? (
+            {(editing
+              ? ["Fail", "Recheck"].includes(form.recordState)
+              : ["Fail", "Recheck"].includes(normalizedRecord.recordState ?? "")) ? (
               <FieldRow label="Fail Reason" className="text-xs text-gray-500 md:text-sm">
                 {editing ? (
                   <span className="ml-2 inline-flex items-center gap-2">

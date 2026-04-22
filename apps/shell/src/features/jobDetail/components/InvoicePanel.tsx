@@ -41,7 +41,7 @@ export function InvoicePanel({
   needsPo,
 }: InvoicePanelProps) {
   const [invoiceNumber, setInvoiceNumber] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "epost" | "bank_transfer">("cash");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "partial_cash" | "epost" | "bank_transfer">("cash");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
   const [paymentEditing, setPaymentEditing] = useState(true);
@@ -88,6 +88,8 @@ export function InvoicePanel({
     const state =
       paymentMethod === "cash"
         ? "PAID_CASH"
+        : paymentMethod === "partial_cash"
+          ? "PAID_PARTIAL_CASH"
         : paymentMethod === "epost"
           ? "PAID_EPOST"
           : "PAID_BANK_TRANSFER";
@@ -209,9 +211,10 @@ export function InvoicePanel({
           </div>
           {paymentEditing ? (
             <div className="grid gap-3 md:grid-cols-[180px_minmax(0,180px)_minmax(0,1fr)_auto_auto]">
-              <Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as "cash" | "epost" | "bank_transfer")}>
+              <Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as "cash" | "partial_cash" | "epost" | "bank_transfer")}>
                 <option value="cash">Cash</option>
-                <option value="epost">ePost</option>
+                <option value="partial_cash">Partial Cash</option>
+                <option value="epost">Eftpos</option>
                 <option value="bank_transfer">Bank transfer</option>
               </Select>
               <Input
@@ -240,7 +243,7 @@ export function InvoicePanel({
             <div className="grid gap-3 md:grid-cols-[180px_minmax(0,180px)_minmax(0,1fr)]">
               <div className="flex h-11 items-center rounded-[8px] border border-[rgba(0,0,0,0.10)] bg-[rgba(0,0,0,0.02)] px-3 text-sm text-[var(--ds-text)]">
                 {latestPayment?.method === "epost"
-                  ? "ePost"
+                  ? "Eftpos"
                   : latestPayment?.method === "bank_transfer"
                     ? "Bank transfer"
                     : "Cash"}

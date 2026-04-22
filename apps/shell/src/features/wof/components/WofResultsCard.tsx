@@ -1,8 +1,8 @@
-import type { WofCheckItem, WofFailReason, WofRecordUpdatePayload } from "@/types";
+import type { WofCheckItem, WofFailReason, WofRecord, WofRecordUpdatePayload } from "@/types";
 import { WofResultItem, type WofPrintContext } from "./WofResultItem";
 
 type WofResultsCardProps = {
-  wofResults: WofCheckItem[];
+  wofResults: Array<WofCheckItem | WofRecord>;
   printContext?: WofPrintContext;
   onUpdate?: (id: string, payload: WofRecordUpdatePayload) => Promise<{ success: boolean; message?: string }>;
   onDelete?: (id: string) => Promise<{ success: boolean; message?: string }>;

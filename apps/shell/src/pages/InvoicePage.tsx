@@ -70,6 +70,20 @@ function formatNzDateTitle(value: string) {
   }).format(date);
 }
 
+function sortInvoicePaymentRows(items: InvoicePaymentRow[]) {
+  return [...items].sort((left, right) => {
+    const dateCompare = resolvePaymentGroupDate(right).localeCompare(resolvePaymentGroupDate(left));
+    if (dateCompare !== 0) return dateCompare;
+
+    const rightDateTime = right.paymentDateTime || right.createdAt || "";
+    const leftDateTime = left.paymentDateTime || left.createdAt || "";
+    const dateTimeCompare = rightDateTime.localeCompare(leftDateTime);
+    if (dateTimeCompare !== 0) return dateTimeCompare;
+
+    return right.id.localeCompare(left.id);
+  });
+}
+
 function formatDateInputValue(date: Date) {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
@@ -124,12 +138,16 @@ export function InvoicePage() {
   const [rows, setRows] = useState<InvoicePaymentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
   const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
   const [dateFilterPreset, setDateFilterPreset] = useState<DateFilterPreset>("1m");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [paymentFilter, setPaymentFilter] = useState<PaymentWayFilter>("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const [editingRowId, setEditingRowId] = useState<string | null>(null);
+  const [editingPaymentDate, setEditingPaymentDate] = useState("");
+  const [savingRowId, setSavingRowId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,6 +155,7 @@ export function InvoicePage() {
     const load = async () => {
       setLoading(true);
       setError("");
+      setActionError("");
       const res = await requestJson<{ payments?: InvoicePaymentRow[] }>("/api/invoice-payments");
       if (cancelled) return;
 
@@ -147,7 +166,7 @@ export function InvoicePage() {
       }
 
       const payments = Array.isArray(res.data?.payments) ? res.data!.payments : [];
-      setRows(payments);
+      setRows(sortInvoicePaymentRows(payments));
       setExpandedDates(
         payments.reduce<Record<string, boolean>>((acc, row, index) => {
           const groupDate = resolvePaymentGroupDate(row);
@@ -218,6 +237,54 @@ export function InvoicePage() {
   useEffect(() => {
     setCurrentPage(1);
   }, [dateFilterPreset, customStartDate, customEndDate, paymentFilter]);
+
+  const startEditingPaymentDate = (row: InvoicePaymentRow) => {
+    setActionError("");
+    setEditingRowId(row.id);
+    setEditingPaymentDate(row.paymentDate || resolvePaymentGroupDate(row) || "");
+  };
+
+  const cancelEditingPaymentDate = () => {
+    setActionError("");
+    setEditingRowId(null);
+    setEditingPaymentDate("");
+  };
+
+  const savePaymentDate = async (row: InvoicePaymentRow) => {
+    if (!editingPaymentDate) {
+      setActionError("Payment date is required.");
+      return;
+    }
+
+    setSavingRowId(row.id);
+    setActionError("");
+    try {
+      const res = await requestJson<{ payment?: InvoicePaymentRow }>(
+        `/api/invoice-payments/${encodeURIComponent(row.id)}/payment-date`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paymentDate: editingPaymentDate }),
+        }
+      );
+
+      if (!res.ok || !res.data?.payment) {
+        setActionError(res.error || "Failed to update payment date.");
+        return;
+      }
+
+      const nextRow = res.data.payment;
+      setRows((currentRows) =>
+        sortInvoicePaymentRows(currentRows.map((item) => (item.id === nextRow.id ? nextRow : item)))
+      );
+      setEditingRowId(null);
+      setEditingPaymentDate("");
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to update payment date.");
+    } finally {
+      setSavingRowId(null);
+    }
+  };
 
   return (
     <div className="space-y-5">
@@ -294,6 +361,7 @@ export function InvoicePage() {
 
       {loading ? <Card className="p-5 text-sm text-[var(--ds-muted)]">Loading invoice payments...</Card> : null}
       {!loading && error ? <Card className="p-5 text-sm text-red-600">{error}</Card> : null}
+      {!loading && !error && actionError ? <Card className="p-5 text-sm text-red-600">{actionError}</Card> : null}
       {!loading && !error && groups.length === 0 ? (
         <Card className="p-5 text-sm text-[var(--ds-muted)]">目前没有 invoice payment 记录。</Card>
       ) : null}
@@ -327,7 +395,7 @@ export function InvoicePage() {
 
                 {isExpanded ? (
                   <div className="border-t border-[var(--ds-border)]">
-                    <div className="grid grid-cols-[110px_150px_1fr_1fr_1fr_120px_120px_140px_170px_1fr] gap-3 bg-[rgba(0,0,0,0.03)] px-5 py-3 text-xs font-semibold uppercase tracking-[0.04em] text-[var(--ds-muted)]">
+                    <div className="grid grid-cols-[110px_150px_1fr_1fr_1fr_120px_120px_140px_240px_1fr] gap-3 bg-[rgba(0,0,0,0.03)] px-5 py-3 text-xs font-semibold uppercase tracking-[0.04em] text-[var(--ds-muted)]">
                       <div>Job ID</div>
                       <div>Invoice Number</div>
                       <div>Contact</div>
@@ -346,7 +414,7 @@ export function InvoicePage() {
                         group.items.map((row) => (
                           <div
                             key={row.id}
-                            className="grid grid-cols-[110px_150px_1fr_1fr_1fr_120px_120px_140px_170px_1fr] gap-3 border-t border-[var(--ds-border)] px-5 py-4 text-sm text-[var(--ds-text)] first:border-t-0"
+                            className="grid grid-cols-[110px_150px_1fr_1fr_1fr_120px_120px_140px_240px_1fr] gap-3 border-t border-[var(--ds-border)] px-5 py-4 text-sm text-[var(--ds-text)] first:border-t-0"
                           >
                             <div className="font-semibold text-[var(--ds-text)]">#{row.jobId}</div>
                             <div className="font-medium">
@@ -369,7 +437,47 @@ export function InvoicePage() {
                             <div>{formatCurrency(row.xeroTotal)}</div>
                             <div>{formatCurrency(row.paymentTotal ?? row.amount)}</div>
                             <div>{formatPaymentWay(row.paymentWay)}</div>
-                            <div>{row.paymentDateTime || row.paymentDate || "-"}</div>
+                            <div className="space-y-2">
+                              {editingRowId === row.id ? (
+                                <>
+                                  <Input
+                                    type="date"
+                                    value={editingPaymentDate}
+                                    onChange={(event) => setEditingPaymentDate(event.target.value)}
+                                    disabled={savingRowId === row.id}
+                                  />
+                                  <div className="flex flex-wrap gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => savePaymentDate(row)}
+                                      disabled={savingRowId === row.id || !editingPaymentDate}
+                                      className="inline-flex items-center rounded-[10px] bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      {savingRowId === row.id ? "Saving..." : "Save"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={cancelEditingPaymentDate}
+                                      disabled={savingRowId === row.id}
+                                      className="inline-flex items-center rounded-[10px] border border-[rgba(0,0,0,0.12)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--ds-muted)] transition hover:bg-[rgba(0,0,0,0.03)] disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div>{row.paymentDateTime || row.paymentDate || "-"}</div>
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditingPaymentDate(row)}
+                                    className="inline-flex items-center rounded-[10px] border border-[rgba(0,0,0,0.12)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--ds-muted)] transition hover:bg-[rgba(0,0,0,0.03)]"
+                                  >
+                                    Modify
+                                  </button>
+                                </>
+                              )}
+                            </div>
                             <div className="break-words">{row.note || "-"}</div>
                           </div>
                         ))

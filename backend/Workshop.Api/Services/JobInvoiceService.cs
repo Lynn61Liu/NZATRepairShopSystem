@@ -660,10 +660,6 @@ public sealed class JobInvoiceService
 
     public async Task<JobInvoiceStateUpdateResult> UpdateXeroStateAsync(long jobId, UpdateJobInvoiceXeroStateRequest payload, CancellationToken ct)
     {
-        var synced = await SyncFromXeroAsync(jobId, ct);
-        if (!synced.Ok || synced.Invoice is null)
-            return JobInvoiceStateUpdateResult.Fail(synced.StatusCode, synced.Error ?? "Failed to sync invoice from Xero.", synced.Payload);
-
         var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
         if (jobInvoice is null)
             return JobInvoiceStateUpdateResult.Fail(404, "Job invoice not found.");
@@ -675,6 +671,54 @@ public sealed class JobInvoiceService
         var state = (payload.State ?? "").Trim().ToUpperInvariant();
         if (string.IsNullOrWhiteSpace(state))
             return JobInvoiceStateUpdateResult.Fail(400, "State is required.");
+
+        if (state == "PAID_PARTIAL_CASH")
+        {
+            var paymentDate = payload.PaymentDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var amount = payload.Amount is > 0
+                ? payload.Amount.Value
+                : ExtractAmountDue(jobInvoice.ResponsePayloadJson)
+                ?? ExtractInvoiceTotal(jobInvoice.ResponsePayloadJson)
+                ?? ExtractInvoiceTotal(jobInvoice.RequestPayloadJson);
+            if (amount is null || amount <= 0)
+                return JobInvoiceStateUpdateResult.Fail(400, "Unable to determine invoice payment amount.");
+
+            var latestExistingPayment = await _db.JobPayments
+                .Where(x => x.JobInvoiceId == jobInvoice.Id)
+                .OrderByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync(ct);
+
+            var paymentReference = FirstNonEmpty(payload.Reference);
+            if (latestExistingPayment is null)
+            {
+                var jobPayment = BuildJobPayment(
+                    jobInvoice,
+                    "cash",
+                    amount.Value,
+                    paymentDate,
+                    paymentReference,
+                    jobInvoice.ExternalStatus ?? string.Empty);
+                _db.JobPayments.Add(jobPayment);
+            }
+            else
+            {
+                latestExistingPayment.Method = "cash";
+                latestExistingPayment.Amount = amount.Value;
+                latestExistingPayment.PaymentDate = paymentDate;
+                latestExistingPayment.Reference = paymentReference;
+                latestExistingPayment.ExternalStatus = jobInvoice.ExternalStatus;
+                latestExistingPayment.UpdatedAt = DateTime.UtcNow;
+            }
+
+            job.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(ct);
+
+            return await BuildStateUpdateResultAsync(jobInvoice, ct);
+        }
+
+        var synced = await SyncFromXeroAsync(jobId, ct);
+        if (!synced.Ok || synced.Invoice is null)
+            return JobInvoiceStateUpdateResult.Fail(synced.StatusCode, synced.Error ?? "Failed to sync invoice from Xero.", synced.Payload);
 
         if (string.IsNullOrWhiteSpace(jobInvoice.ExternalInvoiceId) || !Guid.TryParse(jobInvoice.ExternalInvoiceId, out var invoiceId))
             return JobInvoiceStateUpdateResult.Fail(400, "Missing Xero invoice id.");

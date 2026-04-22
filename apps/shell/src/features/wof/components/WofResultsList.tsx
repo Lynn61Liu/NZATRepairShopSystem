@@ -1,4 +1,4 @@
-import type { WofCheckItem, WofFailReason, WofRecordUpdatePayload } from "@/types";
+import type { WofCheckItem, WofFailReason, WofRecord, WofRecordUpdatePayload } from "@/types";
 import { WofResultsCard } from "./WofResultsCard";
 import { WofResultItem, type WofPrintContext } from "./WofResultItem";
 import { useMemo } from "react";
@@ -6,6 +6,7 @@ import { useMemo } from "react";
 type WofResultsListProps = {
   isLoading?: boolean;
   checkItems: WofCheckItem[];
+  records?: WofRecord[];
   printContext?: WofPrintContext;
   onUpdate?: (id: string, payload: WofRecordUpdatePayload) => Promise<{ success: boolean; message?: string }>;
   onDelete?: (id: string) => Promise<{ success: boolean; message?: string }>;
@@ -20,6 +21,7 @@ type WofResultsListProps = {
 export function WofResultsList({
   isLoading,
   checkItems,
+  records = [],
   printContext,
   onUpdate,
   onDelete,
@@ -30,6 +32,11 @@ export function WofResultsList({
   defaultMakeModel,
   failReasons,
 }: WofResultsListProps) {
+  const effectiveResults = useMemo(
+    () => (checkItems.length > 0 ? checkItems : records),
+    [checkItems, records]
+  );
+
   const mergedFailReasons = useMemo(() => {
     const list = Array.isArray(failReasons) ? failReasons : [];
     const map = new Map<string, WofFailReason>();
@@ -37,7 +44,7 @@ export function WofResultsList({
       if (!reason?.label) return;
       map.set(reason.label, reason);
     });
-    checkItems.forEach((item) => {
+    effectiveResults.forEach((item) => {
       const raw = String(item?.failReasons ?? "").trim();
       if (!raw) return;
       raw
@@ -51,13 +58,13 @@ export function WofResultsList({
         });
     });
     return Array.from(map.values());
-  }, [failReasons, checkItems]);
+  }, [effectiveResults, failReasons]);
 
   if (isLoading) {
     return <div className="py-6 text-center text-sm text-[var(--ds-muted)]">加载中...</div>;
   }
 
-  if (!checkItems.length && !showCreate) return null;
+  if (!effectiveResults.length && !showCreate) return null;
 
   return (
     <div className="space-y-3">
@@ -95,9 +102,9 @@ export function WofResultsList({
         />
       ) : null}
        {/* list  results from DB */}
-      {checkItems.length ? (
+      {effectiveResults.length ? (
         <WofResultsCard
-          wofResults={checkItems}
+          wofResults={effectiveResults}
           printContext={printContext}
           onUpdate={onUpdate}
           onDelete={onDelete}

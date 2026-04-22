@@ -1176,7 +1176,11 @@ export function useInvoiceDashboardState({
 
     setUpdatingXeroState(true);
     try {
-      const shouldPersistPaymentDate = state === "PAID_CASH" || state === "PAID_EPOST" || state === "PAID_BANK_TRANSFER";
+      const shouldPersistPaymentDate =
+        state === "PAID_CASH" ||
+        state === "PAID_PARTIAL_CASH" ||
+        state === "PAID_EPOST" ||
+        state === "PAID_BANK_TRANSFER";
       const res = await updateJobInvoiceXeroState(jobId, {
         state,
         epostReferenceId: options?.epostReferenceId?.trim() || undefined,

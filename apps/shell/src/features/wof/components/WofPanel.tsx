@@ -116,6 +116,7 @@ export function WofPanel(props: WofPanelProps) {
         <WofResultsList
           isLoading={isLoading}
           checkItems={checkItems}
+          records={props.records}
           printContext={{
             jobId,
             vehicleMakeModel,

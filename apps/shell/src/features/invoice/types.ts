@@ -6,7 +6,7 @@ export type InvoiceStatus =
   | "Paid";
 
 export type XeroInvoiceStatus = "DRAFT" | "AUTHORISED" | "PAID" | "UNKNOWN";
-export type XeroStateOption = "DRAFT" | "AUTHORISED" | "PAID_CASH" | "PAID_EPOST" | "PAID_BANK_TRANSFER";
+export type XeroStateOption = "DRAFT" | "AUTHORISED" | "PAID_CASH" | "PAID_PARTIAL_CASH" | "PAID_EPOST" | "PAID_BANK_TRANSFER";
 
 export type AmountsAre = "Tax Exclusive" | "Tax Inclusive" | "No Tax";
 
