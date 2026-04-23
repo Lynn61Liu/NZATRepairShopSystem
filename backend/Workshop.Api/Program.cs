@@ -113,6 +113,7 @@ builder.Services.AddDbContext<ProcurementDbContext>((sp, opt) =>
 
 builder.Services.AddScoped<WofRecordsService>();
 builder.Services.AddScoped<WofPrintService>();
+builder.Services.AddScoped<WofQueryService>();
 builder.Services.AddScoped<PartsServicesService>();
 builder.Services.AddScoped<NztaExpiryLookupService>();
 builder.Services.AddSingleton<NztaExpiryBackfillService>();

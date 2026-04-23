@@ -35,17 +35,20 @@ public class JobsController : ControllerBase
     private readonly IAppCache _appCache;
     private readonly JobPoStateService _jobPoStateService;
     private readonly JobInvoiceService _jobInvoiceService;
+    private readonly WofQueryService _wofQueryService;
 
     public JobsController(
         AppDbContext db,
         IAppCache appCache,
         JobPoStateService jobPoStateService,
-        JobInvoiceService jobInvoiceService)
+        JobInvoiceService jobInvoiceService,
+        WofQueryService wofQueryService)
     {
         _db = db;
         _appCache = appCache;
         _jobPoStateService = jobPoStateService;
         _jobInvoiceService = jobInvoiceService;
+        _wofQueryService = wofQueryService;
     }
 
     [HttpGet]
@@ -66,15 +69,7 @@ public class JobsController : ControllerBase
     private async Task<string?> BuildJobsListResponseJsonAsync(JobsListRequest request, CancellationToken ct)
     {
         var paintServices = _db.JobPaintServices.AsNoTracking();
-        var wofRecords = _db.JobWofRecords.AsNoTracking();
-
-        var wofServiceJobIds = (
-                from selection in _db.JobServiceSelections.AsNoTracking()
-                join catalogItem in _db.ServiceCatalogItems.AsNoTracking() on selection.ServiceCatalogItemId equals catalogItem.Id
-                where catalogItem.ServiceType == "wof"
-                select new { selection.JobId }
-            )
-            .Distinct();
+        var wofSnapshots = _wofQueryService.QuerySnapshots();
 
         var query =
             from j in _db.Jobs.AsNoTracking()
@@ -82,15 +77,14 @@ public class JobsController : ControllerBase
             join c in _db.Customers.AsNoTracking() on j.CustomerId equals c.Id
             join ji in _db.JobInvoices.AsNoTracking() on j.Id equals ji.JobId into invoiceGroup
             from ji in invoiceGroup.DefaultIfEmpty()
-            join ws in _db.JobWofStates.AsNoTracking() on j.Id equals ws.JobId into latestWofStateGroup
-            from ws in latestWofStateGroup.DefaultIfEmpty()
+            join snapshot in wofSnapshots on j.Id equals snapshot.JobId
             select new
             {
                 Job = j,
                 Vehicle = v,
                 Customer = c,
                 Invoice = ji,
-                WofState = ws
+                WofSnapshot = snapshot
             };
 
         if (string.IsNullOrWhiteSpace(request.JobType))
@@ -140,27 +134,18 @@ public class JobsController : ControllerBase
         if (!string.IsNullOrWhiteSpace(request.WofStatus))
         {
             query = request.WofStatus switch
-            {
-                "Recorded" => query.Where(x =>
-                    wofRecords
-                        .Any(record => record.JobId == x.Job.Id)
-                    || (wofServiceJobIds.Any(wofJob => wofJob.JobId == x.Job.Id)
-                        && x.WofState != null
-                        && x.WofState.ManualStatus != null
-                        && EF.Functions.ILike(x.WofState.ManualStatus, "Recorded"))),
+                {
+                "Recorded" => query.Where(x => x.WofSnapshot.HasWofRecord),
                 "Checked" => query.Where(x =>
-                    !wofRecords.Any(record => record.JobId == x.Job.Id)
-                    && wofServiceJobIds.Any(wofJob => wofJob.JobId == x.Job.Id)
-                    && x.WofState != null
-                    && x.WofState.ManualStatus != null
-                    && EF.Functions.ILike(x.WofState.ManualStatus, "Checked")),
+                    x.WofSnapshot.HasWofService
+                    && !x.WofSnapshot.HasWofRecord
+                    && x.WofSnapshot.ManualStatus != null
+                    && EF.Functions.ILike(x.WofSnapshot.ManualStatus, "Checked")),
                 "Todo" => query.Where(x =>
-                    !wofRecords.Any(record => record.JobId == x.Job.Id)
-                    && wofServiceJobIds.Any(wofJob => wofJob.JobId == x.Job.Id)
-                    && (x.WofState == null
-                        || x.WofState.ManualStatus == null
-                        || (!EF.Functions.ILike(x.WofState.ManualStatus, "Checked")
-                            && !EF.Functions.ILike(x.WofState.ManualStatus, "Recorded")))),
+                    x.WofSnapshot.HasWofService
+                    && !x.WofSnapshot.HasWofRecord
+                    && (x.WofSnapshot.ManualStatus == null
+                        || !EF.Functions.ILike(x.WofSnapshot.ManualStatus, "Checked"))),
                 _ => query
             };
         }
@@ -324,15 +309,9 @@ public class JobsController : ControllerBase
                     .ThenByDescending(paint => paint.Id)
                     .Select(paint => (int?)paint.Panels)
                     .FirstOrDefault(),
-                wofServiceJobIds.Any(wofJob => wofJob.JobId == x.Job.Id),
-                wofRecords.Any(record => record.JobId == x.Job.Id),
-                wofRecords
-                    .Where(record => record.JobId == x.Job.Id)
-                    .OrderByDescending(record => record.OccurredAt)
-                    .ThenByDescending(record => record.Id)
-                    .Select(record => (WofUiState?)record.WofUiState)
-                    .FirstOrDefault(),
-                x.WofState != null ? x.WofState.ManualStatus : null,
+                x.WofSnapshot.HasWofService,
+                x.WofSnapshot.HasWofRecord,
+                x.WofSnapshot.ManualStatus,
                 x.Vehicle.Plate,
                 x.Vehicle.Make,
                 x.Vehicle.Model,
@@ -385,7 +364,7 @@ public class JobsController : ControllerBase
                 customerName = row.CustomerName,
                 customerCode = row.CustomerCode,
                 customerPhone = row.CustomerPhone ?? "",
-                wofStatus = MapWofStatus(hasWofServiceOrRecord, row.LatestWofManualStatus, row.LatestWofUiState),
+                wofStatus = WofQueryService.DeriveWofStatus(row.HasWofService, row.HasWofRecord, row.LatestWofManualStatus),
                 notes = row.Notes ?? "",
                 externalInvoiceId = row.ExternalInvoiceId,
                 createdAt = FormatDateTime(row.CreatedAt),
@@ -547,7 +526,6 @@ public class JobsController : ControllerBase
         int? PaintPanels,
         bool HasWofService,
         bool HasWofRecord,
-        WofUiState? LatestWofUiState,
         string? LatestWofManualStatus,
         string? Plate,
         string? Make,
@@ -647,10 +625,12 @@ public class JobsController : ControllerBase
 
     private async Task<string?> BuildJobDetailResponseJsonAsync(long id, CancellationToken ct)
     {
+        var wofSnapshots = _wofQueryService.QuerySnapshots();
         var row = await (
                 from j in _db.Jobs.AsNoTracking()
                 join v in _db.Vehicles.AsNoTracking() on j.VehicleId equals v.Id
                 join c in _db.Customers.AsNoTracking() on j.CustomerId equals c.Id
+                join snapshot in wofSnapshots on j.Id equals snapshot.JobId
                 where j.Id == id
                 select new
                 {
@@ -703,27 +683,7 @@ public class JobsController : ControllerBase
                         c.BusinessCode,
                         c.Notes,
                     },
-                    HasWofRecord = _db.JobWofRecords.AsNoTracking()
-                        .Any(x => x.JobId == j.Id),
-                    LatestWofUiState = _db.JobWofRecords.AsNoTracking()
-                        .Where(x => x.JobId == j.Id)
-                        .OrderByDescending(x => x.OccurredAt)
-                        .ThenByDescending(x => x.Id)
-                        .Select(x => (WofUiState?)x.WofUiState)
-                        .FirstOrDefault(),
-                    LatestWofManualStatus = _db.JobWofStates.AsNoTracking()
-                        .Where(x => x.JobId == j.Id)
-                        .OrderByDescending(x => x.UpdatedAt)
-                        .ThenByDescending(x => x.Id)
-                        .Select(x => x.ManualStatus)
-                        .FirstOrDefault(),
-                    HasWofService = (
-                            from selection in _db.JobServiceSelections.AsNoTracking()
-                            join catalogItem in _db.ServiceCatalogItems.AsNoTracking() on selection.ServiceCatalogItemId equals catalogItem.Id
-                            where selection.JobId == j.Id && catalogItem.ServiceType == "wof"
-                            select selection.Id
-                        )
-                        .Any(),
+                    WofSnapshot = snapshot,
                     Invoice = _db.JobInvoices.AsNoTracking()
                         .Where(x => x.JobId == j.Id)
                         .Select(x => new
@@ -799,7 +759,6 @@ public class JobsController : ControllerBase
             .Distinct()
             .ToListAsync(ct);
         var effectiveInvoiceProcessing = row.Invoice is null ? row.InvoiceProcessing : null;
-        var hasWofServiceOrRecord = row.HasWofService || row.HasWofRecord;
 
         var job = new
         {
@@ -812,8 +771,11 @@ public class JobsController : ControllerBase
             tags = tagNames.ToArray(),
             notes = row.Job.Notes,
             createdAt = FormatDateTime(row.Job.CreatedAt),
-            hasWofService = hasWofServiceOrRecord,
-            wofStatus = MapWofStatus(hasWofServiceOrRecord, row.LatestWofManualStatus, row.LatestWofUiState),
+            hasWofService = row.WofSnapshot.HasWofService,
+            wofStatus = WofQueryService.DeriveWofStatus(
+                row.WofSnapshot.HasWofService,
+                row.WofSnapshot.HasWofRecord,
+                row.WofSnapshot.ManualStatus),
             vehicle = new
             {
                 plate = row.Vehicle.Plate,
@@ -859,7 +821,7 @@ public class JobsController : ControllerBase
             invoiceProcessing = effectiveInvoiceProcessing,
         };
 
-        return JsonSerializer.Serialize(new { job, hasWofRecord = row.HasWofRecord });
+        return JsonSerializer.Serialize(new { job, hasWofRecord = row.WofSnapshot.HasWofRecord });
     }
 
     [HttpGet("po-unread-summary")]
@@ -960,10 +922,12 @@ public class JobsController : ControllerBase
 
     private async Task<string?> BuildPaintBoardJsonAsync(CancellationToken ct)
     {
+        var wofSnapshots = _wofQueryService.QuerySnapshots();
         var rows = await (
                 from p in _db.JobPaintServices.AsNoTracking()
                 join j in _db.Jobs.AsNoTracking() on p.JobId equals j.Id
                 join v in _db.Vehicles.AsNoTracking() on j.VehicleId equals v.Id
+                join snapshot in wofSnapshots on j.Id equals snapshot.JobId
                 where !EF.Functions.ILike(j.Status, "archived")
                 orderby j.CreatedAt descending
                 select new
@@ -971,28 +935,9 @@ public class JobsController : ControllerBase
                     j.Id,
                     j.CreatedAt,
                     j.Notes,
-                    HasWofService = (
-                        from selection in _db.JobServiceSelections.AsNoTracking()
-                        join catalogItem in _db.ServiceCatalogItems.AsNoTracking() on selection.ServiceCatalogItemId equals catalogItem.Id
-                        where selection.JobId == j.Id && catalogItem.ServiceType == "wof"
-                        select selection.Id
-                    ).Any(),
-                    HasWofRecord = _db.JobWofRecords.AsNoTracking()
-                        .Where(x => x.JobId == j.Id)
-                        .Select(x => x.Id)
-                        .Any(),
-                    LatestWofUiState = _db.JobWofRecords.AsNoTracking()
-                        .Where(x => x.JobId == j.Id)
-                        .OrderByDescending(x => x.OccurredAt)
-                        .ThenByDescending(x => x.Id)
-                        .Select(x => (WofUiState?)x.WofUiState)
-                        .FirstOrDefault(),
-                    LatestWofManualStatus = _db.JobWofStates.AsNoTracking()
-                        .Where(x => x.JobId == j.Id)
-                        .OrderByDescending(x => x.UpdatedAt)
-                        .ThenByDescending(x => x.Id)
-                        .Select(x => x.ManualStatus)
-                        .FirstOrDefault(),
+                    snapshot.HasWofService,
+                    snapshot.HasWofRecord,
+                    snapshot.ManualStatus,
                     HasMechService = (
                         from selection in _db.JobServiceSelections.AsNoTracking()
                         join catalogItem in _db.ServiceCatalogItems.AsNoTracking() on selection.ServiceCatalogItemId equals catalogItem.Id
@@ -1021,8 +966,8 @@ public class JobsController : ControllerBase
             model = r.Model,
             status = r.Status,
             currentStage = r.CurrentStage,
-            hasWofService = r.HasWofService || r.HasWofRecord,
-            wofStatus = MapWofStatus(r.HasWofService || r.HasWofRecord, r.LatestWofManualStatus, r.LatestWofUiState),
+            hasWofService = r.HasWofService,
+            wofStatus = WofQueryService.DeriveWofStatus(r.HasWofService, r.HasWofRecord, r.ManualStatus),
             hasMechService = r.HasMechService,
             panels = r.Panels,
             notes = r.Notes ?? "",
@@ -1177,12 +1122,14 @@ public class JobsController : ControllerBase
 
     private async Task<string?> BuildWofScheduleJsonAsync(CancellationToken ct)
     {
+        var wofSnapshots = _wofQueryService.QuerySnapshots();
         var rows = await (
-                from state in _db.JobWofStates.AsNoTracking()
-                join j in _db.Jobs.AsNoTracking() on state.JobId equals j.Id
+                from j in _db.Jobs.AsNoTracking()
                 join v in _db.Vehicles.AsNoTracking() on j.VehicleId equals v.Id
+                join snapshot in wofSnapshots on j.Id equals snapshot.JobId
                 where !EF.Functions.ILike(j.Status, "archived")
-                where state.ManualStatus == null || !EF.Functions.ILike(state.ManualStatus, "Recorded")
+                where snapshot.HasWofService
+                where !snapshot.HasWofRecord
                 orderby j.CreatedAt descending
                 select new
                 {
@@ -1195,7 +1142,9 @@ public class JobsController : ControllerBase
                     v.Year,
                     v.Vin,
                     v.WofExpiry,
-                    state.ManualStatus,
+                    snapshot.HasWofService,
+                    snapshot.HasWofRecord,
+                    snapshot.ManualStatus,
                 }
             )
             .ToListAsync(ct);
@@ -1218,9 +1167,7 @@ public class JobsController : ControllerBase
                 wofExpiry = FormatDate(row.WofExpiry),
                 inShopDateTime = FormatDateTime(row.CreatedAt),
                 status = MapDetailStatus(row.Status),
-                wofStatus = string.Equals(row.ManualStatus, "Checked", StringComparison.OrdinalIgnoreCase)
-                    ? "Checked"
-                    : "Todo",
+                wofStatus = WofQueryService.DeriveWofStatus(row.HasWofService, row.HasWofRecord, row.ManualStatus),
             });
 
         var entries = scheduleEntries.Select(entry => new
@@ -2123,22 +2070,6 @@ public class JobsController : ControllerBase
         if (value.Equals("In Shop", StringComparison.OrdinalIgnoreCase))
             return "In Shop";
         return value;
-    }
-
-    private static string? MapWofStatus(bool hasWofService, string? wofManualStatus, WofUiState? latestWofUiState)
-    {
-        if (latestWofUiState.HasValue)
-            return "Recorded";
-
-        if (!hasWofService)
-            return null;
-
-        if (string.Equals(wofManualStatus, "Recorded", StringComparison.OrdinalIgnoreCase))
-            return "Recorded";
-
-        return string.Equals(wofManualStatus, "Checked", StringComparison.OrdinalIgnoreCase)
-            ? "Checked"
-            : "Todo";
     }
 
     private static string BuildVehicleModel(string? make, string? model, int? year)
