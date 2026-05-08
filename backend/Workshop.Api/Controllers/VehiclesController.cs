@@ -1,9 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Text.Json;
 using Workshop.Api.Data;
 using Workshop.Api.DTOs;
-using Workshop.Api.Services;
 
 namespace Workshop.Api.Controllers;
 
@@ -12,17 +10,10 @@ namespace Workshop.Api.Controllers;
 public class VehiclesController : ControllerBase
 {
     private readonly AppDbContext _db;
-    private readonly CarjamScraper _scraper;
-    private readonly NztaExpiryLookupService _nztaExpiryLookupService;
 
-    public VehiclesController(
-        AppDbContext db,
-        CarjamScraper scraper,
-        NztaExpiryLookupService nztaExpiryLookupService)
+    public VehiclesController(AppDbContext db)
     {
         _db = db;
-        _scraper = scraper;
-        _nztaExpiryLookupService = nztaExpiryLookupService;
     }
 
     // [HttpPost("import-by-plate")]
@@ -78,18 +69,6 @@ public class VehiclesController : ControllerBase
 
         if (vehicle is null)
             return NotFound(new { error = "Vehicle not found." });
-
-        if (vehicle.WofExpiry is null)
-        {
-            var nztaExpiry = await _nztaExpiryLookupService.LookupInspectionExpiryAsync(normalized, ct);
-            if (nztaExpiry.ExpiryDate is not null &&
-                !string.Equals(nztaExpiry.InspectionType, "COF", StringComparison.OrdinalIgnoreCase))
-            {
-                vehicle.WofExpiry = nztaExpiry.ExpiryDate;
-                vehicle.UpdatedAt = DateTime.UtcNow;
-                await _db.SaveChangesAsync(ct);
-            }
-        }
 
         var latestJobCustomer = await (
                 from j in _db.Jobs.AsNoTracking()

@@ -10,7 +10,9 @@
     "dev": "node ./scripts/vite-dev.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "anti-bot-check": "tsx scripts/antiBotCheck.ts",
+    "nzta-sync-vehicle": "tsx scripts/nztaVehicleSync.ts"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "1.2.3",
@@ -72,7 +74,9 @@
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
     "postcss": "^8.5.6",
+    "playwright": "^1.57.0",
     "tailwindcss": "^3.4.19",
+    "tsx": "^4.20.6",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4"

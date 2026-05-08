@@ -320,7 +320,10 @@ public class NewJobController : ControllerBase
         invoiceKickDispatchStopwatch.Stop();
         var invoiceKickDispatchElapsedMs = invoiceKickDispatchStopwatch.Elapsed.TotalMilliseconds;
 
-        _nztaExpiryBackfillService.Dispatch(vehicle.Id, plate);
+        if (vehicle.WofExpiry is null)
+        {
+            _nztaExpiryBackfillService.Dispatch(vehicle.Id, plate);
+        }
 
         double? poKickDispatchElapsedMs = null;
         bool? poStartedAsync = null;
