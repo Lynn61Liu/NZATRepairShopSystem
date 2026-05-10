@@ -89,7 +89,8 @@ public class JobsController : ControllerBase
 
         if (string.IsNullOrWhiteSpace(request.JobType))
         {
-            query = query.Where(x => x.Job.Status != null && !EF.Functions.ILike(x.Job.Status, "Archived"));
+            if (!request.IncludeArchived)
+                query = query.Where(x => x.Job.Status != null && !EF.Functions.ILike(x.Job.Status, "Archived"));
         }
         else
         {
@@ -479,6 +480,7 @@ public class JobsController : ControllerBase
             pageSize,
             query?.Q?.Trim() ?? "",
             query?.Status?.Trim() ?? "",
+            query?.IncludeArchived ?? false,
             query?.Wof?.Trim() ?? "",
             query?.Paint?.Trim() ?? "",
             query?.Customer?.Trim() ?? "",
@@ -491,6 +493,7 @@ public class JobsController : ControllerBase
     public sealed record JobsListQuery(
         string? Q,
         string? Status,
+        bool? IncludeArchived,
         string? Wof,
         string? Paint,
         string? Range,
@@ -506,6 +509,7 @@ public class JobsController : ControllerBase
         int PageSize,
         string Search,
         string JobType,
+        bool IncludeArchived,
         string WofStatus,
         string PaintStatus,
         string Customer,

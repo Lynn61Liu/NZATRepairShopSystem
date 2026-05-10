@@ -37,7 +37,7 @@ const BROWSER_PROFILE_DIR = path.resolve(
 const RECAPTCHA_READY_TIMEOUT_MS = 45000;
 const RECAPTCHA_READY_POLL_MS = 500;
 const MANUAL_WARMUP_TIMEOUT_MS = 180000;
-const SKIPPED_PLATE_PATTERNS = ["AB980", "NCZ326", "756", "MPE194", "NWM435", "NPP113", "PAT359"] as const;
+const SKIPPED_PLATE_PATTERNS: string[] = ["RQL113", "AB980", "NCZ326", "756", "MPE194", "NWM435", "NPP113", "PAT359"];
 
 type PendingVehicle = {
   id: number;
@@ -115,6 +115,10 @@ async function processVehicleLookup(
 ): Promise<LookupUpdateResult> {
   const payload = await fetchVehicleDetails(page, vehicle.plate);
   const resolved = resolveData(payload);
+  if (!hasResolvedVehicleInfo(resolved) && !SKIPPED_PLATE_PATTERNS.includes(vehicle.plate)) {
+    SKIPPED_PLATE_PATTERNS.push(vehicle.plate);
+    log(`Added plate ${vehicle.plate} to SKIPPED_PLATE_PATTERNS after lookup returned no valid WOF/licence/RUC data.`);
+  }
   const rows = await updateVehicle(connectionString, vehicle, resolved);
   return { resolved, rows };
 }
@@ -321,7 +325,7 @@ async function loadNextPendingVehicle(connectionString: string): Promise<Pending
         or ruc_licence_number is null
         or ruc_end_distance is null
       )
-    order by id asc
+    order by id desc
     limit ${CANDIDATE_BATCH_SIZE};
   `;
 
@@ -635,6 +639,10 @@ function resolveData(payload: VehiclePayload): ResolvedData {
     rucLicenceNumber: Number.isFinite(rucLicenceNumber) ? rucLicenceNumber : 0,
     rucEndDistance: Number.isFinite(rucEndDistance) ? rucEndDistance : 0,
   };
+}
+
+function hasResolvedVehicleInfo(data: ResolvedData): boolean {
+  return Boolean(data.wofExpiry || data.licenceExpiry || data.rucLicenceNumber > 0 || data.rucEndDistance > 0);
 }
 
 async function updateVehicle(connectionString: string, vehicle: PendingVehicle, data: ResolvedData): Promise<number> {

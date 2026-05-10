@@ -30,16 +30,32 @@ export function WorklogPage() {
   const [staffList, setStaffList] = useState<WorklogStaffProfile[]>([]);
   const [apiJobs, setApiJobs] = useState<WorklogJob[]>([]);
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
+  const jobsPageSize = 200;
 
   useEffect(() => {
     let cancelled = false;
 
     const loadJobs = async () => {
-      const res = await requestJson<any[] | { items?: any[] }>("/api/jobs?page=1&pageSize=200");
-      const rows = Array.isArray(res.data) ? res.data : Array.isArray(res.data?.items) ? res.data.items : [];
-      if (!res.ok || cancelled) return;
+      const allRows: any[] = [];
+      let page = 1;
+      let totalPages = 1;
+
+      do {
+        const res = await requestJson<any[] | { items?: any[]; totalPages?: number }>(
+          `/api/jobs?page=${page}&pageSize=${jobsPageSize}&includeArchived=true`
+        );
+        const rows = Array.isArray(res.data) ? res.data : Array.isArray(res.data?.items) ? res.data.items : [];
+        if (!res.ok || cancelled) return;
+
+        allRows.push(...rows);
+        totalPages = Array.isArray(res.data) ? 1 : Math.max(1, Number(res.data?.totalPages ?? 1));
+        page += 1;
+      } while (page <= totalPages && !cancelled);
+
+      if (cancelled) return;
+
       setApiJobs(
-        rows
+        allRows
           .filter((job) => job?.id && job?.plate)
           .map((job) => ({
             id: String(job.id),
