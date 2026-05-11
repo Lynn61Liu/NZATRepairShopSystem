@@ -219,7 +219,7 @@ export function RightSidebar({ vehicle, customer, isOpen, onToggle }: RightSideb
                   </div>
                 ) : null}
 
-                {customer.notes || (isEditingCustomer && customer.type === "Personal") ? (
+                {customer.notes ? (
                   <div className="border-t border-[var(--ds-border)] pt-3">
                     <div className="text-xs font-semibold text-[var(--ds-text)] mb-2">Notes</div>
                     <div className="text-sm text-[var(--ds-muted)] bg-[rgba(255,214,64,0.14)] border border-[rgba(255,214,64,0.45)] rounded-[8px] p-3">

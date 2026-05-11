@@ -76,6 +76,7 @@ export function JobDetailPage() {
     deletePaintService,
     refreshPaintService,
     refreshVehicleInfo,
+    syncVehicleNztaInfo,
     saveVehicleInfo,
     saveCustomerInfo,
   } = useJobDetailData({ jobId: id, activeTab });
@@ -178,6 +179,7 @@ export function JobDetailPage() {
         onSaveTags={saveTags}
         onSaveNotes={saveJobNotes}
         onRefreshVehicle={refreshVehicleInfo}
+        onSyncVehicleNzta={syncVehicleNztaInfo}
         onSaveVehicle={saveVehicleInfo}
         onSaveCustomer={saveCustomerInfo}
         isSidebarOpen={isSidebarOpen}

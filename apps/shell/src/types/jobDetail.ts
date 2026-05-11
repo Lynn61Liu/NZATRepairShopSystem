@@ -52,6 +52,9 @@ export type VehicleInfo = {
   fuelTankCapacityLitres?: number;
   fullCombinedRangeKm?: number;
   wofExpiry?: string;
+  licenceExpiry?: string;
+  rucLicenceNumber?: number | null;
+  rucEndDistance?: number | null;
   odometer?: number;
   nzFirstRegistration?: string;
   customerId?: number;

@@ -36,19 +36,22 @@ public class JobsController : ControllerBase
     private readonly JobPoStateService _jobPoStateService;
     private readonly JobInvoiceService _jobInvoiceService;
     private readonly WofQueryService _wofQueryService;
+    private readonly NztaExpiryLookupService _nztaExpiryLookupService;
 
     public JobsController(
         AppDbContext db,
         IAppCache appCache,
         JobPoStateService jobPoStateService,
         JobInvoiceService jobInvoiceService,
-        WofQueryService wofQueryService)
+        WofQueryService wofQueryService,
+        NztaExpiryLookupService nztaExpiryLookupService)
     {
         _db = db;
         _appCache = appCache;
         _jobPoStateService = jobPoStateService;
         _jobInvoiceService = jobInvoiceService;
         _wofQueryService = wofQueryService;
+        _nztaExpiryLookupService = nztaExpiryLookupService;
     }
 
     [HttpGet]
@@ -671,6 +674,9 @@ public class JobsController : ControllerBase
                         v.FuelTankCapacityLitres,
                         v.FullCombinedRangeKm,
                         v.WofExpiry,
+                        v.LicenceExpiry,
+                        v.RucLicenceNumber,
+                        v.RucEndDistance,
                         v.Odometer,
                         v.NzFirstRegistration,
                         v.CustomerId,
@@ -802,6 +808,9 @@ public class JobsController : ControllerBase
                 fuelTankCapacityLitres = row.Vehicle.FuelTankCapacityLitres,
                 fullCombinedRangeKm = row.Vehicle.FullCombinedRangeKm,
                 wofExpiry = FormatDate(row.Vehicle.WofExpiry),
+                licenceExpiry = FormatDate(row.Vehicle.LicenceExpiry),
+                rucLicenceNumber = row.Vehicle.RucLicenceNumber,
+                rucEndDistance = row.Vehicle.RucEndDistance,
                 odometer = row.Vehicle.Odometer,
                 nzFirstRegistration = FormatDate(row.Vehicle.NzFirstRegistration),
                 customerId = row.Vehicle.CustomerId,
@@ -1501,6 +1510,80 @@ public class JobsController : ControllerBase
     }
 
     public record UpdateVehicleRequest(int? Year, string? Make, string? FuelType, string? Vin, string? NzFirstRegistration);
+
+    [HttpPost("{id:long}/vehicle/nzta-sync")]
+    public async Task<IActionResult> SyncVehicleNzta(long id, CancellationToken ct)
+    {
+        var job = await _db.Jobs.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (job is null)
+            return NotFound(new { error = "Job not found." });
+
+        if (!job.VehicleId.HasValue)
+            return NotFound(new { error = "Vehicle not found." });
+
+        var vehicle = await _db.Vehicles.FirstOrDefaultAsync(x => x.Id == job.VehicleId.Value, ct);
+        if (vehicle is null)
+            return NotFound(new { error = "Vehicle not found." });
+
+        var lookupResult = await _nztaExpiryLookupService.LookupVehicleDetailsAsync(vehicle.Plate, ct);
+        if (!lookupResult.Success)
+        {
+            return BadRequest(new
+            {
+                error = lookupResult.Error ?? "NZTA 同步失败。",
+                steps = new
+                {
+                    lookup = new { status = "failed", message = lookupResult.Error ?? "NZTA 查询失败。" },
+                    parse = new { status = "pending", message = "等待解析 NZTA 返回数据。" },
+                    save = new { status = "pending", message = "等待写入车辆资料。" },
+                }
+            });
+        }
+
+        vehicle.WofExpiry = lookupResult.WofExpiry;
+        vehicle.LicenceExpiry = lookupResult.LicenceExpiry;
+        vehicle.RucLicenceNumber = lookupResult.RucLicenceNumber;
+        vehicle.RucEndDistance = lookupResult.RucEndDistance;
+        vehicle.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+        await InvalidateJobDetailCachesAsync(id, ct);
+        await InvalidatePaintBoardCacheAsync(ct);
+        await InvalidateWofScheduleCacheAsync(ct);
+
+        var hasAnyValue = lookupResult.WofExpiry.HasValue ||
+                          lookupResult.LicenceExpiry.HasValue ||
+                          lookupResult.RucLicenceNumber.HasValue ||
+                          lookupResult.RucEndDistance.HasValue;
+
+        return Ok(new
+        {
+            success = true,
+            message = hasAnyValue
+                ? "NZTA 车辆到期信息同步完成。"
+                : "NZTA 查询完成，但没有返回当前 WOF/licence/RUC 数据。",
+            vehicle = new
+            {
+                wofExpiry = FormatDate(vehicle.WofExpiry),
+                licenceExpiry = FormatDate(vehicle.LicenceExpiry),
+                rucLicenceNumber = vehicle.RucLicenceNumber,
+                rucEndDistance = vehicle.RucEndDistance,
+                updatedAt = FormatDateTime(vehicle.UpdatedAt),
+            },
+            steps = new
+            {
+                lookup = new { status = "success", message = "NZTA 查询完成。" },
+                parse = new
+                {
+                    status = "success",
+                    message = hasAnyValue
+                        ? "已解析 WOF/licence/RUC 数据。"
+                        : "已完成解析，但 NZTA 未返回当前有效数据。"
+                },
+                save = new { status = "success", message = "车辆资料已更新到本地系统。" },
+            }
+        });
+    }
 
     [HttpPut("{id:long}/vehicle")]
     public async Task<IActionResult> UpdateVehicle(long id, [FromBody] UpdateVehicleRequest req, CancellationToken ct)

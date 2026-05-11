@@ -24,7 +24,6 @@ public class NewJobController : ControllerBase
     private readonly ReferenceDataCacheService _referenceDataCache;
     private readonly InvoiceOutboxService _invoiceOutboxService;
     private readonly InvoiceOutboxKickService _invoiceOutboxKickService;
-    private readonly NztaExpiryBackfillService _nztaExpiryBackfillService;
     private readonly ILogger<NewJobController> _logger;
 
     public NewJobController(
@@ -33,7 +32,6 @@ public class NewJobController : ControllerBase
         ReferenceDataCacheService referenceDataCache,
         InvoiceOutboxService invoiceOutboxService,
         InvoiceOutboxKickService invoiceOutboxKickService,
-        NztaExpiryBackfillService nztaExpiryBackfillService,
         ILogger<NewJobController> logger)
     {
         _db = db;
@@ -41,7 +39,6 @@ public class NewJobController : ControllerBase
         _referenceDataCache = referenceDataCache;
         _invoiceOutboxService = invoiceOutboxService;
         _invoiceOutboxKickService = invoiceOutboxKickService;
-        _nztaExpiryBackfillService = nztaExpiryBackfillService;
         _logger = logger;
     }
 
@@ -319,11 +316,6 @@ public class NewJobController : ControllerBase
             alreadyStarted: invoiceStartedAsync);
         invoiceKickDispatchStopwatch.Stop();
         var invoiceKickDispatchElapsedMs = invoiceKickDispatchStopwatch.Elapsed.TotalMilliseconds;
-
-        if (vehicle.WofExpiry is null)
-        {
-            _nztaExpiryBackfillService.Dispatch(vehicle.Id, plate);
-        }
 
         double? poKickDispatchElapsedMs = null;
         bool? poStartedAsync = null;

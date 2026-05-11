@@ -20,6 +20,7 @@ import {
   updateJobStatus,
   updateJobCustomer,
   updateVehicleInfo,
+  syncVehicleNztaInfo as apiSyncVehicleNztaInfo,
   deleteJob as apiDeleteJob,
   createJobXeroDraftInvoice as apiCreateJobXeroDraftInvoice,
   attachJobXeroInvoice as apiAttachJobXeroInvoice,
@@ -80,6 +81,16 @@ export type DeleteJobActionResult = {
     xero?: DeleteJobStepResult;
     gmail?: DeleteJobStepResult;
     jobStep?: DeleteJobStepResult;
+  };
+};
+
+export type VehicleNztaSyncActionResult = {
+  success: boolean;
+  message?: string;
+  steps?: {
+    lookup?: DeleteJobStepResult;
+    parse?: DeleteJobStepResult;
+    save?: DeleteJobStepResult;
   };
 };
 
@@ -852,6 +863,41 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
     return { success: true, message: label ? `抓取成功：${label}` : "抓取成功" };
   }, [jobId, jobData?.vehicle?.plate, toast]);
 
+  const syncVehicleNztaInfo = useCallback(async (): Promise<VehicleNztaSyncActionResult> => {
+    if (!jobId) {
+      return { success: false, message: "缺少工单 ID" };
+    }
+
+    const res = await apiSyncVehicleNztaInfo(jobId);
+    if (!res.ok) {
+      return {
+        success: false,
+        message: res.error || "NZTA 同步失败",
+        steps: (res.data as { steps?: VehicleNztaSyncActionResult["steps"] } | null)?.steps,
+      };
+    }
+
+    const jobRes = await fetchJob(jobId);
+    if (!jobRes.ok) {
+      return {
+        success: false,
+        message: jobRes.error || "同步成功，但刷新工单详情失败",
+        steps: (res.data as { steps?: VehicleNztaSyncActionResult["steps"] } | null)?.steps,
+      };
+    }
+
+    const data = jobRes.data as any;
+    const job = data?.job ?? data;
+    setJobData(job ?? null);
+    toast.success((res.data as { message?: string } | null)?.message || "NZTA 同步完成");
+
+    return {
+      success: true,
+      message: (res.data as { message?: string } | null)?.message || "NZTA 同步完成",
+      steps: (res.data as { steps?: VehicleNztaSyncActionResult["steps"] } | null)?.steps,
+    };
+  }, [jobId, toast]);
+
   const saveVehicleInfo = useCallback(
     async (payload: {
       year?: number | null;
@@ -1134,6 +1180,7 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
     deletePaintService: deletePaintServiceRow,
     refreshPaintService,
     refreshVehicleInfo,
+    syncVehicleNztaInfo,
     saveVehicleInfo,
     saveCustomerInfo,
   };

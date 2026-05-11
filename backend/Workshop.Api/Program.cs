@@ -116,7 +116,6 @@ builder.Services.AddScoped<WofPrintService>();
 builder.Services.AddScoped<WofQueryService>();
 builder.Services.AddScoped<PartsServicesService>();
 builder.Services.AddScoped<NztaExpiryLookupService>();
-builder.Services.AddSingleton<NztaExpiryBackfillService>();
 builder.Services.AddSingleton<IAppCache, DistributedAppCache>();
 builder.Services.AddScoped<ReferenceDataCacheService>();
 builder.Services.AddScoped<InventoryItemService>();

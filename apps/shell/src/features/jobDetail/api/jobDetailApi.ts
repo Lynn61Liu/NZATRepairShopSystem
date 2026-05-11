@@ -63,6 +63,12 @@ export function updateVehicleInfo(
   });
 }
 
+export function syncVehicleNztaInfo(jobId: string) {
+  return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}/vehicle/nzta-sync`, {
+    method: "POST",
+  });
+}
+
 export function updateJobCustomer(
   jobId: string,
   payload:

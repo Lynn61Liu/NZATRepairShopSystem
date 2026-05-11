@@ -84,6 +84,15 @@ type MainColumnProps = {
   onDeletePaintService?: () => Promise<{ success: boolean; message?: string }>;
   onRefreshPaintService?: () => Promise<void>;
   onRefreshVehicle?: () => Promise<{ success: boolean; message?: string }>;
+  onSyncVehicleNzta?: () => Promise<{
+    success: boolean;
+    message?: string;
+    steps?: {
+      lookup?: { status?: string; message?: string };
+      parse?: { status?: string; message?: string };
+      save?: { status?: string; message?: string };
+    };
+  }>;
   onSaveVehicle?: (payload: {
     year?: number | null;
     make?: string | null;
@@ -155,6 +164,7 @@ export function MainColumn({
   onDeletePaintService,
   onRefreshPaintService,
   onRefreshVehicle,
+  onSyncVehicleNzta,
   onSaveVehicle,
   onSaveCustomer,
   onCreateXeroInvoice,
@@ -296,6 +306,7 @@ export function MainColumn({
         vehicle={jobData.vehicle}
         customer={jobData.customer}
         onRefreshVehicle={onRefreshVehicle}
+        onSyncVehicleNzta={onSyncVehicleNzta}
         onSaveVehicle={onSaveVehicle}
         onSaveCustomer={onSaveCustomer}
       />

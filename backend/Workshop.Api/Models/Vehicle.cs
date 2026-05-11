@@ -26,6 +26,9 @@ public class Vehicle
     public decimal? FuelTankCapacityLitres { get; set; }
     public decimal? FullCombinedRangeKm { get; set; }
     public DateOnly? WofExpiry { get; set; }
+    public DateOnly? LicenceExpiry { get; set; }
+    public int? RucLicenceNumber { get; set; }
+    public int? RucEndDistance { get; set; }
     public int? Odometer { get; set; }
     public DateOnly? NzFirstRegistration { get; set; }
 

@@ -91,6 +91,9 @@ public class AppDbContext : DbContext
         e.Property(x => x.FuelTankCapacityLitres).HasColumnName("fuel_tank_capacity_litres");
         e.Property(x => x.FullCombinedRangeKm).HasColumnName("full_combined_range_km");
         e.Property(x => x.WofExpiry).HasColumnName("wof_expiry");
+        e.Property(x => x.LicenceExpiry).HasColumnName("licence_expiry");
+        e.Property(x => x.RucLicenceNumber).HasColumnName("ruc_licence_number");
+        e.Property(x => x.RucEndDistance).HasColumnName("ruc_end_distance");
         e.Property(x => x.Odometer).HasColumnName("odometer");
         e.Property(x => x.NzFirstRegistration).HasColumnName("nz_first_registration");
         e.Property(x => x.CustomerId).HasColumnName("customer_id");

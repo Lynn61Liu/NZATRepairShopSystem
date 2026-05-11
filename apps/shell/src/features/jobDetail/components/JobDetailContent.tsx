@@ -73,6 +73,15 @@ type JobDetailContentProps = {
   onDeletePaintService?: () => Promise<{ success: boolean; message?: string }>;
   onRefreshPaintService?: () => Promise<void>;
   onRefreshVehicle?: () => Promise<{ success: boolean; message?: string }>;
+  onSyncVehicleNzta?: () => Promise<{
+    success: boolean;
+    message?: string;
+    steps?: {
+      lookup?: { status?: string; message?: string };
+      parse?: { status?: string; message?: string };
+      save?: { status?: string; message?: string };
+    };
+  }>;
   onSaveVehicle?: (payload: {
     year?: number | null;
     make?: string | null;
@@ -146,6 +155,7 @@ export function JobDetailContent({
   onDeletePaintService,
   onRefreshPaintService,
   onRefreshVehicle,
+  onSyncVehicleNzta,
   onSaveVehicle,
   onSaveCustomer,
   onCreateXeroInvoice,
@@ -203,6 +213,7 @@ export function JobDetailContent({
           onDeletePaintService={onDeletePaintService}
           onRefreshPaintService={onRefreshPaintService}
           onRefreshVehicle={onRefreshVehicle}
+          onSyncVehicleNzta={onSyncVehicleNzta}
           onSaveVehicle={onSaveVehicle}
           onSaveCustomer={onSaveCustomer}
           onCreateXeroInvoice={onCreateXeroInvoice}

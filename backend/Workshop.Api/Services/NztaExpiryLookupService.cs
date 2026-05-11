@@ -1,12 +1,14 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.Playwright;
+using System.Text.Json;
 
 namespace Workshop.Api.Services;
 
 public sealed class NztaExpiryLookupService
 {
     private const string CheckExpiryUrl = "https://transact.nzta.govt.nz/v2/check-expiry";
+    private const string VehicleExpiryApiPath = "/v2/api/vehicles/expiry/details";
     private const float DefaultTimeoutMs = 25000;
     private static readonly CultureInfo NzCulture = CultureInfo.GetCultureInfo("en-NZ");
     private static readonly string[] DateFormats =
@@ -35,9 +37,18 @@ public sealed class NztaExpiryLookupService
 
     public async Task<NztaExpiryLookupResult> LookupInspectionExpiryAsync(string plate, CancellationToken ct)
     {
+        var details = await LookupVehicleDetailsAsync(plate, ct);
+        if (!details.Success || details.WofExpiry is null)
+            return NztaExpiryLookupResult.Failed(details.Error ?? "NZTA lookup failed.", details.RawText);
+
+        return NztaExpiryLookupResult.Found(details.WofExpiry.Value, "WOF", details.RawText);
+    }
+
+    public async Task<NztaVehicleDetailsLookupResult> LookupVehicleDetailsAsync(string plate, CancellationToken ct)
+    {
         var normalizedPlate = NormalizePlate(plate);
         if (string.IsNullOrWhiteSpace(normalizedPlate))
-            return NztaExpiryLookupResult.Failed("Plate is empty after normalization.");
+            return NztaVehicleDetailsLookupResult.Failed("Plate is empty after normalization.");
 
         try
         {
@@ -66,28 +77,35 @@ public sealed class NztaExpiryLookupService
             });
 
             ct.ThrowIfCancellationRequested();
-            var input = page.Locator("input:not([type=hidden])").First;
+            var input = page.Locator("#plate");
             await input.WaitForAsync(new LocatorWaitForOptions { Timeout = DefaultTimeoutMs });
             await input.FillAsync(normalizedPlate);
 
+            var responseTask = page.WaitForResponseAsync(
+                response => response.Url.Contains(VehicleExpiryApiPath, StringComparison.OrdinalIgnoreCase),
+                new PageWaitForResponseOptions { Timeout = DefaultTimeoutMs });
+
             await ClickContinueAsync(page);
-            await WaitForResultAsync(page);
+            var response = await responseTask;
 
             ct.ThrowIfCancellationRequested();
-            var bodyText = await page.Locator("body").InnerTextAsync(new LocatorInnerTextOptions { Timeout = DefaultTimeoutMs });
-            var parsed = TryParseInspectionExpiry(bodyText);
-            if (parsed is not null)
+            var bodyText = await response.TextAsync();
+
+            if (!response.Ok)
             {
-                return NztaExpiryLookupResult.Found(
-                    parsed.Value.ExpiryDate,
-                    parsed.Value.InspectionType,
+                return NztaVehicleDetailsLookupResult.Failed(
+                    $"NZTA API returned status {(int)response.Status}.",
                     Truncate(bodyText, 2000));
             }
 
-            if (bodyText.Contains("something went wrong", StringComparison.OrdinalIgnoreCase))
-                return NztaExpiryLookupResult.Failed("NZTA returned a generic error page.", Truncate(bodyText, 2000));
-
-            return NztaExpiryLookupResult.Failed("NZTA expiry result was loaded but no WOF/COF expiry date could be parsed.", Truncate(bodyText, 2000));
+            using var json = JsonDocument.Parse(bodyText);
+            var resolved = ResolveVehicleDetails(json.RootElement);
+            return NztaVehicleDetailsLookupResult.Found(
+                resolved.WofExpiry,
+                resolved.LicenceExpiry,
+                resolved.RucLicenceNumber,
+                resolved.RucEndDistance,
+                Truncate(bodyText, 2000));
         }
         catch (OperationCanceledException)
         {
@@ -96,7 +114,7 @@ public sealed class NztaExpiryLookupService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "NZTA WOF/COF expiry lookup failed for plate {Plate}", normalizedPlate);
-            return NztaExpiryLookupResult.Failed(ex.Message);
+            return NztaVehicleDetailsLookupResult.Failed(ex.Message);
         }
     }
 
@@ -110,33 +128,6 @@ public sealed class NztaExpiryLookupService
         }
 
         await page.Locator("button,input[type=submit]").First.ClickAsync();
-    }
-
-    private static async Task WaitForResultAsync(IPage page)
-    {
-        try
-        {
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle, new PageWaitForLoadStateOptions { Timeout = DefaultTimeoutMs });
-        }
-        catch (TimeoutException)
-        {
-            // The NZTA page is a Blazor app and may keep network activity open.
-        }
-
-        try
-        {
-            await page.WaitForFunctionAsync(
-                @"() => {
-                    const text = document.body?.innerText ?? '';
-                    return /something went wrong/i.test(text) ||
-                           /\b(WoF|CoF|WOF|COF|Warrant of Fitness|Certificate of Fitness)\b[\s\S]{0,240}?\b(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}|\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})\b/i.test(text);
-                }",
-                new PageWaitForFunctionOptions { Timeout = 10000 });
-        }
-        catch (TimeoutException)
-        {
-            await page.WaitForTimeoutAsync(1500);
-        }
     }
 
     private static (DateOnly ExpiryDate, string InspectionType)? TryParseInspectionExpiry(string bodyText)
@@ -162,9 +153,122 @@ public sealed class NztaExpiryLookupService
     private static string NormalizePlate(string plate)
         => new(plate.Trim().ToUpperInvariant().Where(char.IsLetterOrDigit).ToArray());
 
+    private static ResolvedVehicleDetails ResolveVehicleDetails(JsonElement payload)
+    {
+        var wofExpiry = TryReadDateOnly(payload, "latestInspectionDetails", "expiryDate");
+        var licenceExpiry = TryReadDateOnly(payload, "latestLicenceDetails", "expiryDate");
+        var hasCurrentRuc = TryReadBoolean(payload, "latestRUCDetails", "hasCurrentRUCLicence");
+
+        int? rucLicenceNumber = null;
+        int? rucEndDistance = null;
+        if (hasCurrentRuc == true)
+        {
+            rucLicenceNumber = TryReadInt(payload, "latestRUCDetails", "rucLicenceNumber");
+            rucEndDistance = TryReadInt(payload, "latestRUCDetails", "endDistance");
+        }
+
+        return new ResolvedVehicleDetails(wofExpiry, licenceExpiry, rucLicenceNumber, rucEndDistance);
+    }
+
+    private static DateOnly? TryReadDateOnly(JsonElement root, string sectionName, string propertyName)
+    {
+        if (!TryReadString(root, sectionName, propertyName, out var value) || string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var dateText = value.Trim();
+        if (DateOnly.TryParseExact(dateText, DateFormats, NzCulture, DateTimeStyles.None, out var exactDate))
+            return exactDate;
+
+        if (DateTime.TryParse(dateText, NzCulture, DateTimeStyles.AssumeLocal, out var timestamp))
+            return DateOnly.FromDateTime(timestamp);
+
+        return null;
+    }
+
+    private static int? TryReadInt(JsonElement root, string sectionName, string propertyName)
+    {
+        if (!root.TryGetProperty(sectionName, out var section) || section.ValueKind != JsonValueKind.Object)
+            return null;
+
+        if (!section.TryGetProperty(propertyName, out var property))
+            return null;
+
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out var intValue))
+            return intValue;
+
+        if (property.ValueKind == JsonValueKind.String &&
+            int.TryParse(property.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+            return parsed;
+
+        return null;
+    }
+
+    private static bool? TryReadBoolean(JsonElement root, string sectionName, string propertyName)
+    {
+        if (!root.TryGetProperty(sectionName, out var section) || section.ValueKind != JsonValueKind.Object)
+            return null;
+
+        if (!section.TryGetProperty(propertyName, out var property))
+            return null;
+
+        if (property.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            return property.GetBoolean();
+
+        if (property.ValueKind == JsonValueKind.String &&
+            bool.TryParse(property.GetString(), out var parsed))
+            return parsed;
+
+        return null;
+    }
+
+    private static bool TryReadString(JsonElement root, string sectionName, string propertyName, out string? value)
+    {
+        value = null;
+        if (!root.TryGetProperty(sectionName, out var section) || section.ValueKind != JsonValueKind.Object)
+            return false;
+
+        if (!section.TryGetProperty(propertyName, out var property))
+            return false;
+
+        if (property.ValueKind == JsonValueKind.String)
+        {
+            value = property.GetString();
+            return true;
+        }
+
+        return false;
+    }
+
     private static string Truncate(string value, int maxLength)
         => value.Length <= maxLength ? value : value[..maxLength];
 }
+
+public sealed record NztaVehicleDetailsLookupResult(
+    bool Success,
+    DateOnly? WofExpiry,
+    DateOnly? LicenceExpiry,
+    int? RucLicenceNumber,
+    int? RucEndDistance,
+    string? Error,
+    string? RawText)
+{
+    public static NztaVehicleDetailsLookupResult Found(
+        DateOnly? wofExpiry,
+        DateOnly? licenceExpiry,
+        int? rucLicenceNumber,
+        int? rucEndDistance,
+        string? rawText) =>
+        new(true, wofExpiry, licenceExpiry, rucLicenceNumber, rucEndDistance, null, rawText);
+
+    public static NztaVehicleDetailsLookupResult Failed(string error, string? rawText = null) =>
+        new(false, null, null, null, null, error, rawText);
+}
+
+sealed record ResolvedVehicleDetails(
+    DateOnly? WofExpiry,
+    DateOnly? LicenceExpiry,
+    int? RucLicenceNumber,
+    int? RucEndDistance);
 
 public sealed record NztaExpiryLookupResult(
     bool Success,
