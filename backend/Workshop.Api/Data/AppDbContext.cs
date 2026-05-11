@@ -437,6 +437,7 @@ public class AppDbContext : DbContext
         s.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
         s.Property(x => x.Name).HasColumnName("name").IsRequired();
         s.Property(x => x.CostRate).HasColumnName("cost_rate").IsRequired();
+        s.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true);
         s.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         s.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
 

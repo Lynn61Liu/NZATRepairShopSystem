@@ -68,8 +68,9 @@ export function updateStaff(id: string, payload: { name?: string; costRate?: num
   });
 }
 
-export function deleteStaff(id: string) {
-  return requestJson<any>(`/api/staff/${encodeURIComponent(id)}`, {
+export function deleteStaff(id: string, force = false) {
+  const query = force ? "?force=true" : "";
+  return requestJson<any>(`/api/staff/${encodeURIComponent(id)}${query}`, {
     method: "DELETE",
   });
 }

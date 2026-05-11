@@ -7,9 +7,9 @@ import type { WorklogRole, WorklogStaffProfile } from "../types";
 type Props = {
   staffProfiles: WorklogStaffProfile[];
   staffColorMap: Map<string, { pill: string; row: string }>;
-  onAddStaff: (staff: Omit<WorklogStaffProfile, "id">) => void;
-  onEditStaff: (id: string, updates: Partial<WorklogStaffProfile>) => void;
-  onDeleteStaff: (id: string) => void;
+  onAddStaff: (staff: Omit<WorklogStaffProfile, "id">) => void | Promise<void>;
+  onEditStaff: (id: string, updates: Partial<WorklogStaffProfile>) => void | Promise<void>;
+  onDeleteStaff: (id: string) => void | Promise<void>;
 };
 
 export function StaffManagement({
@@ -17,21 +17,18 @@ export function StaffManagement({
   staffColorMap,
   onAddStaff,
   onEditStaff,
-  onDeleteStaff: _onDeleteStaff,
+  onDeleteStaff,
 }: Props) {
   const toast = useToast();
   const [isExpanded, setIsExpanded] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [hiddenStaffIds, setHiddenStaffIds] = useState<Set<string>>(() => new Set());
   const [newStaff, setNewStaff] = useState({
     name: "",
     role: "Technician" as WorklogRole,
     cost_rate: 0,
   });
   const [editData, setEditData] = useState<WorklogStaffProfile | null>(null);
-
-  const visibleStaff = staffProfiles.filter((staff) => !hiddenStaffIds.has(staff.id));
 
   const handleAdd = () => {
     if (!newStaff.name.trim()) {
@@ -70,19 +67,19 @@ export function StaffManagement({
         className="cursor-pointer border-b border-[rgba(0,0,0,0.06)] px-6 py-5"
         onClick={() => setIsExpanded((prev) => !prev)}
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-lg font-semibold text-[rgba(0,0,0,0.80)]">
-            {isExpanded ? <ChevronDown className="size-5" /> : <ChevronRight className="size-5" />}
-            员工管理
-          </div>
-          <span className="text-sm text-[rgba(0,0,0,0.55)]">{visibleStaff.length} 名员工</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-lg font-semibold text-[rgba(0,0,0,0.80)]">
+              {isExpanded ? <ChevronDown className="size-5" /> : <ChevronRight className="size-5" />}
+              员工管理
+            </div>
+          <span className="text-sm text-[rgba(0,0,0,0.55)]">{staffProfiles.length} 名员工</span>
         </div>
       </div>
 
       {isExpanded ? (
         <div className="space-y-4 px-6 py-5">
           <div className="flex flex-wrap gap-2">
-            {visibleStaff.map((staff) => (
+            {staffProfiles.map((staff) => (
               <div
                 key={staff.id}
                 className="flex items-center gap-3 rounded-lg border border-[rgba(0,0,0,0.08)] bg-white p-3 hover:bg-slate-50"
@@ -153,15 +150,10 @@ export function StaffManagement({
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        setHiddenStaffIds((prev) => {
-                          const next = new Set(prev);
-                          next.add(staff.id);
-                          return next;
-                        });
+                      onClick={async () => {
                         setEditingId((prev) => (prev === staff.id ? null : prev));
                         setEditData((prev) => (prev?.id === staff.id ? null : prev));
-                        toast.success("员工已隐藏");
+                        await onDeleteStaff(staff.id);
                       }}
                       className="rounded-md p-2 hover:bg-slate-100"
                     >

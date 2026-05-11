@@ -38,6 +38,7 @@ public class StaffController : ControllerBase
             StaffCacheKey,
             StaffCacheDuration,
             async token => await _db.Staff.AsNoTracking()
+                .Where(x => x.IsActive)
                 .OrderBy(x => x.Name)
                 .Select(x => new StaffResponse(
                     x.Id.ToString(),
@@ -106,14 +107,27 @@ public class StaffController : ControllerBase
     }
 
     [HttpDelete("{id:long}")]
-    public async Task<IActionResult> Delete(long id, CancellationToken ct)
+    public async Task<IActionResult> Delete(long id, [FromQuery] bool force = false, CancellationToken ct = default)
     {
         var entity = await _db.Staff.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (entity is null) return NotFound(new { error = "Staff not found." });
+        if (!entity.IsActive) return Ok(new { success = true, relatedWorklogCount = 0 });
 
-        _db.Staff.Remove(entity);
+        var relatedWorklogCount = await _db.WorklogEntries.CountAsync(x => x.StaffId == id, ct);
+        if (relatedWorklogCount > 0 && !force)
+        {
+            return Conflict(new
+            {
+                error = "Staff has related worklog records.",
+                relatedWorklogCount,
+                requiresConfirmation = true
+            });
+        }
+
+        entity.IsActive = false;
+        entity.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         await _cache.RemoveAsync(StaffCacheKey, ct);
-        return Ok(new { success = true });
+        return Ok(new { success = true, relatedWorklogCount });
     }
 }

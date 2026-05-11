@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { requestJson } from "@/utils/api";
 import { notifyWorklogCostAlert } from "@/utils/refreshSignals";
 import { Button, useToast } from "@/components/ui";
@@ -30,7 +31,20 @@ export function WorklogPage() {
   const [staffList, setStaffList] = useState<WorklogStaffProfile[]>([]);
   const [apiJobs, setApiJobs] = useState<WorklogJob[]>([]);
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
+  const [pendingStaffDelete, setPendingStaffDelete] = useState<{
+    id: string;
+    name: string;
+    relatedWorklogCount: number;
+  } | null>(null);
+  const [isDeletingStaff, setIsDeletingStaff] = useState(false);
   const jobsPageSize = 200;
+
+  const mapStaffProfile = (item: any): WorklogStaffProfile => ({
+    id: String(item.id),
+    name: String(item.name ?? ""),
+    role: "Technician" as WorklogRole,
+    cost_rate: Number(item.costRate ?? item.cost_rate ?? 0),
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -72,14 +86,7 @@ export function WorklogPage() {
     const loadStaff = async () => {
       const res = await fetchStaff();
       if (!res.ok || !Array.isArray(res.data) || cancelled) return;
-      setStaffList(
-        res.data.map((item) => ({
-          id: String(item.id),
-          name: String(item.name ?? ""),
-          role: "Technician" as WorklogRole,
-          cost_rate: Number(item.cost_rate ?? 0),
-        }))
-      );
+      setStaffList(res.data.map(mapStaffProfile));
     };
 
     const loadWorklogs = async () => {
@@ -265,14 +272,7 @@ export function WorklogPage() {
     }
     const refreshed = await fetchStaff();
     if (refreshed.ok && Array.isArray(refreshed.data)) {
-      setStaffList(
-        refreshed.data.map((item) => ({
-          id: String(item.id),
-          name: String(item.name ?? ""),
-          role: "Technician" as WorklogRole,
-          cost_rate: Number(item.cost_rate ?? 0),
-        }))
-      );
+      setStaffList(refreshed.data.map(mapStaffProfile));
     }
   };
 
@@ -287,24 +287,45 @@ export function WorklogPage() {
     }
     const refreshed = await fetchStaff();
     if (refreshed.ok && Array.isArray(refreshed.data)) {
-      setStaffList(
-        refreshed.data.map((item) => ({
-          id: String(item.id),
-          name: String(item.name ?? ""),
-          role: "Technician" as WorklogRole,
-          cost_rate: Number(item.cost_rate ?? 0),
-        }))
-      );
+      setStaffList(refreshed.data.map(mapStaffProfile));
     }
   };
 
   const handleDeleteStaff = async (id: string) => {
+    const staff = staffList.find((item) => item.id === id);
+    const relatedWorklogCount = logs.filter((log) => log.staff_id === id).length;
+
+    if (relatedWorklogCount > 0) {
+      setPendingStaffDelete({
+        id,
+        name: staff?.name ?? id,
+        relatedWorklogCount,
+      });
+      return;
+    }
+
     const res = await deleteStaff(id);
     if (!res.ok) {
       toast.error(res.error || "删除员工失败");
       return;
     }
     setStaffList((prev) => prev.filter((staff) => staff.id !== id));
+  };
+
+  const handleConfirmDeleteStaff = async () => {
+    if (!pendingStaffDelete) return;
+
+    setIsDeletingStaff(true);
+    const res = await deleteStaff(pendingStaffDelete.id, true);
+    setIsDeletingStaff(false);
+
+    if (!res.ok) {
+      toast.error(res.error || "删除员工失败");
+      return;
+    }
+
+    setStaffList((prev) => prev.filter((staff) => staff.id !== pendingStaffDelete.id));
+    setPendingStaffDelete(null);
   };
 
   const handleDeleteLog = async (id: string) => {
@@ -501,6 +522,22 @@ export function WorklogPage() {
           onAddStaff={handleAddStaff}
           onEditStaff={handleEditStaff}
           onDeleteStaff={handleDeleteStaff}
+        />
+        <ConfirmDialog
+          open={pendingStaffDelete !== null}
+          title="确认删除员工"
+          message={
+            pendingStaffDelete
+              ? `员工 “${pendingStaffDelete.name}” 关联了 ${pendingStaffDelete.relatedWorklogCount} 条 worklog 记录。\n删除后这些历史 worklog 不会受影响，但该员工将不再出现在员工列表和选择项中。\n是否继续删除？`
+              : ""
+          }
+          confirmLabel="继续删除"
+          isProcessing={isDeletingStaff}
+          onConfirm={handleConfirmDeleteStaff}
+          onClose={() => {
+            if (isDeletingStaff) return;
+            setPendingStaffDelete(null);
+          }}
         />
 
         <div className="flex min-h-0 flex-1 flex-col">
