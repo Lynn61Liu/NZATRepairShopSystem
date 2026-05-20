@@ -4,6 +4,9 @@ namespace CarjamImporter.Playwright;
 
 public sealed class CarjamBrowser
 {
+    public const string VehicleReadyScript =
+        "() => window.report && window.report.idh && window.report.idh.vehicle && (window.report.idh.vehicle.plate || window.report.idh.vehicle.vin)";
+
     /// <summary>
     /// Fetches the HTML content of the Carjam report page for the given plate.
     /// </summary>
@@ -37,7 +40,7 @@ public sealed class CarjamBrowser
         });
 
         await page.WaitForFunctionAsync(
-            "() => window.report && window.report.idh && window.report.idh.vehicle && window.report.idh.vehicle.plate",
+            VehicleReadyScript,
             null,
             new PageWaitForFunctionOptions { Timeout = timeoutMs }
         );

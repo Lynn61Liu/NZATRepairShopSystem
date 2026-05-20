@@ -549,10 +549,8 @@ export function NewJobPage() {
 
     try {
      
-      const res = await fetch(withApiBase("/api/carjam/import"), {
+      const res = await fetch(withApiBase(`/api/carjam/import?plate=${encodeURIComponent(plate)}`), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plate }),
       });
 
       const data = await res.json().catch(() => null);

@@ -837,10 +837,8 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
       return { success: false, message: "缺少车牌信息" };
     }
 
-    const importRes = await requestJson<any>("/api/carjam/import", {
+    const importRes = await requestJson<any>(`/api/carjam/import?plate=${encodeURIComponent(plate)}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plate }),
     });
     if (!importRes.ok) {
       toast.error(importRes.error || "抓取失败，请稍后重试");

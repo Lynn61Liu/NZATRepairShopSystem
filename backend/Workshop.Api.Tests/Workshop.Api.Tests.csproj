@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Workshop.Api\Workshop.Api.csproj" />
+    <ProjectReference Include="..\CarjamImporter\CarjamImporter.csproj" />
   </ItemGroup>
 
 </Project>
