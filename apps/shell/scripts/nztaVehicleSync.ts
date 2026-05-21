@@ -1,11 +1,8 @@
-import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import { chromium, type BrowserContext, type Page } from "playwright";
-
-const execFileAsync = promisify(execFile);
+import { Client, type ClientConfig } from "pg";
 
 const TARGET_PAGE = "https://transact.nzta.govt.nz/v2/Check-Expiry";
 const API_PATH = "/v2/api/vehicles/expiry/details";
@@ -43,6 +40,8 @@ type PendingVehicle = {
   id: number;
   plate: string;
 };
+
+type DatabaseConfig = ClientConfig;
 
 type VehiclePayload = {
   latestInspectionDetails?: {
@@ -110,7 +109,7 @@ async function logAndSleep(label: string, range: readonly [number, number]): Pro
 
 async function processVehicleLookup(
   page: Page,
-  connectionString: string,
+  dbConfig: DatabaseConfig,
   vehicle: PendingVehicle,
 ): Promise<LookupUpdateResult> {
   const payload = await fetchVehicleDetails(page, vehicle.plate);
@@ -119,7 +118,7 @@ async function processVehicleLookup(
     SKIPPED_PLATE_PATTERNS.push(vehicle.plate);
     log(`Added plate ${vehicle.plate} to SKIPPED_PLATE_PATTERNS after lookup returned no valid WOF/licence/RUC data.`);
   }
-  const rows = await updateVehicle(connectionString, vehicle, resolved);
+  const rows = await updateVehicle(dbConfig, vehicle, resolved);
   return { resolved, rows };
 }
 
@@ -138,7 +137,7 @@ async function createBrowserContext(): Promise<BrowserContext> {
 }
 
 async function main() {
-  const connectionString = await resolveConnectionString();
+  const dbConfig = await resolveConnectionString();
   log(`Using database connection from config/env.`);
   log(`Writing logs to ${LOG_FILE_PATH}`);
   log(`Using persistent browser profile at ${BROWSER_PROFILE_DIR}`);
@@ -152,7 +151,7 @@ async function main() {
 
   try {
     while (true) {
-      const vehicle = await loadNextPendingVehicle(connectionString);
+      const vehicle = await loadNextPendingVehicle(dbConfig);
       if (!vehicle ) {
         log("No pending vehicle found. Stopping.or ");
         break;
@@ -169,7 +168,7 @@ async function main() {
 
       const page = await context.newPage();
       try {
-        const { resolved, rows } = await processVehicleLookup(page, connectionString, vehicle);
+        const { resolved, rows } = await processVehicleLookup(page, dbConfig, vehicle);
 
         processedCount += 1;
         updatedCount += rows;
@@ -204,7 +203,7 @@ async function main() {
           const retryPage = await context.newPage();
           try {
             log(`Retrying vehicle ${vehicle.id} plate ${vehicle.plate} with a fresh page after cooldown.`);
-            const { resolved, rows } = await processVehicleLookup(retryPage, connectionString, vehicle);
+            const { resolved, rows } = await processVehicleLookup(retryPage, dbConfig, vehicle);
 
             processedCount += 1;
             updatedCount += rows;
@@ -263,10 +262,10 @@ async function main() {
   }
 }
 
-async function resolveConnectionString(): Promise<string> {
+async function resolveConnectionString(): Promise<DatabaseConfig> {
   const envConnection = process.env.DB_CONN_STRING || process.env.ConnectionStrings__Default;
   if (envConnection?.trim()) {
-    return toPsqlConnectionString(envConnection.trim());
+    return toDatabaseConfig(envConnection.trim());
   }
 
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -281,7 +280,7 @@ async function resolveConnectionString(): Promise<string> {
       const parsed = JSON.parse(text) as { ConnectionStrings?: { Default?: string } };
       const connection = parsed.ConnectionStrings?.Default;
       if (connection?.trim()) {
-        return toPsqlConnectionString(connection.trim());
+        return toDatabaseConfig(connection.trim());
       }
     } catch {
       continue;
@@ -291,7 +290,7 @@ async function resolveConnectionString(): Promise<string> {
   throw new Error("Could not resolve database connection string from env or appsettings.");
 }
 
-function toPsqlConnectionString(connectionString: string): string {
+function toDatabaseConfig(connectionString: string): DatabaseConfig {
   const pairs = connectionString
     .split(";")
     .map((part) => part.trim())
@@ -303,18 +302,18 @@ function toPsqlConnectionString(connectionString: string): string {
     .filter((entry): entry is [string, string] => entry !== null);
 
   const values = new Map(pairs);
-  const mapped = [
-    ["host", values.get("host")],
-    ["port", values.get("port")],
-    ["dbname", values.get("database") ?? values.get("dbname")],
-    ["user", values.get("username") ?? values.get("user")],
-    ["password", values.get("password")],
-  ].filter(([, value]) => Boolean(value));
+  const port = values.get("port");
 
-  return mapped.map(([key, value]) => `${key}=${value}`).join(" ");
+  return {
+    host: values.get("host"),
+    port: port ? Number(port) : undefined,
+    database: values.get("database") ?? values.get("dbname"),
+    user: values.get("username") ?? values.get("user"),
+    password: values.get("password"),
+  };
 }
 
-async function loadNextPendingVehicle(connectionString: string): Promise<PendingVehicle | null> {
+async function loadNextPendingVehicle(dbConfig: DatabaseConfig): Promise<PendingVehicle | null> {
   const sql = `
     select id, plate
     from vehicles
@@ -329,16 +328,7 @@ async function loadNextPendingVehicle(connectionString: string): Promise<Pending
     limit ${CANDIDATE_BATCH_SIZE};
   `;
 
-  const output = await runPsql(connectionString, sql);
-  const candidates = output
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [idText, plate] = line.split("\t");
-      return { id: Number(idText), plate };
-    })
-    .filter((row) => Number.isFinite(row.id) && row.plate);
+  const candidates = await queryRows<PendingVehicle>(dbConfig, sql);
 
   return candidates.find((candidate) => !attemptedIds.has(candidate.id)) ?? null;
 }
@@ -560,7 +550,7 @@ async function waitForRecaptchaReady(
       { timeout: timeoutMs, polling: RECAPTCHA_READY_POLL_MS },
     );
 
-    const tokenPreview = await token.jsonValue<string | null>();
+    const tokenPreview = await token.jsonValue() as string | null;
     log(`reCAPTCHA token detected for ${plate} (length=${tokenPreview?.length ?? 0}).`);
     return true;
   } catch {
@@ -645,7 +635,7 @@ function hasResolvedVehicleInfo(data: ResolvedData): boolean {
   return Boolean(data.wofExpiry || data.licenceExpiry || data.rucLicenceNumber > 0 || data.rucEndDistance > 0);
 }
 
-async function updateVehicle(connectionString: string, vehicle: PendingVehicle, data: ResolvedData): Promise<number> {
+async function updateVehicle(dbConfig: DatabaseConfig, vehicle: PendingVehicle, data: ResolvedData): Promise<number> {
   const sql = `
     update vehicles
     set
@@ -658,29 +648,29 @@ async function updateVehicle(connectionString: string, vehicle: PendingVehicle, 
       and plate = ${sqlTextLiteral(vehicle.plate)};
   `;
 
-  const output = await runPsql(connectionString, sql);
-  const match = output.match(/UPDATE\s+(\d+)/i);
-  return match ? Number(match[1]) : 0;
+  return executeStatement(dbConfig, sql);
 }
 
-async function runPsql(connectionString: string, sql: string): Promise<string> {
-  const { stdout, stderr } = await execFileAsync("/Library/PostgreSQL/14/bin/psql", [
-    connectionString,
-    "-At",
-    "-F",
-    "\t",
-    "-c",
-    sql,
-  ]);
-
-  if (stderr.trim()) {
-    const normalized = stderr.trim();
-    if (!/^UPDATE \d+$/i.test(normalized) && !/^INSERT \d+ \d+$/i.test(normalized)) {
-      log(`psql stderr: ${normalized}`);
-    }
+async function queryRows<T extends Record<string, unknown>>(dbConfig: DatabaseConfig, sql: string): Promise<T[]> {
+  const client = new Client(dbConfig);
+  await client.connect();
+  try {
+    const result = await client.query(sql);
+    return result.rows as T[];
+  } finally {
+    await client.end();
   }
+}
 
-  return `${stdout}\n${stderr}`.trim();
+async function executeStatement(dbConfig: DatabaseConfig, sql: string): Promise<number> {
+  const client = new Client(dbConfig);
+  await client.connect();
+  try {
+    const result = await client.query(sql);
+    return result.rowCount ?? 0;
+  } finally {
+    await client.end();
+  }
 }
 
 function sqlTextLiteral(value: string): string {
