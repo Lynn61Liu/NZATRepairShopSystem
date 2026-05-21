@@ -1,9 +1,10 @@
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 
 RUN corepack enable
+RUN corepack prepare pnpm@11.2.2 --activate
 
-# 你的 build context 就是 apps/shell，所以直接 COPY 当前目录文件
+
 COPY package.json ./
 RUN pnpm install
 
