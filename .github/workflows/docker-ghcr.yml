@@ -42,8 +42,7 @@ jobs:
       - name: Build & Push Web
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: ./apps/shell/Dockerfile
+          context: ./apps/shell
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ghcr.io/lynn61liu/nzat-web:latest

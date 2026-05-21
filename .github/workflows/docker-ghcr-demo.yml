@@ -39,7 +39,7 @@ jobs:
       - name: Build & Push Demo Web
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./apps/shell
           file: ./apps/shell/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
