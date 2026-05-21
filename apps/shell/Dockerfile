@@ -1,17 +1,19 @@
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 
 RUN corepack enable
+RUN corepack prepare pnpm@11.2.2 --activate
 
-# 你的 build context 就是 apps/shell，所以直接 COPY 当前目录文件
-COPY package.json ./
-RUN pnpm install
+# Build from repo root so pnpm workspace files are available.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/shell/package.json ./apps/shell/package.json
+RUN pnpm install --filter ./apps/shell... --frozen-lockfile
 
-COPY . .
+COPY apps/shell ./apps/shell
 ARG GIT_SHA=dev
-RUN pnpm build && echo "$GIT_SHA" > /app/dist/version.txt
+RUN pnpm --filter ./apps/shell build && echo "$GIT_SHA" > /app/apps/shell/dist/version.txt
 
 FROM nginx:alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/dist /usr/share/nginx/html
+COPY apps/shell/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/apps/shell/dist /usr/share/nginx/html
 EXPOSE 80
