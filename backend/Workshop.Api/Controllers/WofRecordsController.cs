@@ -52,6 +52,7 @@ public class WofRecordsController : ControllerBase
     public async Task<IActionResult> ImportWofRecords(long id, CancellationToken ct)
     {
         var result = await _wofService.ImportWofRecords(id, ct);
+        await InvalidateWofCachesAsync(id, result, ct);
         return ToActionResult(result);
     }
 

@@ -1,0 +1,181 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e7]: NZAT
+      - link "快速新建工单" [ref=e8] [cursor=pointer]:
+        - /url: /jobs/new
+        - img [ref=e9]
+        - text: 快速新建工单
+      - navigation [ref=e10]:
+        - generic [ref=e11]:
+          - link "Dashboard" [ref=e12] [cursor=pointer]:
+            - /url: /
+          - link "Jobs" [ref=e13] [cursor=pointer]:
+            - /url: /jobs
+          - link "PNP Board 59" [ref=e43] [cursor=pointer]:
+            - /url: /paint-board
+            - generic [ref=e15]:
+              - generic [ref=e16]: PNP Board
+              - generic [ref=e44]: "59"
+          - link "Worklog" [ref=e17] [cursor=pointer]:
+            - /url: /worklog
+            - generic [ref=e19]: Worklog
+          - link "Part Flow" [ref=e20] [cursor=pointer]:
+            - /url: /parts-flow
+          - link "Invoice Payment" [ref=e21] [cursor=pointer]:
+            - /url: /invoice
+          - link "WOF 排班表 22" [ref=e45] [cursor=pointer]:
+            - /url: /wof-schedule
+            - generic [ref=e23]:
+              - generic [ref=e24]: WOF 排班表
+              - generic [ref=e46]: "22"
+          - link "PO Ops Preview" [ref=e25] [cursor=pointer]:
+            - /url: /po-dashboard-preview
+            - generic [ref=e27]: PO Ops Preview
+          - link "Internal Shop" [ref=e28] [cursor=pointer]:
+            - /url: /shop
+          - link "Procurement Admin" [ref=e29] [cursor=pointer]:
+            - /url: /procurement-admin
+        - generic [ref=e30]:
+          - generic [ref=e31]: Settings
+          - generic [ref=e32]:
+            - link "Customer" [ref=e33] [cursor=pointer]:
+              - /url: /customers
+            - link "Tag" [ref=e34] [cursor=pointer]:
+              - /url: /tags
+            - link "WOF Fails" [ref=e35] [cursor=pointer]:
+              - /url: /wof-fails
+            - link "Service Settings" [ref=e36] [cursor=pointer]:
+              - /url: /service-settings
+            - link "Xero Item Code" [ref=e37] [cursor=pointer]:
+              - /url: /xero-item-codes
+            - link "Account Switch" [ref=e38] [cursor=pointer]:
+              - /url: /integrations
+      - generic [ref=e39]: v0.1 • 2026
+  - main [ref=e40]:
+    - generic [ref=e47]:
+      - generic [ref=e48]:
+        - generic [ref=e50]:
+          - generic [ref=e51]:
+            - generic [ref=e52]:
+              - heading "Job Detail" [level=1] [ref=e53]
+              - paragraph [ref=e54]: JOB-2026-05-21-00NC
+            - generic [ref=e55]:
+              - generic [ref=e56]: In Shop
+              - button "Add tags" [ref=e58] [cursor=pointer]:
+                - img [ref=e59]
+            - generic [ref=e60]:
+              - button "归档" [ref=e61] [cursor=pointer]:
+                - img [ref=e62]
+                - text: 归档
+              - button "删除Job" [ref=e65] [cursor=pointer]:
+                - img [ref=e66]
+                - text: 删除Job
+          - generic [ref=e69]:
+            - generic [ref=e70]:
+              - generic [ref=e71]: 工单备注
+              - generic [ref=e72]:
+                - generic [ref=e73]: WOF
+                - button "编辑备注" [ref=e74] [cursor=pointer]:
+                  - img [ref=e75]
+            - generic [ref=e78]:
+              - button "喷漆打印" [ref=e79] [cursor=pointer]
+              - button "机修打印" [ref=e80] [cursor=pointer]
+        - generic [ref=e82]:
+          - generic [ref=e83]:
+            - img [ref=e86]
+            - generic [ref=e90]:
+              - paragraph [ref=e91]: Vehicle
+              - paragraph [ref=e92]:
+                - text: L1DAN
+                - generic [ref=e93]:
+                  - link [ref=e94] [cursor=pointer]:
+                    - /url: https://www.carjam.co.nz/car/?plate=L1DAN
+                    - img [ref=e95]
+                  - button "刷新车辆信息" [ref=e98] [cursor=pointer]:
+                    - img [ref=e99]
+                  - button "编辑车辆信息" [ref=e104] [cursor=pointer]:
+                    - img [ref=e105]
+              - paragraph [ref=e108]: 2016 - MERCEDES-BENZ E200 - Petrol
+              - paragraph [ref=e109]: WDD2130422A047308
+              - paragraph [ref=e110]: "NZ First Registration: 2024-05-10"
+              - generic [ref=e111]:
+                - generic [ref=e112]:
+                  - generic [ref=e113]: NZTA Sync
+                  - button "同步 NZTA 车辆到期信息" [ref=e114] [cursor=pointer]:
+                    - img [ref=e115]
+                - generic [ref=e120]:
+                  - paragraph [ref=e121]: "WOF Expiry:"
+                  - paragraph [ref=e122]: "Licence Expiry:"
+                  - paragraph [ref=e123]: "RUC Licence Number:"
+                  - paragraph [ref=e124]: "RUC End Distance:"
+          - generic [ref=e125]:
+            - img [ref=e128]
+            - generic [ref=e131]:
+              - paragraph [ref=e132]:
+                - text: Customer (Personal)
+                - button "编辑客户信息" [ref=e133] [cursor=pointer]:
+                  - img [ref=e134]
+              - paragraph [ref=e137]: Lidan Zhang
+              - generic [ref=e138]:
+                - generic [ref=e139]:
+                  - img [ref=e140]
+                  - generic [ref=e142]: "02102686297"
+                - generic [ref=e143]:
+                  - img [ref=e144]
+                  - generic [ref=e147]: 2298593115@qq.com
+        - generic [ref=e148]:
+          - generic [ref=e149]:
+            - tablist [ref=e151]:
+              - tab "WOF" [selected] [ref=e152] [cursor=pointer]
+              - tab "机修" [ref=e153] [cursor=pointer]
+              - tab "喷漆" [ref=e154] [cursor=pointer]
+              - tab "工时" [ref=e155] [cursor=pointer]
+              - tab "Log" [ref=e156] [cursor=pointer]
+              - tab "Invoice" [ref=e157] [cursor=pointer]
+            - button "添加配件" [ref=e158] [cursor=pointer]:
+              - img [ref=e159]
+              - text: 添加配件
+          - generic [ref=e161]:
+            - generic [ref=e162]:
+              - generic [ref=e166]:
+                - generic [ref=e167]: WOF 记录
+                - generic [ref=e168]: 已录入
+              - generic [ref=e170]:
+                - button "表格导入" [ref=e171] [cursor=pointer]:
+                  - img [ref=e172]
+                  - text: 表格导入
+                - button "手工添加" [ref=e177] [cursor=pointer]
+                - button "Open NZTA" [ref=e178] [cursor=pointer]:
+                  - img [ref=e179]
+                  - text: Open NZTA
+                - button "删除WOF服务" [ref=e183] [cursor=pointer]:
+                  - img [ref=e184]
+                  - text: 删除WOF服务
+            - generic [ref=e191]:
+              - generic [ref=e192]:
+                - generic [ref=e193]: 2026-05-19
+                - generic [ref=e194]: Pass
+                - button "打印" [ref=e195] [cursor=pointer]
+                - button "修改" [ref=e196] [cursor=pointer]
+                - button "删除" [ref=e197] [cursor=pointer]:
+                  - img [ref=e198]
+                  - text: 删除
+              - generic [ref=e201]:
+                - generic [ref=e202]: "Odometer: 46779"
+                - generic [ref=e203]: "Auth Code: 76802"
+                - generic [ref=e204]: "Check Sheet: CS26-7"
+                - generic [ref=e205]: "CS No: 6017464"
+                - generic [ref=e206]: "New WOF Date: 2027-05-19"
+                - generic [ref=e207]: "WOF Label: CS26-16"
+                - generic [ref=e208]: "Label No: HL295724"
+                - generic [ref=e209]: "Source File: google:1qxh_TACfIQb2-1VFlgNYdNKUhs93Ke169aLP10MsGDY"
+                - generic [ref=e210]: "Source Row: 488"
+                - generic [ref=e211]: "Imported At: 2026-05-21 02:25"
+                - generic [ref=e212]: "Updated At: 2026-05-21 02:25"
+              - generic [ref=e213]:
+                - generic [ref=e214]: "Previous Expiry Date: 2026-05-19"
+                - generic [ref=e215]: "Note:"
+      - complementary [ref=e216]:
+        - button "Toggle sidebar" [ref=e217] [cursor=pointer]: ">"
+        - generic [ref=e218]: Info

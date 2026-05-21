@@ -1,0 +1,56 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e7]: NZAT
+      - link "快速新建工单" [ref=e8] [cursor=pointer]:
+        - /url: /jobs/new
+        - img [ref=e9]
+        - text: 快速新建工单
+      - navigation [ref=e10]:
+        - generic [ref=e11]:
+          - link "Dashboard" [ref=e12] [cursor=pointer]:
+            - /url: /
+          - link "Jobs" [ref=e13] [cursor=pointer]:
+            - /url: /jobs
+          - link "PNP Board 59" [ref=e43] [cursor=pointer]:
+            - /url: /paint-board
+            - generic [ref=e15]:
+              - generic [ref=e16]: PNP Board
+              - generic [ref=e44]: "59"
+          - link "Worklog" [ref=e17] [cursor=pointer]:
+            - /url: /worklog
+            - generic [ref=e19]: Worklog
+          - link "Part Flow" [ref=e20] [cursor=pointer]:
+            - /url: /parts-flow
+          - link "Invoice Payment" [ref=e21] [cursor=pointer]:
+            - /url: /invoice
+          - link "WOF 排班表 22" [ref=e45] [cursor=pointer]:
+            - /url: /wof-schedule
+            - generic [ref=e23]:
+              - generic [ref=e24]: WOF 排班表
+              - generic [ref=e46]: "22"
+          - link "PO Ops Preview" [ref=e25] [cursor=pointer]:
+            - /url: /po-dashboard-preview
+            - generic [ref=e27]: PO Ops Preview
+          - link "Internal Shop" [ref=e28] [cursor=pointer]:
+            - /url: /shop
+          - link "Procurement Admin" [ref=e29] [cursor=pointer]:
+            - /url: /procurement-admin
+        - generic [ref=e30]:
+          - generic [ref=e31]: Settings
+          - generic [ref=e32]:
+            - link "Customer" [ref=e33] [cursor=pointer]:
+              - /url: /customers
+            - link "Tag" [ref=e34] [cursor=pointer]:
+              - /url: /tags
+            - link "WOF Fails" [ref=e35] [cursor=pointer]:
+              - /url: /wof-fails
+            - link "Service Settings" [ref=e36] [cursor=pointer]:
+              - /url: /service-settings
+            - link "Xero Item Code" [ref=e37] [cursor=pointer]:
+              - /url: /xero-item-codes
+            - link "Account Switch" [ref=e38] [cursor=pointer]:
+              - /url: /integrations
+      - generic [ref=e39]: v0.1 • 2026
+  - main [ref=e40]:
+    - generic [ref=e42]: 加载中...
