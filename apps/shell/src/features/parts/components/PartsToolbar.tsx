@@ -16,7 +16,7 @@ export function PartsToolbar({ isLoading, creating, onAdd, mechCreating, onAddMe
       {onAdd ? (
         <Button className="flex items-center gap-2" onClick={onAdd} disabled={isLoading}>
           <Plus className="w-4 h-4" />
-          {creating ? "取消添加" : "添加配件"}
+          {creating ? "Cancel Add" : "Add Part"}
         </Button>
       ) : null}
       {onAddMech ? (
@@ -27,7 +27,7 @@ export function PartsToolbar({ isLoading, creating, onAdd, mechCreating, onAddMe
           disabled={isLoading}
         >
           <Plus className="w-4 h-4" />
-          {mechCreating ? "取消机修项目" : "添加机修项目"}
+          {mechCreating ? "Cancel Mech Item" : "Add Mech Item"}
         </Button>
       ) : null}
     </ToolbarRow>

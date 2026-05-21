@@ -130,7 +130,7 @@ export function SummaryCard({
         );
       } catch {
         if (!cancelled) {
-          setCustomerSaveError("加载商户列表失败");
+          setCustomerSaveError("Failed to load customer list");
         }
       }
     };
@@ -149,12 +149,12 @@ export function SummaryCard({
     try {
       const result = await onRefreshVehicle();
       if (result.success) {
-        setRefreshMessage(result.message || "抓取成功");
+        setRefreshMessage(result.message || "Fetched successfully");
       } else {
-        setRefreshError(result.message || "抓取失败，请稍后重试");
+        setRefreshError(result.message || "Fetch failed, please try again later");
       }
     } catch (err) {
-      setRefreshError(err instanceof Error ? err.message : "抓取失败，请稍后重试");
+      setRefreshError(err instanceof Error ? err.message : "Fetch failed, please try again later");
     } finally {
       setRefreshing(false);
     }
@@ -183,9 +183,9 @@ export function SummaryCard({
     try {
       const result = await onSyncVehicleNzta();
       setVehicleNztaSyncSteps(resolveVehicleNztaSyncDialogSteps(result.steps, result.success));
-      setVehicleNztaSyncError(result.success ? null : result.message || "NZTA 同步失败");
+      setVehicleNztaSyncError(result.success ? null : result.message || "NZTA sync failed");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "NZTA 同步失败";
+      const message = err instanceof Error ? err.message : "NZTA sync failed";
       setVehicleNztaSyncSteps(resolveVehicleNztaSyncDialogSteps(undefined, false));
       setVehicleNztaSyncError(message);
     } finally {
@@ -210,7 +210,7 @@ export function SummaryCard({
     const yearValue = vehicleForm.year.trim();
     const parsedYear = yearValue ? Number(yearValue) : null;
     if (yearValue && !Number.isFinite(parsedYear)) {
-      setSaveError("年份格式不正确");
+      setSaveError("Invalid year format");
       return;
     }
 
@@ -227,7 +227,7 @@ export function SummaryCard({
     if (res.success) {
       setEditingVehicle(false);
     } else {
-      setSaveError(res.message || "保存失败");
+      setSaveError(res.message || "Save failed");
     }
   };
 
@@ -260,11 +260,11 @@ export function SummaryCard({
   const handleSaveCustomer = async () => {
     if (!onSaveCustomer || savingCustomer) return;
     if (customer.type === "Business" && !selectedBusinessCustomerId) {
-      setCustomerSaveError("请选择商户");
+      setCustomerSaveError("Please select a customer");
       return;
     }
     if (customer.type === "Personal" && !customerForm.name.trim()) {
-      setCustomerSaveError("姓名不能为空");
+      setCustomerSaveError("Name cannot be empty");
       return;
     }
 
@@ -294,18 +294,18 @@ export function SummaryCard({
           : {
               replacement: {
                 status: "failed",
-                message: result.message || "商户关联更新失败。",
+                message: result.message || "Failed to update customer link.",
               },
               invoice: {
                 status: "pending",
-                message: "未开始更新 invoice Contact Name。",
+                message: "Invoice Contact Name update did not start.",
               },
             }
       );
-      setCustomerUpdateProgressError(result.success ? null : result.message || "保存失败");
+      setCustomerUpdateProgressError(result.success ? null : result.message || "Save failed");
     }
     if (!result.success) {
-      setCustomerSaveError(result.message || "保存失败");
+      setCustomerSaveError(result.message || "Save failed");
       return;
     }
     setEditingCustomer(false);
@@ -344,7 +344,7 @@ export function SummaryCard({
                   type="button"
                   className="text-[var(--ds-ghost)] hover:text-[var(--ds-text)]"
                   onClick={handleRefreshVehicle}
-                  aria-label="刷新车辆信息"
+                  aria-label="Refresh vehicle details"
                   disabled={refreshing || !onRefreshVehicle}
                 >
                   <RefreshCw className={["w-4 h-4", refreshing ? "animate-spin" : ""].join(" ")} />
@@ -353,7 +353,7 @@ export function SummaryCard({
                   type="button"
                   className="text-[var(--ds-ghost)] hover:text-[var(--ds-text)]"
                   onClick={openEditVehicle}
-                  aria-label="编辑车辆信息"
+                  aria-label="Edit vehicle details"
                   disabled={!onSaveVehicle}
                 >
                   <Pencil className="w-4 h-4" />
@@ -377,7 +377,7 @@ export function SummaryCard({
                   type="button"
                   className="text-[var(--ds-ghost)] hover:text-[var(--ds-text)] disabled:opacity-50"
                   onClick={openVehicleNztaSync}
-                  aria-label="同步 NZTA 车辆到期信息"
+                  aria-label="Sync NZTA vehicle expiry details"
                   disabled={!onSyncVehicleNzta}
                 >
                   <RefreshCw className="h-4 w-4" />
@@ -411,7 +411,7 @@ export function SummaryCard({
                 type="button"
                 className="ml-2 text-[var(--ds-ghost)] hover:text-[var(--ds-text)]"
                 onClick={openEditCustomer}
-                aria-label="编辑客户信息"
+                aria-label="Edit customer details"
                 disabled={!onSaveCustomer}
               >
                 <Pencil className="inline h-4 w-4" />
@@ -440,10 +440,10 @@ export function SummaryCard({
       {editingVehicle ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-lg rounded-[12px] bg-white p-5 shadow-xl">
-            <div className="text-lg font-semibold text-[var(--ds-text)]">编辑车辆信息</div>
+            <div className="text-lg font-semibold text-[var(--ds-text)]">Edit Vehicle Details</div>
             <div className="mt-4 grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-xs text-[var(--ds-muted)]">年份</label>
+                <label className="mb-1 block text-xs text-[var(--ds-muted)]">Year</label>
                 <Input
                   type="number"
                   value={vehicleForm.year}
@@ -451,14 +451,14 @@ export function SummaryCard({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-[var(--ds-muted)]">品牌</label>
+                <label className="mb-1 block text-xs text-[var(--ds-muted)]">Make</label>
                 <Input
                   value={vehicleForm.make}
                   onChange={(event) => setVehicleForm((prev) => ({ ...prev, make: event.target.value }))}
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-[var(--ds-muted)]">燃油类型</label>
+                <label className="mb-1 block text-xs text-[var(--ds-muted)]">Fuel Type</label>
                 <Input
                   value={vehicleForm.fuelType}
                   onChange={(event) => setVehicleForm((prev) => ({ ...prev, fuelType: event.target.value }))}
@@ -485,10 +485,10 @@ export function SummaryCard({
             {saveError ? <div className="mt-2 text-xs text-red-600">{saveError}</div> : null}
             <div className="mt-4 flex justify-end gap-2">
               <Button onClick={() => setEditingVehicle(false)} disabled={savingVehicle}>
-                取消
+                Cancel
               </Button>
               <Button variant="primary" onClick={handleSaveVehicle} disabled={savingVehicle}>
-                保存
+                Save
               </Button>
             </div>
           </div>
@@ -497,16 +497,16 @@ export function SummaryCard({
       {editingCustomer ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-lg rounded-[12px] bg-white p-5 shadow-xl">
-            <div className="text-lg font-semibold text-[var(--ds-text)]">编辑客户信息</div>
+            <div className="text-lg font-semibold text-[var(--ds-text)]">Edit Customer Details</div>
             <div className="mt-4 space-y-3">
               {customer.type === "Business" ? (
                 <div>
-                  <label className="mb-1 block text-xs text-[var(--ds-muted)]">商户</label>
+                  <label className="mb-1 block text-xs text-[var(--ds-muted)]">Customer</label>
                   <Select
                     value={selectedBusinessCustomerId}
                     onChange={(event) => setSelectedBusinessCustomerId(event.target.value)}
                   >
-                    <option value="">请选择商户</option>
+                    <option value="">Please select a customer</option>
                     {businessCustomers.map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.label}
@@ -518,7 +518,7 @@ export function SummaryCard({
               ) : (
                 <>
                   <div>
-                    <label className="mb-1 block text-xs text-[var(--ds-muted)]">姓名</label>
+                    <label className="mb-1 block text-xs text-[var(--ds-muted)]">Name</label>
                     <Input
                       value={customerForm.name}
                       onChange={(event) => setCustomerForm((prev) => ({ ...prev, name: event.target.value }))}
@@ -526,14 +526,14 @@ export function SummaryCard({
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="mb-1 block text-xs text-[var(--ds-muted)]">电话</label>
+                      <label className="mb-1 block text-xs text-[var(--ds-muted)]">Phone</label>
                       <Input
                         value={customerForm.phone}
                         onChange={(event) => setCustomerForm((prev) => ({ ...prev, phone: event.target.value }))}
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs text-[var(--ds-muted)]">邮箱</label>
+                      <label className="mb-1 block text-xs text-[var(--ds-muted)]">Email</label>
                       <Input
                         value={customerForm.email}
                         onChange={(event) => setCustomerForm((prev) => ({ ...prev, email: event.target.value }))}
@@ -541,14 +541,14 @@ export function SummaryCard({
                     </div>
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs text-[var(--ds-muted)]">地址</label>
+                    <label className="mb-1 block text-xs text-[var(--ds-muted)]">Address</label>
                     <Input
                       value={customerForm.address}
                       onChange={(event) => setCustomerForm((prev) => ({ ...prev, address: event.target.value }))}
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs text-[var(--ds-muted)]">备注</label>
+                    <label className="mb-1 block text-xs text-[var(--ds-muted)]">Notes</label>
                     <Textarea
                       rows={4}
                       value={customerForm.notes}
@@ -561,10 +561,10 @@ export function SummaryCard({
             {customerSaveError ? <div className="mt-2 text-xs text-red-600">{customerSaveError}</div> : null}
             <div className="mt-4 flex justify-end gap-2">
               <Button onClick={cancelEditCustomer} disabled={savingCustomer}>
-                取消修改
+                Cancel
               </Button>
               <Button variant="primary" onClick={handleSaveCustomer} disabled={savingCustomer}>
-                确认修改
+                Confirm Changes
               </Button>
             </div>
           </div>

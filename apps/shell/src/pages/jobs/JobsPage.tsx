@@ -117,7 +117,7 @@ export function JobsPage() {
       const res = await fetch(withApiBase(`/api/jobs${query ? `?${query}` : ""}`));
       const data: JobsListResponse | any[] | null = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error((data as any)?.error || "加载工单失败");
+        throw new Error((data as any)?.error || "Failed to load jobs");
       }
 
       const rows = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
@@ -140,7 +140,7 @@ export function JobsPage() {
         setAllRows([]);
         setTotalItems(0);
         setTotalPages(1);
-        const message = err instanceof Error ? err.message : "加载工单失败";
+        const message = err instanceof Error ? err.message : "Failed to load jobs";
         setLoadError(message);
         toast.error(message);
       }
@@ -165,7 +165,7 @@ export function JobsPage() {
         const res = await fetch(withApiBase("/api/tags"));
         const data = await res.json().catch(() => null);
         if (!res.ok) {
-          throw new Error(data?.error || "加载标签失败");
+          throw new Error(data?.error || "Failed to load tags");
         }
         const tags = Array.isArray(data) ? data : [];
         if (!cancelled) {
@@ -214,8 +214,8 @@ export function JobsPage() {
 
       const res = await updateJobTags(id, [], requestedTags);
       if (!res.ok) {
-        setLoadError(res.error || "更新加急标签失败");
-        toast.error(res.error || "更新加急标签失败");
+        setLoadError(res.error || "Failed to update urgent tag");
+        toast.error(res.error || "Failed to update urgent tag");
         return;
       }
 
@@ -239,7 +239,7 @@ export function JobsPage() {
             : item
         )
       );
-      toast.success(nextUrgent ? "已标记为加急" : "已取消加急");
+      toast.success(nextUrgent ? "Marked as urgent" : "Urgent flag removed");
       void loadJobs();
     },
     [allRows, loadJobs, setAllRows, toast]
@@ -249,8 +249,8 @@ export function JobsPage() {
     async (id: string) => {
       const res = await updateJobStatus(id, "Archived");
       if (!res.ok) {
-        setLoadError(res.error || "归档失败");
-        toast.error(res.error || "归档失败");
+        setLoadError(res.error || "Archive failed");
+        toast.error(res.error || "Archive failed");
         return;
       }
       setAllRows((prev) =>
@@ -263,7 +263,7 @@ export function JobsPage() {
             : item
         )
       );
-      toast.success("已归档");
+      toast.success("Archived");
       void loadJobs();
     },
     [loadJobs, setAllRows, toast]
@@ -284,7 +284,7 @@ export function JobsPage() {
           res.ok
         )
       );
-      setDeleteDialogError(res.ok ? null : res.error || "删除失败");
+      setDeleteDialogError(res.ok ? null : res.error || "Delete failed");
       setDeleteCompletedId(res.ok ? deleteTargetId : null);
     },
     [deleteTargetId]
@@ -314,8 +314,8 @@ export function JobsPage() {
     async (id: string, date: string) => {
       const res = await updateJobCreatedAt(id, date);
       if (!res.ok) {
-        setLoadError(res.error || "更新创建日期失败");
-        toast.error(res.error || "更新创建日期失败");
+        setLoadError(res.error || "Failed to update created date");
+        toast.error(res.error || "Failed to update created date");
         return false;
       }
       setAllRows((prev) =>
@@ -330,7 +330,7 @@ export function JobsPage() {
             : item
         )
       );
-      toast.success("创建日期已更新");
+      toast.success("Created date updated");
       void loadJobs();
       return true;
     },
@@ -341,8 +341,8 @@ export function JobsPage() {
     async (id: string, stageIndex: number) => {
       const res = await updatePaintStage(id, stageIndex);
       if (!res.ok) {
-        setLoadError(res.error || "更新喷漆状态失败");
-        toast.error(res.error || "更新喷漆状态失败");
+        setLoadError(res.error || "Failed to update paint status");
+        toast.error(res.error || "Failed to update paint status");
         return false;
       }
 
@@ -358,7 +358,7 @@ export function JobsPage() {
             : item
         )
       );
-      toast.success("喷漆状态已更新");
+      toast.success("Paint status updated");
       void loadJobs();
       return true;
     },
@@ -398,7 +398,7 @@ export function JobsPage() {
   );
 
   const { printById } = useJobSheetPrinter({
-    onPopupBlocked: () => toast.error("无法打开打印窗口，请允许弹窗"),
+    onPopupBlocked: () => toast.error("Unable to open the print window. Please allow pop-ups."),
     resolveById: resolveJobSheetData,
   });
 
@@ -425,7 +425,7 @@ export function JobsPage() {
         <h1 className="text-2xl font-semibold text-[rgba(0,0,0,0.72)]">Jobs</h1>
         {poUnreadSummary.totalUnreadReplies > 0 ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
-            待处理 PO 回复 {poUnreadSummary.totalUnreadReplies} 封，涉及 {poUnreadSummary.affectedJobs} 个工单
+            {poUnreadSummary.totalUnreadReplies} unread PO replies across {poUnreadSummary.affectedJobs} jobs
           </div>
         ) : null}
       </div>
@@ -446,9 +446,9 @@ export function JobsPage() {
 
       <Card className="overflow-hidden">
         {loading ? (
-          <div className="py-10 text-center text-sm text-[var(--ds-muted)]">加载中...</div>
+          <div className="py-10 text-center text-sm text-[var(--ds-muted)]">Loading...</div>
         ) : totalItems === 0 ? (
-          <EmptyState message="暂无工单" />
+          <EmptyState message="No jobs yet" />
         ) : (
           <>
             <JobsTable

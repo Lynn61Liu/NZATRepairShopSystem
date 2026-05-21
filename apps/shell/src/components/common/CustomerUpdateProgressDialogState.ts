@@ -19,11 +19,11 @@ export function createInitialCustomerUpdateSteps(): CustomerUpdateSteps {
   return {
     replacement: {
       status: "in_progress",
-      message: "正在更新 Job 的商户关联。",
+      message: "Updating the Job customer link.",
     },
     invoice: {
       status: "pending",
-      message: "等待更新 invoice Contact Name。",
+      message: "Waiting to update Invoice Contact Name.",
     },
   };
 }
@@ -57,14 +57,14 @@ function normalizeStatus(value: string | undefined, fallback: CustomerUpdateUiSt
 
 function defaultMessage(target: "replacement" | "invoice", status: CustomerUpdateUiStatus) {
   if (target === "replacement") {
-    if (status === "success") return "Job 的商户关联已更新。";
-    if (status === "failed") return "Job 的商户关联更新失败。";
-    if (status === "in_progress") return "正在更新 Job 的商户关联。";
-    return "等待更新 Job 的商户关联。";
+    if (status === "success") return "The Job customer link has been updated.";
+    if (status === "failed") return "Failed to update the Job customer link.";
+    if (status === "in_progress") return "Updating the Job customer link.";
+    return "Waiting to update the Job customer link.";
   }
 
-  if (status === "success") return "Invoice Contact Name 已更新。";
-  if (status === "failed") return "Invoice Contact Name 更新失败。";
-  if (status === "in_progress") return "正在更新 invoice Contact Name。";
-  return "等待更新 invoice Contact Name。";
+  if (status === "success") return "Invoice Contact Name has been updated.";
+  if (status === "failed") return "Failed to update Invoice Contact Name.";
+  if (status === "in_progress") return "Updating Invoice Contact Name.";
+  return "Waiting to update Invoice Contact Name.";
 }

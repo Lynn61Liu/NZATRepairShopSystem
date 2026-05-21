@@ -104,25 +104,25 @@ export function JobDetailPage() {
 
     const result = await deleteJob();
     setDeleteSteps(resolveDeleteJobDialogSteps(result.steps, result.success));
-    setDeleteModalError(result.success ? null : result.message || "删除失败");
+    setDeleteModalError(result.success ? null : result.message || "Delete failed");
     setDeleteSucceeded(result.success);
   };
 
   if (loading) {
-    return <div className="py-10 text-center text-sm text-[var(--ds-muted)]">加载中...</div>;
+    return <div className="py-10 text-center text-sm text-[var(--ds-muted)]">Loading...</div>;
   }
 
   if (loadError) {
     return (
       <div className="space-y-4">
         <Alert variant="error" description={loadError} onClose={() => setLoadError(null)} />
-        <EmptyState message="无法加载工单详情" />
+        <EmptyState message="Unable to load job details" />
       </div>
     );
   }
 
   if (!jobData) {
-    return <EmptyState message="暂无工单详情" />;
+    return <EmptyState message="No job details yet" />;
   }
 
   return (

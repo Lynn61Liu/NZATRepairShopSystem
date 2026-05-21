@@ -17,7 +17,7 @@ function StatusBadge({ status }: { status: VehicleNztaSyncUiStatus }) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
         <CheckCircle2 className="h-3.5 w-3.5" />
-        已完成
+        Completed
       </span>
     );
   }
@@ -26,7 +26,7 @@ function StatusBadge({ status }: { status: VehicleNztaSyncUiStatus }) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">
         <XCircle className="h-3.5 w-3.5" />
-        失败
+        Failed
       </span>
     );
   }
@@ -35,14 +35,14 @@ function StatusBadge({ status }: { status: VehicleNztaSyncUiStatus }) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        处理中
+        In Progress
       </span>
     );
   }
 
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-      等待中
+      Pending
     </span>
   );
 }
@@ -88,30 +88,30 @@ export function VehicleNztaSyncDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4">
       <div className="w-full max-w-xl rounded-[16px] bg-white p-5 shadow-xl">
         <div className="text-lg font-semibold text-[var(--ds-text)]">
-          {phase === "confirm" ? "同步 NZTA 车辆信息" : "NZTA 同步状态"}
+          {phase === "confirm" ? "Sync NZTA Vehicle Details" : "NZTA Sync Status"}
         </div>
 
         {phase === "confirm" ? (
           <div className="mt-3 text-sm text-[var(--ds-muted)]">
-            确认从 NZTA 抓取这台车的 WOF Expiry、Licence Expiry、RUC Licence Number 和 RUC End Distance 吗？
+            Confirm syncing this vehicle's WOF Expiry, Licence Expiry, RUC Licence Number, and RUC End Distance from NZTA?
           </div>
         ) : (
           <div className="mt-4 space-y-3">
             <StepRow
               index={1}
-              label="查询 NZTA"
+              label="Query NZTA"
               status={steps.lookup.status}
               message={steps.lookup.message}
             />
             <StepRow
               index={2}
-              label="解析返回数据"
+              label="Parse returned data"
               status={steps.parse.status}
               message={steps.parse.message}
             />
             <StepRow
               index={3}
-              label="写入车辆资料"
+              label="Save vehicle details"
               status={steps.save.status}
               message={steps.save.message}
             />
@@ -127,15 +127,15 @@ export function VehicleNztaSyncDialog({
           {phase === "confirm" ? (
             <>
               <Button onClick={onClose} disabled={isSyncing}>
-                取消
+                Cancel
               </Button>
               <Button variant="primary" onClick={onConfirm} disabled={isSyncing}>
-                Yes 开始同步
+                Yes, start sync
               </Button>
             </>
           ) : (
             <Button onClick={onClose} disabled={isSyncing}>
-              关闭
+              Close
             </Button>
           )}
         </div>

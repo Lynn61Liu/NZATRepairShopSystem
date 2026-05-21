@@ -97,16 +97,16 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           >
             <div className="flex items-start gap-2">
               <div className="text-sm font-semibold">
-                {toast.variant === "success" && "成功"}
-                {toast.variant === "error" && "错误"}
-                {toast.variant === "info" && "提示"}
+                {toast.variant === "success" && "Success"}
+                {toast.variant === "error" && "Error"}
+                {toast.variant === "info" && "Info"}
               </div>
               <div className="text-sm leading-5">{toast.message}</div>
               <button
                 type="button"
                 className="ml-auto text-xs text-slate-500 hover:text-slate-700"
                 onClick={() => remove(toast.id)}
-                aria-label="关闭提示"
+                aria-label="Close notification"
               >
                 ✕
               </button>

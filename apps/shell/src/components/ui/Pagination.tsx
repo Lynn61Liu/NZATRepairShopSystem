@@ -61,7 +61,7 @@ export function Pagination({
   const infoContent = getInfoText
     ? getInfoText(info)
     : showRange
-      ? `显示 ${start}-${end} 项，共 ${totalItems} 项`
+      ? `Showing ${start}-${end} of ${totalItems}`
       : null;
 
   return (
@@ -75,7 +75,7 @@ export function Pagination({
           onClick={() => onPageChange(Math.max(1, currentPage - 1))}
           disabled={currentPage === 1}
         >
-          上一页
+          Previous
         </button>
 
         {showPageNumbers
@@ -97,7 +97,7 @@ export function Pagination({
           onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
           disabled={currentPage === totalPages}
         >
-          下一页
+          Next
         </button>
       </div>
     </div>

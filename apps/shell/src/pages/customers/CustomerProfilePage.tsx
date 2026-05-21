@@ -474,7 +474,7 @@ export function CustomerProfilePage() {
   };
 
   if (loading) {
-    return <div className="py-10 text-center text-sm text-[var(--ds-muted)]">加载中...</div>;
+    return <div className="py-10 text-center text-sm text-[var(--ds-muted)]">Loading...</div>;
   }
 
   return (
@@ -493,7 +493,7 @@ export function CustomerProfilePage() {
               {isNew ? "New Customer Profile" : `Customer Profile #${profile.id}`}
             </h1>
             <div className="mt-1 text-sm text-[var(--ds-muted)]">
-              {profile.type === "Business" ? "商户客户档案" : "个人客户档案"}
+              {profile.type === "Business" ? "Business Customer Profile" : "Personal Customer Profile"}
             </div>
           </div>
         </div>
@@ -508,12 +508,12 @@ export function CustomerProfilePage() {
       <Card className="space-y-4 p-5">
         <div>
           <div className="text-base font-semibold text-[rgba(0,0,0,0.75)]">Basic Information</div>
-          <div className="mt-1 text-sm text-[var(--ds-muted)]">客户基础资料</div>
+          <div className="mt-1 text-sm text-[var(--ds-muted)]">Basic customer details</div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div>
-            <div className="mb-1 text-xs font-semibold text-[rgba(0,0,0,0.55)]">类型</div>
+            <div className="mb-1 text-xs font-semibold text-[rgba(0,0,0,0.55)]">Type</div>
             <select
               className="h-10 w-full rounded-[10px] border border-[var(--ds-border)] px-3 text-sm"
               value={profile.type}
@@ -525,12 +525,12 @@ export function CustomerProfilePage() {
           </div>
           <div>
             <div className="mb-1 text-xs font-semibold text-[rgba(0,0,0,0.55)]">
-              {profile.type === "Business" ? "公司名称" : "姓名"}
+              {profile.type === "Business" ? "Company Name" : "Name"}
             </div>
             <Input value={profile.name} onChange={(event) => setProfile((prev) => ({ ...prev, name: event.target.value }))} />
           </div>
           <div>
-            <div className="mb-1 text-xs font-semibold text-[rgba(0,0,0,0.55)]">电话</div>
+            <div className="mb-1 text-xs font-semibold text-[rgba(0,0,0,0.55)]">Phone</div>
             <Input value={profile.phone} onChange={(event) => setProfile((prev) => ({ ...prev, phone: event.target.value }))} />
           </div>
           <div>
@@ -538,7 +538,7 @@ export function CustomerProfilePage() {
             <Input value={profile.email} onChange={(event) => setProfile((prev) => ({ ...prev, email: event.target.value }))} />
           </div>
           <div className="md:col-span-2 xl:col-span-2">
-            <div className="mb-1 text-xs font-semibold text-[rgba(0,0,0,0.55)]">地址</div>
+            <div className="mb-1 text-xs font-semibold text-[rgba(0,0,0,0.55)]">Address</div>
             <AddressAutocomplete
               value={profile.address}
               onChange={(value) => setProfile((prev) => ({ ...prev, address: value }))}
@@ -552,7 +552,7 @@ export function CustomerProfilePage() {
             />
           </div>
           <div>
-            <div className="mb-1 text-xs font-semibold text-[rgba(0,0,0,0.55)]">备注</div>
+            <div className="mb-1 text-xs font-semibold text-[rgba(0,0,0,0.55)]">Notes</div>
             <Input value={profile.notes} onChange={(event) => setProfile((prev) => ({ ...prev, notes: event.target.value }))} />
           </div>
         </div>
@@ -562,7 +562,7 @@ export function CustomerProfilePage() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-base font-semibold text-[rgba(0,0,0,0.75)]">Staff</div>
-            <div className="mt-1 text-sm text-[var(--ds-muted)]">显示并维护当前员工信息</div>
+            <div className="mt-1 text-sm text-[var(--ds-muted)]">View and maintain current staff information</div>
           </div>
           <Button onClick={addStaff} leftIcon={<Plus size={16} />}>
             Add Staff
@@ -571,24 +571,24 @@ export function CustomerProfilePage() {
 
         {profile.staffMembers.length === 0 ? (
           <div className="rounded-[12px] border border-dashed border-[rgba(0,0,0,0.12)] px-4 py-6 text-sm text-[var(--ds-muted)]">
-            目前没有员工信息
+            No staff information yet
           </div>
         ) : (
           <div className="space-y-3">
             {profile.staffMembers.map((staff, index) => (
               <div key={`${index}-${staff.email}`} className="grid gap-3 rounded-[12px] border border-[rgba(0,0,0,0.08)] p-4 md:grid-cols-[1fr_1fr_1fr_auto]">
                 <Input
-                  placeholder="姓名"
+                  placeholder="Name"
                   value={staff.name}
                   onChange={(event) => updateStaff(index, "name", event.target.value)}
                 />
                 <Input
-                  placeholder="职位"
+                  placeholder="Title"
                   value={staff.title}
                   onChange={(event) => updateStaff(index, "title", event.target.value)}
                 />
                 <Input
-                  placeholder="邮箱"
+                  placeholder="Email"
                   value={staff.email}
                   onChange={(event) => updateStaff(index, "email", event.target.value)}
                 />
@@ -608,8 +608,8 @@ export function CustomerProfilePage() {
       <Card className="space-y-4 p-5 overflow-visible">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-base font-semibold text-[rgba(0,0,0,0.75)]">专属服务价格</div>
-            <div className="mt-1 text-sm text-[var(--ds-muted)]">为该客户指定服务与 Xero Item Code 的价格映射</div>
+            <div className="text-base font-semibold text-[rgba(0,0,0,0.75)]">Custom Service Prices</div>
+            <div className="mt-1 text-sm text-[var(--ds-muted)]">Set customer-specific price mappings for services and Xero item codes</div>
           </div>
           <Button onClick={addServicePrice} leftIcon={<Plus size={16} />}>
             Add Service Price
@@ -629,7 +629,7 @@ export function CustomerProfilePage() {
             <div className="space-y-3 pt-3">
               {servicePriceRows.length === 0 ? (
                 <div className="rounded-[12px] border border-dashed border-[rgba(0,0,0,0.12)] px-4 py-6 text-sm text-[var(--ds-muted)]">
-                  目前没有专属服务价格
+                  No custom service prices yet
                 </div>
               ) : (
                 servicePriceRows.map((row) => {
@@ -640,7 +640,7 @@ export function CustomerProfilePage() {
                         value={row.serviceCatalogItemId}
                         onChange={(value) => updateServicePrice(row.id, "serviceCatalogItemId", value)}
                         options={serviceOptions}
-                        placeholder="选择 service"
+                        placeholder="Select service"
                         getValue={(item) => item.id}
                         getSearchText={(item) => `${item.name} ${item.categoryLabel} ${item.serviceType}`}
                         renderValue={(item) => (item ? formatServiceLabel(item.name, item.categoryLabel) : "")}
@@ -657,7 +657,7 @@ export function CustomerProfilePage() {
                         value={row.xeroItemCode}
                         onChange={(value) => updateServicePrice(row.id, "xeroItemCode", value)}
                         options={inventoryOptions}
-                        placeholder="选择 xero item code"
+                        placeholder="Select Xero item code"
                         getValue={(item) => item.itemCode}
                         getSearchText={(item) => `${item.itemCode} ${item.itemName}`}
                         renderValue={(item) => (item ? `${item.itemCode} - ${item.itemName}` : "")}
@@ -705,14 +705,14 @@ export function CustomerProfilePage() {
       <Card className="space-y-4 p-5 overflow-hidden">
         <div>
           <div className="text-base font-semibold text-[rgba(0,0,0,0.75)]">
-            今年服务车辆总数：{profile.currentYearJobCount}
+            Total vehicles serviced this year: {profile.currentYearJobCount}
           </div>
-          <div className="mt-1 text-sm text-[var(--ds-muted)]">列出该公司名下今年所有 jobs，按时间倒序</div>
+          <div className="mt-1 text-sm text-[var(--ds-muted)]">Lists all jobs for this company this year, sorted by newest first</div>
         </div>
 
         {profile.jobs.length === 0 ? (
           <div className="rounded-[12px] border border-dashed border-[rgba(0,0,0,0.12)] px-4 py-6 text-sm text-[var(--ds-muted)]">
-            今年暂无 jobs
+            No jobs this year yet
           </div>
         ) : (
           <JobsTable

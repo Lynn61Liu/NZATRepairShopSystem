@@ -2,10 +2,10 @@ import type { PartsServiceStatus } from "@/types";
 import { Select } from "@/components/ui";
 
 const STATUS_OPTIONS: { value: PartsServiceStatus; label: string }[] = [
-  { value: "pending_order", label: "待下单" },
-  { value: "needs_pt", label: "需要发PT" },
+  { value: "pending_order", label: "Pending Order" },
+  { value: "needs_pt", label: "Need to Send PT" },
   { value: "parts_trader", label: "PartsTrader" },
-  { value: "pickup_or_transit", label: "待取/在途" },
+  { value: "pickup_or_transit", label: "Pickup / In Transit" },
 ];
 
 type PartsStatusSelectProps = {

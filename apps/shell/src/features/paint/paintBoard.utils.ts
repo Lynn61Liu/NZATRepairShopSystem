@@ -46,14 +46,14 @@ export const PAINT_STAGE_INDEX_BY_KEY: Record<StageKey, number> = {
 
 export const PAINT_STAGE_LABELS: Record<StageKey, string> = {
   on_hold: "On Hold",
-  waiting: "等待处理",
-  sheet: "钣金/底漆",
-  undercoat: "打底漆",
-  sanding: "底漆打磨",
-  painting: "喷漆",
-  assembly: "组装抛光",
-  done: "完成喷漆",
-  delivered: "交车完毕",
+  waiting: "Waiting",
+  sheet: "Panel / Primer",
+  undercoat: "Undercoat",
+  sanding: "Primer Sanding",
+  painting: "Painting",
+  assembly: "Assembly / Polishing",
+  done: "Paint Complete",
+  delivered: "Delivered",
 };
 
 export const PAINT_STAGE_OPTIONS = PAINT_STAGE_ORDER.map((key) => ({

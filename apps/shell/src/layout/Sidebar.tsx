@@ -78,7 +78,7 @@ export function Sidebar() {
         className="inline-flex items-center justify-center gap-2 rounded-md bg-red-100  px-3 py-2 text-sm font-semibold text-[var(--ds-primary)] border border-gery hover:bg-[var(--ds-primary)] hover:text-white transition-colors"
       >
         <Plus className="h-4 w-4" />
-        快速新建工单
+        Quick New Job
       </NavLink>
 
       <nav className="flex flex-1 flex-col justify-between gap-6 min-h-0">
@@ -159,7 +159,7 @@ export function Sidebar() {
             }
           >
             <span className="flex items-center justify-between gap-2">
-              <span>WOF 排班表</span>
+              <span>WOF Schedule</span>
               {wofTodoCount > 0 ? (
                 <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-600">
                   {wofTodoCount}

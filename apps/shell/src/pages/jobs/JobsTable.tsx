@@ -41,7 +41,7 @@ function WofStatusPill({ status }: { status?: JobRow["wofStatus"] }) {
   const config =
     status === "Recorded"
       ? {
-          label: "已录入",
+          label: "Recorded",
           bg: "bg-sky-50",
           bd: "border-sky-200",
           tx: "text-sky-700",
@@ -49,14 +49,14 @@ function WofStatusPill({ status }: { status?: JobRow["wofStatus"] }) {
         }
       : status === "Checked"
         ? {
-            label: "检查完成",
+            label: "Checked",
             bg: "bg-amber-50",
             bd: "border-amber-200",
             tx: "text-amber-700",
             dot: "bg-amber-500",
           }
         : {
-            label: "待查",
+            label: "To Check",
             bg: "bg-white",
             bd: "border-slate-200",
             tx: "text-slate-700",
@@ -130,18 +130,18 @@ const JOB_TABLE_COLUMNS: Array<{
   width: number;
   minWidth: number;
 }> = [
-  { key: "createdAt", label: "创建时间", width: 140, minWidth: 130 },
-  { key: "inShop", label: "在店时间", width: 90, minWidth: 70 },
-  { key: "status", label: "汽车状态", width: 110, minWidth: 90 },
+  { key: "createdAt", label: "Created", width: 140, minWidth: 130 },
+  { key: "inShop", label: "In Shop", width: 90, minWidth: 70 },
+  { key: "status", label: "Vehicle Status", width: 110, minWidth: 90 },
   { key: "tag", label: "TAG", width: 90, minWidth: 70 },
   { key: "code", label: "code", width: 90, minWidth: 80 },
-  { key: "plate", label: "车牌", width: 110, minWidth: 90 },
-  { key: "model", label: "汽车型号", width: 180, minWidth: 160 },
-  { key: "note", label: "备注", width: 250, minWidth: 280 },
+  { key: "plate", label: "Plate", width: 110, minWidth: 90 },
+  { key: "model", label: "Vehicle Model", width: 180, minWidth: 160 },
+  { key: "note", label: "Notes", width: 250, minWidth: 280 },
   { key: "wof", label: "WOF", width: 70, minWidth: 60 },
-  { key: "mech", label: "机修", width: 70, minWidth: 60 },
-  { key: "paint", label: "喷漆", width: 70, minWidth: 60 },
-  { key: "actions", label: "操作", width: 80, minWidth: 60 },
+  { key: "mech", label: "Mech", width: 70, minWidth: 60 },
+  { key: "paint", label: "Paint", width: 70, minWidth: 60 },
+  { key: "actions", label: "Actions", width: 80, minWidth: 60 },
 ];
 
 function parseCreatedAt(value?: string) {
@@ -155,10 +155,10 @@ function getTimeInShop(createdAt?: string) {
   const diffMs = Math.max(0, now - created.getTime());
   if (diffMs < MS_PER_DAY) {
     const hours = Math.max(1, Math.floor(diffMs / MS_PER_HOUR));
-    return { label: `${hours}小时`, level: "normal" as const };
+    return { label: `${hours}h`, level: "normal" as const };
   }
   const days = Math.floor(diffMs / MS_PER_DAY);
-  const label = `${days}天`;
+  const label = `${days}d`;
   const level = days >= 5 ? "danger" : days >= 3 ? "warn" : "normal";
   return { label, level };
 }
@@ -349,7 +349,7 @@ export function JobsTable({
                     className="h-4 w-4 accent-[var(--ds-primary)]"
                     checked={r.urgent}
                     onChange={() => onToggleUrgent(r.id)}
-                    title="加急"
+                    title="Urgent"
                   />
                   <TagsCell selectedTags={r.selectedTags} />
                 </div>
@@ -406,13 +406,13 @@ export function JobsTable({
                     className="rounded border border-[rgba(0,0,0,0.12)] px-2 py-1 text-xs text-[rgba(0,0,0,0.65)] hover:bg-[rgba(0,0,0,0.04)]"
                     onClick={() => onPrintMech(r.id)}
                   >
-                    机修
+                    Mech
                   </button>
                   <button
                     className="rounded border border-[rgba(0,0,0,0.12)] px-2 py-1 text-xs text-[rgba(0,0,0,0.65)] hover:bg-[rgba(0,0,0,0.04)]"
                     onClick={() => onPrintPaint(r.id)}
                   >
-                    喷漆
+                    Paint
                   </button>
                   {r.externalInvoiceId ? (
                     <XeroButton

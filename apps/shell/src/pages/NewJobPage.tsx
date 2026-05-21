@@ -925,7 +925,7 @@ export function NewJobPage() {
         <Link to="/jobs" className="text-[rgba(0,0,0,0.45)] hover:text-[rgba(0,0,0,0.70)]">
           <ArrowLeft size={20} />
         </Link>
-        <h1 className="text-lg font-semibold text-[rgba(0,0,0,0.72)]">新建工单</h1>
+        <h1 className="text-lg font-semibold text-[rgba(0,0,0,0.72)]">Create New Job</h1>
       </div>
 
       {formAlert ? (
@@ -1003,7 +1003,7 @@ export function NewJobPage() {
 
             <div className="space-y-4">
               <SectionCard
-                title="订配件"
+                title="Parts Order"
                 titleIcon={<Boxes size={18} />}
                 titleClassName="text-lg font-semibold"
                 actions={
@@ -1013,7 +1013,7 @@ export function NewJobPage() {
                     className="inline-flex items-center gap-1 rounded-[8px] border border-[rgba(220,38,38,0.40)] bg-[rgba(220,38,38,0.05)] px-2.5 py-1.5 text-base font-medium text-[#b91c1c] hover:bg-[rgba(220,38,38,0.10)]"
                   >
                     <Plus size={14} />
-                    配件
+                    Part
                   </button>
                 }
               >
@@ -1024,19 +1024,19 @@ export function NewJobPage() {
                       className="rounded-[10px] border border-[rgba(0,0,0,0.08)] bg-white p-3"
                     >
                       <div className="mb-2 flex items-center justify-between">
-                        <label className="text-base text-[rgba(0,0,0,0.65)]">配件 {index + 1}</label>
+                        <label className="text-base text-[rgba(0,0,0,0.65)]">Part {index + 1}</label>
                         <button
                           type="button"
                           onClick={() => removePartDescription(index)}
                           className="inline-flex items-center gap-1 text-base text-[rgba(0,0,0,0.50)] hover:text-[#b91c1c]"
                         >
                           <X size={14} />
-                          删除
+                          Delete
                         </button>
                       </div>
                       <Textarea
                         rows={2}
-                        placeholder="输入配件描述"
+                        placeholder="Enter part description"
                         value={value}
                         onChange={(event) => updatePartDescription(index, event.target.value)}
                       />
@@ -1047,7 +1047,7 @@ export function NewJobPage() {
 
               {showNeedsPo ? (
                 <SectionCard
-                  title="采购订单 (PO)"
+                  title="Purchase Order (PO)"
                   titleIcon={<FileText size={18} />}
                   titleClassName="text-lg font-semibold"
                   actions={
@@ -1114,26 +1114,26 @@ export function NewJobPage() {
 
         <div className="space-y-4 xl:sticky xl:top-4 xl:self-start ">
           <SectionCard
-            title="订单摘要"
+            title="Order Summary"
             titleIcon={<ReceiptText size={18} />}
             titleClassName="text-lg font-semibold"
           >
             <div className="mt-4 space-y-5">
               <div>
-                <div className="text-base text-[rgba(0,0,0,0.50)]">车牌号码</div>
+                <div className="text-base text-[rgba(0,0,0,0.50)]">Plate Number</div>
                 <div className="text-base font-semibold text-[rgba(0,0,0,0.86)]">
-                  {rego.trim() || "未填写"}
+                  {rego.trim() || "Not entered"}
                 </div>
               </div>
               <div>
-                <div className="text-base text-[rgba(0,0,0,0.50)]">客户信息</div>
+                <div className="text-base text-[rgba(0,0,0,0.50)]">Customer</div>
                 <div className="text-base font-semibold text-[rgba(0,0,0,0.86)]">{customerDisplayName}</div>
                 <div className="mt-1 inline-flex rounded-full border border-[rgba(0,0,0,0.12)] px-3 py-1 text-base text-[rgba(0,0,0,0.70)]">
                   {customerTypeLabel}
                 </div>
               </div>
               <div>
-                <div className="text-base text-[rgba(0,0,0,0.50)]">已选服务</div>
+                <div className="text-base text-[rgba(0,0,0,0.50)]">Selected Services</div>
                 {selectedServiceSummaries.length ? (
                   <ul className="mt-2 space-y-1 text-base text-[rgba(0,0,0,0.80)]">
                     {selectedServiceSummaries.map((item) => (
@@ -1141,38 +1141,38 @@ export function NewJobPage() {
                     ))}
                   </ul>
                 ) : (
-                  <div className="text-base text-[rgba(0,0,0,0.45)]">未选择</div>
+                  <div className="text-base text-[rgba(0,0,0,0.45)]">None selected</div>
                 )}
               </div>
               <div>
-                <div className="text-base text-[rgba(0,0,0,0.50)]">喷漆片数</div>
+                <div className="text-base text-[rgba(0,0,0,0.50)]">Paint Panels</div>
                 <div className="text-base font-semibold text-[rgba(0,0,0,0.80)]">
-                  {showPaintPanels ? `${paintPanels || "1"} 片` : "不适用"}
+                  {showPaintPanels ? `${paintPanels || "1"} panels` : "N/A"}
                 </div>
               </div>
               <div>
-                <div className="text-base text-[rgba(0,0,0,0.50)]">配件信息</div>
+                <div className="text-base text-[rgba(0,0,0,0.50)]">Parts</div>
                 <div className="text-base font-semibold text-[rgba(0,0,0,0.80)]">
-                  {normalizedPartsDescriptions.length} 个配件
+                  {normalizedPartsDescriptions.length} parts
                 </div>
               </div>
               <div>
-                <div className="text-base text-[rgba(0,0,0,0.50)]">Invoice 模式</div>
+                <div className="text-base text-[rgba(0,0,0,0.50)]">Invoice Mode</div>
                 <div className="text-base font-semibold text-[rgba(0,0,0,0.80)]">
-                  {createNewInvoice ? "新建 Invoice" : `关联已有 Invoice${existingInvoiceNumber.trim() ? ` (${existingInvoiceNumber.trim()})` : ""}`}
+                  {createNewInvoice ? "Create New Invoice" : `Link Existing Invoice${existingInvoiceNumber.trim() ? ` (${existingInvoiceNumber.trim()})` : ""}`}
                 </div>
               </div>
               <div>
-                <div className="text-base text-[rgba(0,0,0,0.50)]">PO 信息</div>
+                <div className="text-base text-[rgba(0,0,0,0.50)]">PO Details</div>
                 <div className="text-base font-semibold text-[rgba(0,0,0,0.80)]">
-                  {showNeedsPo ? (needsPo ? "需要 PO" : "不需要 PO") : "不适用"}
+                  {showNeedsPo ? (needsPo ? "PO required" : "No PO required") : "N/A"}
                 </div>
               </div>
               {missingRequiredFields.length ? (
                 <div className="border-t border-[rgba(220,38,38,0.15)] pt-4">
                   <div className="flex items-center gap-2 text-base font-semibold text-[#dc2626]">
                     <AlertCircle size={18} />
-                    缺失必填项
+                    Missing required fields
                   </div>
                   <ul className="mt-2 space-y-1 text-base text-[#dc2626]">
                     {missingRequiredFields.map((field) => (
@@ -1191,7 +1191,7 @@ export function NewJobPage() {
               disabled={saving || serviceCatalogLoading || !serviceCatalogReady}
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {saving ? "保存中" : serviceCatalogLoading || !serviceCatalogReady ? "加载服务配置中..." : "保存"}
+              {saving ? "Saving" : serviceCatalogLoading || !serviceCatalogReady ? "Loading service configuration..." : "Save"}
             </Button>
           </div>
         </div>

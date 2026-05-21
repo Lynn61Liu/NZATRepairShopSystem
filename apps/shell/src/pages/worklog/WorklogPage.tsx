@@ -187,7 +187,7 @@ export function WorklogPage() {
 
   const handleAddLog = async (newLog: Omit<WorklogEntry, "id" | "created_at" | "created_by" | "flags">) => {
     if (!newLog.job_id || !newLog.staff_id) {
-      toast.error("请选择有效的工单和员工");
+      toast.error("Please select a valid job and staff member");
       return;
     }
     const res = await createWorklog({
@@ -201,7 +201,7 @@ export function WorklogPage() {
       source: newLog.source ?? "admin",
     });
     if (!res.ok) {
-      toast.error(res.error || "新增失败");
+      toast.error(res.error || "Create failed");
       return;
     }
     await refreshWorklogs();
@@ -220,7 +220,7 @@ export function WorklogPage() {
       source: updates.source,
     });
     if (!res.ok) {
-      toast.error(res.error || "更新失败");
+      toast.error(res.error || "Update failed");
       return;
     }
     await refreshWorklogs();
@@ -240,7 +240,7 @@ export function WorklogPage() {
       source: log.source ?? "admin",
     });
     if (!res.ok) {
-      toast.error(res.error || "复制失败");
+      toast.error(res.error || "Copy failed");
       return;
     }
     await refreshWorklogs();
@@ -267,7 +267,7 @@ export function WorklogPage() {
   const handleAddStaff = async (newStaff: Omit<WorklogStaffProfile, "id">) => {
     const res = await createStaff({ name: newStaff.name, costRate: newStaff.cost_rate });
     if (!res.ok) {
-      toast.error(res.error || "新增员工失败");
+      toast.error(res.error || "Failed to add staff");
       return;
     }
     const refreshed = await fetchStaff();

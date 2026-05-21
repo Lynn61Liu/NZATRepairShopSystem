@@ -26,15 +26,15 @@ export function createInitialDeleteJobSteps(): DeleteJobDialogSteps {
   return {
     xero: {
       status: "pending",
-      message: "等待开始删除 Xero draft。",
+      message: "Waiting to start deleting the Xero draft.",
     },
     gmail: {
       status: "pending",
-      message: "等待开始删除 Gmail 信息。",
+      message: "Waiting to start deleting the Gmail message.",
     },
     job: {
       status: "pending",
-      message: "等待开始删除本地 Job。",
+      message: "Waiting to start deleting the local job.",
     },
   };
 }
@@ -43,15 +43,15 @@ export function createDeletingDeleteJobSteps(): DeleteJobDialogSteps {
   return {
     xero: {
       status: "in_progress",
-      message: "正在删除 Xero draft。",
+      message: "Deleting the Xero draft.",
     },
     gmail: {
       status: "pending",
-      message: "等待删除 Gmail 信息。",
+      message: "Waiting to delete the Gmail message.",
     },
     job: {
       status: "pending",
-      message: "等待删除本地 Job。",
+      message: "Waiting to delete the local job.",
     },
   };
 }
@@ -99,21 +99,21 @@ function normalizeDeleteStepStatus(
 
 function defaultDeleteMessage(target: "xero" | "gmail" | "job", status: DeleteJobUiStatus) {
   if (target === "xero") {
-    if (status === "success") return "Xero draft 删除完成。";
-    if (status === "failed") return "删除 Xero draft 失败。";
-    if (status === "in_progress") return "正在删除 Xero draft。";
-    return "等待删除 Xero draft。";
+    if (status === "success") return "Xero draft deleted.";
+    if (status === "failed") return "Failed to delete the Xero draft.";
+    if (status === "in_progress") return "Deleting the Xero draft.";
+    return "Waiting to delete the Xero draft.";
   }
 
   if (target === "gmail") {
-    if (status === "success") return "Gmail 信息删除完成。";
-    if (status === "failed") return "删除 Gmail 信息失败。";
-    if (status === "in_progress") return "正在删除 Gmail 信息。";
-    return "等待删除 Gmail 信息。";
+    if (status === "success") return "Gmail message deleted.";
+    if (status === "failed") return "Failed to delete the Gmail message.";
+    if (status === "in_progress") return "Deleting the Gmail message.";
+    return "Waiting to delete the Gmail message.";
   }
 
-  if (status === "success") return "本地 Job 删除完成。";
-  if (status === "failed") return "删除本地 Job 失败。";
-  if (status === "in_progress") return "正在删除本地 Job。";
-  return "等待删除本地 Job。";
+  if (status === "success") return "Local job deleted.";
+  if (status === "failed") return "Failed to delete the local job.";
+  if (status === "in_progress") return "Deleting the local job.";
+  return "Waiting to delete the local job.";
 }

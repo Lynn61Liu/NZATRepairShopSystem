@@ -13,7 +13,7 @@ const Shopfront = () => {
   
   // 搜索和分类状态
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('全部');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
   useEffect(() => {
     // 获取后端真实数据（现在后端会带上 categoryName 了）
@@ -25,19 +25,19 @@ const Shopfront = () => {
           name: p.name,
           spec: p.specification || '',
           stock: p.currentStock || 0,
-          categoryName: p.categoryName || '未分类', // 接收分类名称
+          categoryName: p.categoryName || 'Uncategorized', // 接收分类名称
           isTool: false, 
           img: p.imageUrl || `https://via.placeholder.com/300x200?text=${encodeURIComponent(p.name)}`
         }));
         setProducts(formattedData);
       })
-      .catch(err => console.error("获取后端数据失败:", err));
+      .catch(err => console.error("Failed to load backend data:", err));
   }, []);
 
   // 动态提取左侧分类菜单
   const categories = useMemo(() => {
     const cats = new Set(products.map(p => p.categoryName));
-    return ['全部', ...Array.from(cats)];
+    return ['All', ...Array.from(cats)];
   }, [products]);
 
   const handleAdd = (product: any) => {
@@ -61,7 +61,7 @@ const Shopfront = () => {
 
   const handleSubmit = async () => {
     const requestBody = {
-      staffName: "内部测试师傅", 
+      staffName: "Internal Test Technician", 
       notes: orderNote,
       items: Object.keys(cart).map(productId => ({
         productId: parseInt(productId),
@@ -77,16 +77,16 @@ const Shopfront = () => {
       });
 
       if (response.ok) {
-        alert('🎉 提交成功！你的采购需求已同步至后台数据库。');
+        alert('🎉 Submitted successfully! Your procurement request has been synced to the backend database.');
         setCart({}); 
         setOrderNote(''); 
         setIsModalOpen(false); 
       } else {
-        alert('提交失败，后端返回了错误。');
+        alert('Submission failed. The backend returned an error.');
       }
     } catch (error) {
-      console.error("提交出错:", error);
-      alert('网络错误，提交失败。');
+      console.error("Submission error:", error);
+      alert('Network error. Submission failed.');
     }
   };
 
@@ -96,19 +96,19 @@ const Shopfront = () => {
   const filteredProducts = products.filter(product => {
     const matchSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                         product.spec.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchCategory = selectedCategory === '全部' || product.categoryName === selectedCategory;
+    const matchCategory = selectedCategory === 'All' || product.categoryName === selectedCategory;
     return matchSearch && matchCategory;
   });
 
   return (
     <div className="shopfront-container mx-auto p-6 max-w-7xl">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-800 m-0">内部物料申领 / 采购</h1>
+        <h1 className="text-2xl font-bold text-gray-800 m-0">Internal Supplies Request / Procurement</h1>
         
         {/* 搜索框 */}
         <input 
           type="text" 
-          placeholder="🔍 搜索物料名称或规格..." 
+          placeholder="🔍 Search by item name or specification..." 
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="px-4 py-2 border border-gray-300 rounded-lg w-80 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
@@ -119,7 +119,7 @@ const Shopfront = () => {
         {/* === 左侧分类导航树 === */}
         <div className="w-48 bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col overflow-hidden sticky top-6 shrink-0">
           <div className="p-3 bg-gray-50 border-b border-gray-200 font-bold text-gray-700 text-sm">
-            物料分类
+            Item Categories
           </div>
           <div className="p-2 flex flex-col gap-1 max-h-[70vh] overflow-y-auto">
             {categories.map(cat => (
@@ -142,10 +142,10 @@ const Shopfront = () => {
         <div className="flex-1">
           <div className="product-grid">
             {products.length === 0 ? (
-              <p className="col-span-full p-8 text-center text-gray-500">正在加载物料数据...</p>
+              <p className="col-span-full p-8 text-center text-gray-500">Loading item data...</p>
             ) : filteredProducts.length === 0 ? (
               <p className="col-span-full p-8 text-center text-gray-500">
-                没有在【{selectedCategory}】中找到匹配的物料 🧐
+                No matching items found in [{selectedCategory}] 🧐
               </p>
             ) : (
               filteredProducts.map((product) => (
@@ -165,12 +165,12 @@ const Shopfront = () => {
       {totalItems > 0 && (
         <div className="cart-bar">
           <div className="cart-info">
-            <span>已选</span>
+            <span>Selected</span>
             <span className="cart-qty">{totalItems}</span>
-            <span>件物料</span>
+            <span>items</span>
           </div>
           <button className="btn-checkout" onClick={() => setIsModalOpen(true)}>
-            查看并提交
+            Review and Submit
           </button>
         </div>
       )}
@@ -180,7 +180,7 @@ const Shopfront = () => {
         <div className="cart-modal-overlay">
           <div className="cart-modal">
             <div className="modal-header">
-              <span>确认采购需求</span>
+              <span>Confirm Procurement Request</span>
               <button className="btn-close" onClick={() => setIsModalOpen(false)}>×</button>
             </div>
             
@@ -195,14 +195,14 @@ const Shopfront = () => {
               <textarea 
                 className="note-input mt-4"
                 rows={3} 
-                placeholder="有啥特殊要求写这里 (比如：急用、要什么牌子)..."
+                placeholder="Add any special requirements here (for example: urgent, preferred brand)..."
                 value={orderNote}
                 onChange={(e) => setOrderNote(e.target.value)}
               />
             </div>
 
             <button className="btn-submit" onClick={handleSubmit}>
-              正式提交给后台
+              Submit to Backend
             </button>
           </div>
         </div>

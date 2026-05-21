@@ -26,15 +26,15 @@ export function createInitialVehicleNztaSyncSteps(): VehicleNztaSyncDialogSteps 
   return {
     lookup: {
       status: "pending",
-      message: "等待发起 NZTA 查询。",
+      message: "Waiting to start the NZTA lookup.",
     },
     parse: {
       status: "pending",
-      message: "等待解析 NZTA 返回数据。",
+      message: "Waiting to parse the NZTA response.",
     },
     save: {
       status: "pending",
-      message: "等待写入车辆资料。",
+      message: "Waiting to save vehicle details.",
     },
   };
 }
@@ -43,15 +43,15 @@ export function createSyncingVehicleNztaSyncSteps(): VehicleNztaSyncDialogSteps 
   return {
     lookup: {
       status: "in_progress",
-      message: "正在向 NZTA 查询车辆到期信息。",
+      message: "Querying NZTA for vehicle expiry details.",
     },
     parse: {
       status: "pending",
-      message: "等待解析 NZTA 返回数据。",
+      message: "Waiting to parse the NZTA response.",
     },
     save: {
       status: "pending",
-      message: "等待写入车辆资料。",
+      message: "Waiting to save vehicle details.",
     },
   };
 }
@@ -99,21 +99,21 @@ function normalizeSyncStepStatus(
 
 function defaultSyncMessage(target: "lookup" | "parse" | "save", status: VehicleNztaSyncUiStatus) {
   if (target === "lookup") {
-    if (status === "success") return "NZTA 查询完成。";
-    if (status === "failed") return "NZTA 查询失败。";
-    if (status === "in_progress") return "正在向 NZTA 查询车辆到期信息。";
-    return "等待发起 NZTA 查询。";
+    if (status === "success") return "NZTA lookup completed.";
+    if (status === "failed") return "NZTA lookup failed.";
+    if (status === "in_progress") return "Querying NZTA for vehicle expiry details.";
+    return "Waiting to start the NZTA lookup.";
   }
 
   if (target === "parse") {
-    if (status === "success") return "NZTA 返回数据解析完成。";
-    if (status === "failed") return "解析 NZTA 返回数据失败。";
-    if (status === "in_progress") return "正在解析 NZTA 返回数据。";
-    return "等待解析 NZTA 返回数据。";
+    if (status === "success") return "NZTA response parsed.";
+    if (status === "failed") return "Failed to parse the NZTA response.";
+    if (status === "in_progress") return "Parsing the NZTA response.";
+    return "Waiting to parse the NZTA response.";
   }
 
-  if (status === "success") return "车辆资料写入完成。";
-  if (status === "failed") return "写入车辆资料失败。";
-  if (status === "in_progress") return "正在写入车辆资料。";
-  return "等待写入车辆资料。";
+  if (status === "success") return "Vehicle details saved.";
+  if (status === "failed") return "Failed to save vehicle details.";
+  if (status === "in_progress") return "Saving vehicle details.";
+  return "Waiting to save vehicle details.";
 }

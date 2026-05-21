@@ -17,7 +17,7 @@ function StatusBadge({ status }: { status: DeleteJobUiStatus }) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
         <CheckCircle2 className="h-3.5 w-3.5" />
-        已完成
+        Completed
       </span>
     );
   }
@@ -26,7 +26,7 @@ function StatusBadge({ status }: { status: DeleteJobUiStatus }) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">
         <XCircle className="h-3.5 w-3.5" />
-        失败
+        Failed
       </span>
     );
   }
@@ -35,14 +35,14 @@ function StatusBadge({ status }: { status: DeleteJobUiStatus }) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        处理中
+        In Progress
       </span>
     );
   }
 
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-      等待中
+      Pending
     </span>
   );
 }
@@ -88,30 +88,30 @@ export function DeleteJobDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4">
       <div className="w-full max-w-xl rounded-[16px] bg-white p-5 shadow-xl">
         <div className="text-lg font-semibold text-[var(--ds-text)]">
-          {phase === "confirm" ? "确认删除操作" : "删除项目状态"}
+          {phase === "confirm" ? "Confirm Deletion" : "Deletion Status"}
         </div>
 
         {phase === "confirm" ? (
           <div className="mt-3 text-sm text-[var(--ds-muted)]">
-            确认删除这个 Job 吗？该操作会同时处理 Xero draft、Gmail 信息和本地 Job 数据。
+            Confirm deleting this job? This will also handle the Xero draft, Gmail message, and local job data.
           </div>
         ) : (
           <div className="mt-4 space-y-3">
             <StepRow
               index={1}
-              label="删除 Xero 中"
+              label="Delete from Xero"
               status={steps.xero.status}
               message={steps.xero.message}
             />
             <StepRow
               index={2}
-              label="删除 Gmail 信息"
+              label="Delete Gmail message"
               status={steps.gmail.status}
               message={steps.gmail.message}
             />
             <StepRow
               index={3}
-              label="删除 Job 中"
+              label="Delete local job"
               status={steps.job.status}
               message={steps.job.message}
             />
@@ -127,15 +127,15 @@ export function DeleteJobDialog({
           {phase === "confirm" ? (
             <>
               <Button onClick={onClose} disabled={isDeleting}>
-                取消
+                Cancel
               </Button>
               <Button variant="primary" onClick={onConfirm} disabled={isDeleting}>
-                Yes 继续删除
+                Yes, continue deleting
               </Button>
             </>
           ) : (
             <Button onClick={onClose} disabled={isDeleting}>
-              关闭
+              Close
             </Button>
           )}
         </div>

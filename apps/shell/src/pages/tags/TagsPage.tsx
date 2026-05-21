@@ -44,12 +44,12 @@ export function TagsPage() {
       const res = await fetch(withApiBase("/api/tags"));
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error(data?.error || "加载标签失败");
+        throw new Error(data?.error || "Failed to load tags");
       }
       setRows(Array.isArray(data) ? data : []);
     } catch (err) {
       setRows([]);
-      const message = err instanceof Error ? err.message : "加载标签失败";
+      const message = err instanceof Error ? err.message : "Failed to load tags";
       setLoadError(message);
       toast.error(message);
     } finally {
@@ -85,14 +85,14 @@ export function TagsPage() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error(data?.error || "保存失败");
+        throw new Error(data?.error || "Save failed");
       }
       setAdding(false);
       setDraftName("");
       await loadTags();
-      toast.success("标签已创建");
+      toast.success("Tag created");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "保存失败";
+      const message = err instanceof Error ? err.message : "Save failed";
       setActionError(message);
       toast.error(message);
     } finally {
@@ -124,14 +124,14 @@ export function TagsPage() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error(data?.error || "保存失败");
+        throw new Error(data?.error || "Save failed");
       }
       setEditingId(null);
       setEditDraft("");
       await loadTags();
-      toast.success("标签已更新");
+      toast.success("Tag updated");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "保存失败";
+      const message = err instanceof Error ? err.message : "Save failed";
       setActionError(message);
       toast.error(message);
     } finally {
@@ -140,19 +140,19 @@ export function TagsPage() {
   };
 
   const deleteRow = async (row: TagRow) => {
-    if (!window.confirm(`删除标签 “${row.name}”？`)) return;
+    if (!window.confirm(`Delete tag "${row.name}"?`)) return;
     setSaving(true);
     setActionError(null);
     try {
       const res = await fetch(withApiBase(`/api/tags/${encodeURIComponent(row.id)}`), { method: "DELETE" });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error(data?.error || "删除失败");
+        throw new Error(data?.error || "Delete failed");
       }
       await loadTags();
-      toast.success("标签已删除");
+      toast.success("Tag deleted");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "删除失败";
+      const message = err instanceof Error ? err.message : "Delete failed";
       setActionError(message);
       toast.error(message);
     } finally {
@@ -180,16 +180,16 @@ export function TagsPage() {
         </div>
 
         {loading ? (
-          <div className="py-10 text-center text-sm text-[var(--ds-muted)]">加载中...</div>
+          <div className="py-10 text-center text-sm text-[var(--ds-muted)]">Loading...</div>
         ) : rows.length === 0 && !adding ? (
-          <EmptyState message="暂无标签" />
+          <EmptyState message="No tags yet" />
         ) : (
           <div className="flex flex-wrap gap-2 px-4 py-4">
             {adding ? (
               <div className="group inline-flex items-center gap-2 rounded-full border border-[rgba(37,99,235,0.25)] bg-[rgba(37,99,235,0.06)] px-3 py-1.5">
                 <input
                   className="h-7 w-[160px] rounded-full border border-[var(--ds-border)] px-3 text-xs"
-                  placeholder="输入标签名"
+                  placeholder="Enter tag name"
                   value={draftName}
                   onChange={(event) => setDraftName(event.target.value)}
                 />

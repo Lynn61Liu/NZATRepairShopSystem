@@ -247,18 +247,18 @@ export function CustomersPage() {
   };
 
   const deleteRow = async (row: CustomerRow) => {
-    if (!window.confirm(`删除客户 “${row.name}”？`)) return;
+    if (!window.confirm(`Delete customer "${row.name}"?`)) return;
     setSaving(true);
     setActionError(null);
     try {
       const res = await fetch(withApiBase(`/api/customers/${encodeURIComponent(row.id)}`), { method: "DELETE" });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || "删除失败");
+      if (!res.ok) throw new Error(data?.error || "Delete failed");
       removeCustomerCaches(row.id);
       await loadCustomers(true);
-      toast.success("客户已删除");
+      toast.success("Customer deleted");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "删除失败";
+      const message = err instanceof Error ? err.message : "Delete failed";
       setActionError(message);
       toast.error(message);
     } finally {
@@ -268,7 +268,7 @@ export function CustomersPage() {
 
   return (
     <div className="space-y-4 text-[14px]">
-      <h1 className="text-2xl font-semibold text-[rgba(0,0,0,0.72)]">客户管理</h1>
+      <h1 className="text-2xl font-semibold text-[rgba(0,0,0,0.72)]">Customer Management</h1>
 
       {loadError ? <Alert variant="error" description={loadError} onClose={() => setLoadError(null)} /> : null}
       {actionError ? <Alert variant="error" description={actionError} onClose={() => setActionError(null)} /> : null}
@@ -310,7 +310,7 @@ export function CustomersPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Input className="w-[220px]" placeholder="搜索客户..." value={search} onChange={(event) => setSearch(event.target.value)} />
+            <Input className="w-[220px]" placeholder="Search customers..." value={search} onChange={(event) => setSearch(event.target.value)} />
             <Button onClick={downloadTemplate}>Template</Button>
 
             <input
@@ -334,7 +334,7 @@ export function CustomersPage() {
 
         {previewRows ? (
           <div className="border-b bg-[rgba(0,0,0,0.03)] p-4">
-            <div className="mb-2 font-semibold">预览导入数据（{previewRows.length} 条）</div>
+            <div className="mb-2 font-semibold">Import Preview ({previewRows.length} rows)</div>
             <div className="max-h-60 overflow-auto text-xs">
               {previewRows.map((row, index) => (
                 <div key={index} className="grid grid-cols-7 gap-2 border-b py-1">
@@ -358,9 +358,9 @@ export function CustomersPage() {
         ) : null}
 
         {loading ? (
-          <div className="py-10 text-center text-sm text-[var(--ds-muted)]">加载中...</div>
+          <div className="py-10 text-center text-sm text-[var(--ds-muted)]">Loading...</div>
         ) : filteredRows.length === 0 ? (
-          <EmptyState message="暂无客户" />
+          <EmptyState message="No customers yet" />
         ) : (
           <div className="overflow-x-auto">
             <div className={isBusinessView ? "min-w-[1740px]" : "min-w-[1380px]"}>
@@ -369,17 +369,17 @@ export function CustomersPage() {
                 style={{ gridTemplateColumns: isBusinessView ? businessGridTemplate : personalGridTemplate }}
               >
                 <div>ID</div>
-                <div>类型</div>
-                <div>{isBusinessView ? "公司名称" : "姓名"}</div>
-                <div>电话</div>
+                <div>Type</div>
+                <div>{isBusinessView ? "Company Name" : "Name"}</div>
+                <div>Phone</div>
                 <div>Email</div>
-                <div>地址</div>
+                <div>Address</div>
                 <div>Business Code</div>
-                <div>备注</div>
-                {isBusinessView ? <div>商户专员统计数量</div> : null}
-                {isBusinessView ? <div>服务价格</div> : null}
-                {isBusinessView ? <div>服务的车辆总数</div> : null}
-                <div className="text-right pr-2">操作</div>
+                <div>Notes</div>
+                {isBusinessView ? <div>Staff Count</div> : null}
+                {isBusinessView ? <div>Service Prices</div> : null}
+                {isBusinessView ? <div>Total Vehicles Serviced</div> : null}
+                <div className="text-right pr-2">Actions</div>
               </div>
 
               {filteredRows.map((row, rowIndex) => (

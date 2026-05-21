@@ -50,12 +50,12 @@ export function WofFailReasonsPage() {
       const res = await fetch(withApiBase("/api/wof-fail-reasons"));
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error(data?.error || "加载失败原因失败");
+        throw new Error(data?.error || "Failed to load fail reasons");
       }
       setRows(Array.isArray(data) ? data : []);
     } catch (err) {
       setRows([]);
-      const message = err instanceof Error ? err.message : "加载失败原因失败";
+      const message = err instanceof Error ? err.message : "Failed to load fail reasons";
       setLoadError(message);
       toast.error(message);
     } finally {
@@ -95,14 +95,14 @@ export function WofFailReasonsPage() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error(data?.error || "保存失败");
+        throw new Error(data?.error || "Save failed");
       }
       setAdding(false);
       setDraft(blankDraft);
       await loadReasons();
-      toast.success("失败原因已创建");
+      toast.success("Fail reason created");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "保存失败";
+      const message = err instanceof Error ? err.message : "Save failed";
       setActionError(message);
       toast.error(message);
     } finally {
@@ -138,14 +138,14 @@ export function WofFailReasonsPage() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error(data?.error || "保存失败");
+        throw new Error(data?.error || "Save failed");
       }
       setEditingId(null);
       setEditDraft(blankDraft);
       await loadReasons();
-      toast.success("失败原因已更新");
+      toast.success("Fail reason updated");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "保存失败";
+      const message = err instanceof Error ? err.message : "Save failed";
       setActionError(message);
       toast.error(message);
     } finally {
@@ -154,7 +154,7 @@ export function WofFailReasonsPage() {
   };
 
   const deleteRow = async (row: FailReasonRow) => {
-    if (!window.confirm(`删除失败原因 “${row.label}”？`)) return;
+    if (!window.confirm(`Delete fail reason "${row.label}"?`)) return;
     setSaving(true);
     setActionError(null);
     try {
@@ -163,12 +163,12 @@ export function WofFailReasonsPage() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error(data?.error || "删除失败");
+        throw new Error(data?.error || "Delete failed");
       }
       await loadReasons();
-      toast.success("失败原因已删除");
+      toast.success("Fail reason deleted");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "删除失败";
+      const message = err instanceof Error ? err.message : "Delete failed";
       setActionError(message);
       toast.error(message);
     } finally {
@@ -206,7 +206,7 @@ export function WofFailReasonsPage() {
 
   return (
     <div className="space-y-4 text-[14px]">
-      <h1 className="text-2xl font-semibold text-[rgba(0,0,0,0.72)]">WOF 失败原因管理</h1>
+      <h1 className="text-2xl font-semibold text-[rgba(0,0,0,0.72)]">WOF Fail Reasons</h1>
 
       {loadError ? (
         <Alert variant="error" description={loadError} onClose={() => setLoadError(null)} />
@@ -221,7 +221,7 @@ export function WofFailReasonsPage() {
           <div className="flex items-center gap-2">
             <Input
               className="w-[220px]"
-              placeholder="搜索失败原因..."
+              placeholder="Search fail reasons..."
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
@@ -232,18 +232,18 @@ export function WofFailReasonsPage() {
         </div>
 
         {loading ? (
-          <div className="py-10 text-center text-sm text-[var(--ds-muted)]">加载中...</div>
+          <div className="py-10 text-center text-sm text-[var(--ds-muted)]">Loading...</div>
         ) : filteredRows.length === 0 && !adding ? (
-          <EmptyState message="暂无失败原因" />
+          <EmptyState message="No fail reasons yet" />
         ) : (
           <div className="overflow-x-auto">
             <div className="min-w-[860px]">
               <div className="grid grid-cols-[120px_180px_1fr_120px_140px] gap-2 border-b border-[rgba(0,0,0,0.06)] px-4 py-3 text-[12px] font-semibold text-[rgba(0,0,0,0.55)]">
                 <div>ID</div>
                 <div>Code</div>
-                <div>原因</div>
+                <div>Reason</div>
                 <div>Active</div>
-                <div className="text-right pr-2">操作</div>
+                <div className="text-right pr-2">Actions</div>
               </div>
 
               {adding ? (
@@ -255,7 +255,7 @@ export function WofFailReasonsPage() {
                     onChange={(event) => setDraft((prev) => ({ ...prev, code: event.target.value }))}
                   />
                   <Input
-                    placeholder="原因"
+                    placeholder="Reason"
                     value={draft.label}
                     onChange={(event) => setDraft((prev) => ({ ...prev, label: event.target.value }))}
                   />
@@ -298,7 +298,7 @@ export function WofFailReasonsPage() {
                     <div>
                       {isEditing ? (
                         <Input
-                          placeholder="原因"
+                          placeholder="Reason"
                           value={editDraft.label}
                           onChange={(event) => setEditDraft((prev) => ({ ...prev, label: event.target.value }))}
                         />

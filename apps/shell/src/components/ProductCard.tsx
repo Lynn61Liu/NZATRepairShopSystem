@@ -13,10 +13,10 @@ const ProductCard = ({ product, cartQty = 0, onAdd, onMinus }: any) => {
 
         {!product.isTool ? (
           <span className={`stock-badge ${isLowStock ? 'low-stock' : 'normal-stock'}`}>
-            {isLowStock ? `库存紧张 (剩${product.stock})` : '库存充足'}
+            {isLowStock ? `Low stock (${product.stock} left)` : 'In stock'}
           </span>
         ) : (
-          <span className="stock-badge tool-badge">固定工具</span>
+          <span className="stock-badge tool-badge">Fixed Tool</span>
         )}
       </div>
 
@@ -29,7 +29,7 @@ const ProductCard = ({ product, cartQty = 0, onAdd, onMinus }: any) => {
            </div>
          ) : (
            <button className="btn-add-initial" onClick={() => onAdd(product)}>
-             {product.isTool ? "报修/需求" : "加入采购车"}
+             {product.isTool ? "Request / Repair" : "Add to Cart"}
            </button>
          )}
       </div>
