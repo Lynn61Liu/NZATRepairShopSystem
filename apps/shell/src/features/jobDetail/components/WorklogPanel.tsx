@@ -60,7 +60,7 @@ export function WorklogPanel({ jobData, paintPanels }: WorklogPanelProps) {
   ) => {
     const res = await handleAddLog(newLog);
     if (!res.ok) {
-      toast.error("新增失败");
+      toast.error("Failed to add");
       return;
     }
     setEditingLogId(null);
@@ -69,7 +69,7 @@ export function WorklogPanel({ jobData, paintPanels }: WorklogPanelProps) {
   const handleEdit = async (id: string, updates: Partial<WorklogEntry>) => {
     const res = await handleEditLog(id, updates);
     if (!res.ok) {
-      toast.error("更新失败");
+      toast.error("Update failed");
       return;
     }
     setEditingLogId((prev) => (prev === id ? null : prev));
@@ -78,7 +78,7 @@ export function WorklogPanel({ jobData, paintPanels }: WorklogPanelProps) {
   const handleCopy = async (log: WorklogEntry) => {
     const res = await handleCopyLog(log);
     if (!res.ok) {
-      toast.error("复制失败");
+      toast.error("Copy failed");
       return;
     }
     if (res.id) {
@@ -89,7 +89,7 @@ export function WorklogPanel({ jobData, paintPanels }: WorklogPanelProps) {
   const handleDelete = async (id: string) => {
     const res = await handleDeleteLog(id);
     if (!res.ok) {
-      toast.error("删除失败");
+      toast.error("Delete failed");
     }
   };
 

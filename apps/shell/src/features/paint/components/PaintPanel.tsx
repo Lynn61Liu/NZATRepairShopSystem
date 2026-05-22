@@ -23,13 +23,13 @@ type StageItem = {
 };
 
 const PAINT_STAGE_DESCRIPTIONS: Partial<Record<StageKey, string>> = {
-  on_hold: "订单暂停，暂不进入喷漆排程",
-  sheet: "钣金修复与底层处理",
-  undercoat: "喷涂打底漆",
-  sanding: "底漆打磨处理",
-  painting: "喷涂面漆",
-  assembly: "配件安装与抛光",
-  delivered: "车辆已交付客户",
+  on_hold: "The order is suspended and the painting schedule will not be entered for the time being.",
+  sheet: "Sheet metal repair and underlying treatment",
+  undercoat: "Spray primer",
+  sanding: "Primer sanding treatment",
+  painting: "Spray topcoat",
+  assembly: "Accessory installation and polishing",
+  delivered: "The vehicle has been delivered to the customer",
 };
 
 const PAINT_STAGES: StageItem[] = PAINT_STAGE_OPTIONS.map((stage) => ({
@@ -144,7 +144,7 @@ export function PaintPanel({
 
   const handleDelete = async () => {
     if (!onDeleteService) return;
-    if (!window.confirm("确定删除喷漆服务？")) return;
+    if (!window.confirm("Are you sure you want to delete the painting service?")) return;
     setDeleteError(null);
     setDeleting(true);
     const res = await onDeleteService();
@@ -153,53 +153,18 @@ export function PaintPanel({
       // no-op, refresh is handled upstream
       notifyPaintBoardRefresh();
     } else {
-      setDeleteError(res.message || "删除失败");
+      setDeleteError(res.message || "Delete failed");
     }
   };
 
   if (!service && !isLoading) {
     return (
       <div className="py-8 text-center">
-        <div className="text-sm text-[var(--ds-muted)]">暂无喷漆服务</div>
-        {onCreateService ? (
-          <Button className="mt-3" variant="primary" onClick={() => onCreateService("not_started")}>
-            创建喷漆服务
-          </Button>
-        ) : null}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
+        <div className="text-sm text-[var(--ds-muted)]">No spray painting service yet</div> {onCreateService ? ( <Button className="mt-3" variant="primary" onClick={() => onCreateService("not_started")}> Create a spray painting service </Button> ) : null} </div> ); } return ( <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-sm font-semibold text-[var(--ds-text)]">喷漆流程</div>
-        <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--ds-muted)] mt-4">
-          {deleteError ? <div className="text-xs text-red-600">{deleteError}</div> : null}
-          <span>片数</span>
-          <Select
-            value={String(panelsValue)}
-            onChange={(event) => handlePanelsChange(event.target.value)}
-            disabled={updatingPanels || isLoading || !onUpdatePanels}
-            className="h-8 w-[90px]"
-          >
-            {Array.from({ length: 20 }, (_, i) => String(i + 1)).map((value) => (
-              <option key={value} value={value}>
-                {value}片
-              </option>
-            ))}
-          </Select>
-          <Button
-            leftIcon={<Trash2 className="h-4 w-4" />}
-            className="border-red-300 text-red-700 hover:bg-red-50"
-            onClick={handleDelete}
-            disabled={isLoading || deleting}
-          >
-            删除喷漆
-          </Button>
-        </div>
-      </div>
-      <div className="space-y-4">
+        <div className="text-sm font-semibold text-[var(--ds-text)]">Painting process</div> <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--ds-muted)] mt-4">
+          {deleteError ? <div className="text-xs text-red-600">{deleteError}</div> : null} <span>Number of pieces</span> <Select value={String(panelsValue)} onChange={(event) => handlePanelsChange(event.target.value)} disabled={updatingPanels || isLoading || !onUpdatePanels} className="h-8 w-[90px]"> {Array.from({ length: 20 }, (_, i) => String(i + 1)).map((value) => ( <option key={value} value={value}> {value} pieces </option> ))} </Select> <Button leftIcon={<Trash2 className="h-4 w-4" />}
+            className="border-red-300 text-red-700 hover:bg-red-50"onClick={handleDelete} disabled={isLoading || deleting} > Remove spray paint </Button> </div> </div> <div className="space-y-4">
         {PAINT_STAGES.map((stage, index) => {
           const state = stageStates[index];
           const isDone = state === "done";
@@ -219,12 +184,12 @@ export function PaintPanel({
 
           const badge =
             stage.key === "done" || stage.key === "delivered"
-              ? "完成"
+              ? "Finish"
               : isDone
-                ? "完成"
+                ? "Finish"
                 : isCurrent
-                  ? "进行中"
-                  : "未开始";
+                  ? "in progress"
+                  : "Not started";
 
           return (
             <div key={stage.key} className="flex gap-4">

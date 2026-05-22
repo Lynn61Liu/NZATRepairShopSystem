@@ -32,33 +32,33 @@ export function StaffManagement({
 
   const handleAdd = () => {
     if (!newStaff.name.trim()) {
-      toast.error("请填写员工姓名");
+      toast.error("Please fill in employee name");
       return;
     }
     if (!Number.isFinite(newStaff.cost_rate) || newStaff.cost_rate <= 0) {
-      toast.error("时薪必须是大于 0 的数字");
+      toast.error("Hourly rate must be a number greater than 0");
       return;
     }
     onAddStaff(newStaff);
     setNewStaff({ name: "", role: "Technician", cost_rate: 0 });
     setIsAdding(false);
-    toast.success("员工已添加");
+    toast.success("Employee added");
   };
 
   const handleSaveEdit = () => {
     if (!editData) return;
     if (!editData.name.trim()) {
-      toast.error("请填写员工姓名");
+      toast.error("Please fill in employee name");
       return;
     }
     if (!Number.isFinite(editData.cost_rate) || editData.cost_rate <= 0) {
-      toast.error("时薪必须是大于 0 的数字");
+      toast.error("Hourly rate must be a number greater than 0");
       return;
     }
     onEditStaff(editData.id, editData);
     setEditingId(null);
     setEditData(null);
-    toast.success("员工信息已更新");
+    toast.success("Employee information has been updated");
   };
 
   return (
@@ -69,15 +69,7 @@ export function StaffManagement({
       >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-lg font-semibold text-[rgba(0,0,0,0.80)]">
-              {isExpanded ? <ChevronDown className="size-5" /> : <ChevronRight className="size-5" />}
-              员工管理
-            </div>
-          <span className="text-sm text-[rgba(0,0,0,0.55)]">{staffProfiles.length} 名员工</span>
-        </div>
-      </div>
-
-      {isExpanded ? (
-        <div className="space-y-4 px-6 py-5">
+              {isExpanded ? <ChevronDown className="size-5" /> : <ChevronRight className="size-5"/>} Employee management </div> <span className="text-sm text-[rgba(0,0,0,0.55)]">{staffProfiles.length} employees</span> </div> </div> {isExpanded ? ( <div className="space-y-4 px-6 py-5">
           <div className="flex flex-wrap gap-2">
             {staffProfiles.map((staff) => (
               <div
@@ -89,7 +81,7 @@ export function StaffManagement({
                   <Input
                     value={editData.name}
                     onChange={(event) => setEditData({ ...editData, name: event.target.value })}
-                    placeholder="姓名"
+                    placeholder="Name"
                     className="min-w-[120px]"
                   />
                   <div className="flex items-center gap-1">
@@ -136,8 +128,7 @@ export function StaffManagement({
                       </span>
                     </div>
                   </div>
-                  <span className="text-sm font-medium text-[rgba(0,0,0,0.70)]">${staff.cost_rate}/小时</span>
-                  <div className="flex gap-1">
+                  <span className="text-sm font-medium text-[rgba(0,0,0,0.70)]">${staff.cost_rate}/hour</span> <div className="flex gap-1">
                     <button
                       type="button"
                       onClick={() => {
@@ -170,7 +161,7 @@ export function StaffManagement({
                 <Input
                   value={newStaff.name}
                   onChange={(event) => setNewStaff({ ...newStaff, name: event.target.value })}
-                  placeholder="姓名"
+                  placeholder="Name"
                   className="min-w-[120px]"
                 />
                 <div className="flex items-center gap-1">
@@ -209,9 +200,7 @@ export function StaffManagement({
                 onClick={() => setIsAdding(true)}
                 className="flex items-center gap-2 rounded-lg border border-dashed border-[rgba(0,0,0,0.20)] bg-white p-3 text-sm text-[rgba(0,0,0,0.65)] hover:bg-slate-50"
               >
-                <Plus className="size-4" />
-                添加员工
-              </button>
+                <Plus className="size-4" />Add employee</button>
             )}
           </div>
         </div>

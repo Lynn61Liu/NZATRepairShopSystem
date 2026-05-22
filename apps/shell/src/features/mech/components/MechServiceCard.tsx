@@ -34,7 +34,7 @@ export function MechServiceCard({ service, onUpdate, onDelete }: MechServiceCard
 
   const handleDelete = async () => {
     if (!onDelete) return;
-    if (!window.confirm("确定删除机修项目？")) return;
+    if (!window.confirm("Are you sure you want to delete the machine repair item?")) return;
     await onDelete(service.id);
   };
 
@@ -55,7 +55,7 @@ export function MechServiceCard({ service, onUpdate, onDelete }: MechServiceCard
                   onClick={handleSave}
                   className="p-1.5 text-green-600 hover:bg-green-100 rounded transition-colors"
                   disabled={saving}
-                  title="保存"
+                  title="save"
                 >
                   <Check className="w-4 h-4" />
                 </button>
@@ -65,7 +65,7 @@ export function MechServiceCard({ service, onUpdate, onDelete }: MechServiceCard
                     setEditing(false);
                   }}
                   className="p-1.5 text-gray-600 hover:bg-gray-200 rounded transition-colors"
-                  title="取消"
+                  title="Cancel"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -73,18 +73,9 @@ export function MechServiceCard({ service, onUpdate, onDelete }: MechServiceCard
             </div>
           ) : (
             <div className="text-base font-semibold text-gray-900 whitespace-pre-line break-words">
-              {service.description || <span className="text-gray-400 italic">暂无描述</span>}
-            </div>
-          )}
-
-          <div className="flex items-center gap-2 text-sm text-gray-600">
+              {service.description || <span className="text-gray-400 italic">No description yet</span>} </div> )} <div className="flex items-center gap-2 text-sm text-gray-600">
             <span className="inline-flex items-center gap-1  font-semibold text-gray-500">
-              <DollarSign className="h-3.5 w-3.5 text-gray-500" />
-              费用
-            </span>
-            {editing ? (
-              <Input
-                type="number"
+              <DollarSign className="h-3.5 w-3.5 text-gray-500"/> cost </span> {editing ? ( <Input type="number"
                 value={costDraft}
                 onChange={(event) => setCostDraft(event.target.value)}
                 className="h-8 w-28"
@@ -101,7 +92,7 @@ export function MechServiceCard({ service, onUpdate, onDelete }: MechServiceCard
             <button
               onClick={() => setEditing(true)}
               className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-              title="编辑"
+              title="edit"
             >
               <Edit2 className="w-3.5 h-3.5" />
             </button>
@@ -110,7 +101,7 @@ export function MechServiceCard({ service, onUpdate, onDelete }: MechServiceCard
             <button
               onClick={handleDelete}
               className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
-              title="删除"
+              title="delete"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>

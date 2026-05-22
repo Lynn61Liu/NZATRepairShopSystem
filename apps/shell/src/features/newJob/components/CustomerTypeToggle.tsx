@@ -1,8 +1,8 @@
 import type { CustomerType } from "@/features/newJob/newJob.types";
 
 const options: Array<{ id: CustomerType; label: string }> = [
-  { id: "personal", label: "个人" },
-  { id: "business", label: "商户" },
+  { id: "personal", label: "personal" },
+  { id: "business", label: "Merchant" },
 ];
 
 type CustomerTypeToggleProps = {

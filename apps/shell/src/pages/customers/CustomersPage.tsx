@@ -73,7 +73,7 @@ export function CustomersPage() {
       if (forceRefresh) {
         const res = await fetch(withApiBase("/api/customers"));
         const data = await res.json().catch(() => null);
-        if (!res.ok) throw new Error(data?.error || "加载客户失败");
+        if (!res.ok) throw new Error(data?.error || "Failed to load client");
         mapped = syncCustomerListCache(Array.isArray(data) ? data : []);
       } else {
         mapped = await loadCustomerListCacheFirst();
@@ -81,7 +81,7 @@ export function CustomersPage() {
 
       setRows(mapped);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "加载客户失败";
+      const message = err instanceof Error ? err.message : "Failed to load client";
       setRows([]);
       setLoadError(message);
       toast.error(message);
@@ -109,136 +109,14 @@ export function CustomersPage() {
       .map((row) => row.map(csvEscape).join(","))
       .join("\n");
 
-    const blob = new Blob([`${header}\n${rowsText}\n`], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "customer_import_template.csv";
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const parseCsv = (text: string): CustomerDraft[] => {
-    const input = text.replace(/\uFEFF/g, "");
-    const rowsOut: string[][] = [];
-    let row: string[] = [];
-    let field = "";
-    let inQuotes = false;
-
-    const pushField = () => {
-      row.push(field);
-      field = "";
-    };
-    const pushRow = () => {
-      const hasAny = row.some((c) => (c ?? "").trim() !== "");
-      if (hasAny) rowsOut.push(row);
-      row = [];
-    };
-
-    for (let i = 0; i < input.length; i++) {
-      const ch = input[i];
-      if (inQuotes) {
-        if (ch === '"') {
-          const next = input[i + 1];
-          if (next === '"') {
-            field += '"';
-            i++;
-          } else {
-            inQuotes = false;
-          }
-        } else {
-          field += ch;
-        }
-      } else if (ch === '"') {
-        inQuotes = true;
-      } else if (ch === ",") {
-        pushField();
-      } else if (ch === "\r") {
-        if (input[i + 1] === "\n") i++;
-        pushField();
-        pushRow();
-      } else if (ch === "\n") {
-        pushField();
-        pushRow();
-      } else {
-        field += ch;
-      }
-    }
-
-    pushField();
-    pushRow();
-
-    if (rowsOut.length < 2) throw new Error("CSV 文件为空或只有表头");
-
-    const headers = rowsOut[0].map((header) => (header ?? "").trim().toLowerCase());
-    const get = (obj: Record<string, string>, key: string) => (obj[key] ?? "").toString();
-
-    return rowsOut.slice(1).map((values) => {
-      const rowObj: Record<string, string> = {};
-      headers.forEach((header, index) => {
-        rowObj[header] = (values[index] ?? "").trim();
-      });
-      return {
-        type: get(rowObj, "type") || "Personal",
-        name: get(rowObj, "name") || "",
-        phone: get(rowObj, "phone") || "",
-        email: get(rowObj, "email") || "",
-        address: get(rowObj, "address") || "",
-        businessCode: get(rowObj, "businesscode") || get(rowObj, "business_code") || "",
-        notes: get(rowObj, "notes") || "",
-        staffMembers: [],
-      };
-    });
-  };
-
-  const handleCsvSelect = async (file: File) => {
-    try {
-      const parsed = parseCsv(await file.text());
-      setPreviewRows(parsed);
-      toast.success(`已读取 ${parsed.length} 条记录`);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "读取 CSV 失败";
-      setActionError(message);
-      toast.error(message);
-    }
-  };
-
-  const confirmImport = async () => {
-    if (!previewRows) return;
-    setImporting(true);
-    setActionError(null);
-    try {
-      let importedCount = 0;
-      for (const row of previewRows) {
-        if (!row.name.trim()) continue;
-        const existing = rows.find(
-          (item) => item.name === row.name && (item.phone === row.phone || item.email === row.email)
-        );
-        let existingProfile: { staffMembers?: CustomerStaff[]; servicePrices?: unknown[] } | null = null;
-        if (existing) {
-          const detailRes = await fetch(withApiBase(`/api/customers/${encodeURIComponent(existing.id)}`));
+    const blob = new Blob([`${header}\n${rowsText}\n`], { type: "text/csv;charset=utf-8;" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = "customer_import_template.csv"; link.click(); URL.revokeObjectURL(url); }; const parseCsv = (text: string): CustomerDraft[] => { const input = text.replace(/\uFEFF/g, ""); const rowsOut: string[][] = []; let row: string[] = []; let field = ""; let inQuotes = false; const pushField = () => { row.push(field); field = ""; }; const pushRow = () => { const hasAny = row.some((c) => (c ?? "").trim() !== ""); if (hasAny) rowsOut.push(row); row = []; }; for (let i = 0; i < input.length; i++) { const ch = input[i]; if (inQuotes) { if (ch === '"') { const next = input[i + 1]; if (next === '"') { field += '"'; i++; } else { inQuotes = false; } } else { field += ch; } } else if (ch === '"') { inQuotes = true; } else if (ch === ",") { pushField(); } else if (ch === "\r") { if (input[i + 1] === "\n") i++; pushField(); pushRow(); } else if (ch === "\n") { pushField(); pushRow(); } else { field += ch; } } pushField(); pushRow(); if (rowsOut.length < 2) throw new Error("CSV file is empty or only has header"); const headers = rowsOut[0].map((header) => (header ?? "").trim().toLowerCase()); const get = (obj: Record<string, string>, key: string) => (obj[key] ?? "").toString(); return rowsOut.slice(1).map((values) => { const rowObj: Record<string, string> = {}; headers.forEach((header, index) => { rowObj[header] = (values[index] ?? "").trim(); }); return { type: get(rowObj, "type") || "Personal", name: get(rowObj, "name") || "", phone: get(rowObj, "phone") || "", email: get(rowObj, "email") || "", address: get(rowObj, "address") || "", businessCode: get(rowObj, "businesscode") || get(rowObj, "business_code") || "", notes: get(rowObj, "notes") || "", staffMembers: [], }; }); }; const handleCsvSelect = async (file: File) => { try { const parsed = parseCsv(await file.text()); setPreviewRows(parsed); toast.success(`Read ${parsed.length}  records`); } catch (err) { const message = err instanceof Error ? err.message : "Failed to read CSV"; setActionError(message); toast.error(message); } }; const confirmImport = async () => { if (!previewRows) return; setImporting(true); setActionError(null); try { let importedCount = 0; for (const row of previewRows) { if (!row.name.trim()) continue; const existing = rows.find( (item) => item.name === row.name && (item.phone === row.phone || item.email === row.email) ); let existingProfile: { staffMembers?: CustomerStaff[]; servicePrices?: unknown[] } | null = null; if (existing) { const detailRes = await fetch(withApiBase(`/api/customers/${encodeURIComponent(existing.id)}`));
           existingProfile = await detailRes.json().catch(() => null);
         }
         const res = await fetch(
           withApiBase(existing ? `/api/customers/${encodeURIComponent(existing.id)}` : "/api/customers"),
           {
             method: existing ? "PUT" : "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              ...row,
-              staffMembers: existingProfile?.staffMembers ?? row.staffMembers ?? [],
-              servicePrices: existingProfile?.servicePrices ?? [],
-            }),
-          }
-        );
-        if (res.ok) importedCount += 1;
-      }
-
-      setPreviewRows(null);
-      await loadCustomers(true);
-      toast.success(`导入完成：${importedCount} 条`);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "导入失败";
+            headers: { "Content-Type": "application/json"}, body: JSON.stringify({ ...row, staffMembers: existingProfile?.staffMembers ?? row.staffMembers ?? [], servicePrices: existingProfile?.servicePrices ?? [], }), } ); if (res.ok) importedCount += 1; } setPreviewRows(null); await loadCustomers(true); toast.success(`Import completed: ${importedCount} items`); } catch (err) { const message = err instanceof Error? err.message:"Import failed";
       setActionError(message);
       toast.error(message);
     } finally {

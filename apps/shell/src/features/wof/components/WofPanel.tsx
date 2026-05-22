@@ -151,19 +151,19 @@ function getWofStatusLabel(
   hasService: boolean,
   hasRenderedData: boolean
 ) {
-  if (status === "Recorded") return "已录入";
-  if (status === "Checked") return "检查完成";
-  if (status === "Todo") return "待查";
-  if (hasRenderedData) return "已录入";
-  if (hasService) return "待查";
+  if (status === "Recorded") return "Already entered";
+  if (status === "Checked") return "Check completed";
+  if (status === "Todo") return "To be investigated";
+  if (hasRenderedData) return "Already entered";
+  if (hasService) return "To be investigated";
   return null;
 }
 
 function WofStatusBadge({ label }: { label: string }) {
   const className =
-    label === "已录入"
+    label === "Already entered"
         ? "border-sky-200 bg-sky-50 text-sky-700"
-        : label === "检查完成"
+        : label === "Check completed"
           ? "border-amber-200 bg-amber-50 text-amber-700"
           : "border-slate-200 bg-white text-slate-700";
 

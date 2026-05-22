@@ -55,12 +55,12 @@ export function WorkLogAddRow({ staffProfiles, jobs, totalsByJob, onAdd }: Props
 
   const handleSave = () => {
     if (!staffName.trim() || !rego.trim() || !timeRange.trim()) {
-      toast.error("请填写必填项：员工姓名、车牌号、开始-结束时间");
+      toast.error("Please fill in the required fields: employee name, license plate number, start-end time");
       return;
     }
     const parsed = parseTimeRange(timeRange);
     if (!parsed) {
-      toast.error("开始-结束时间格式必须为 9.30-13.45 或 9:30-13:45");
+      toast.error("Start-end time format must be 9.30-13.45 or 9:30-13:45");
       return;
     }
 
@@ -92,7 +92,7 @@ export function WorkLogAddRow({ staffProfiles, jobs, totalsByJob, onAdd }: Props
     setWorkDate(formatDate(new Date()));
     setTimeRange("");
     setAdminNote("");
-    toast.success("工时记录已保存");
+    toast.success("Working hours record saved");
   };
 
   return (
@@ -113,7 +113,7 @@ export function WorkLogAddRow({ staffProfiles, jobs, totalsByJob, onAdd }: Props
             setShowStaffSuggestions(true);
           }}
           onFocus={() => setShowStaffSuggestions(true)}
-          placeholder="输入姓名"
+          placeholder="Enter name"
           className="bg-white text-sm"
         />
         {showStaffSuggestions && filteredStaff.length > 0 ? (
@@ -152,12 +152,11 @@ export function WorkLogAddRow({ staffProfiles, jobs, totalsByJob, onAdd }: Props
             setTimeRange(value);
             parseTimeRange(value);
           }}
-          placeholder="如: 9.30-13.45"
+          placeholder="Such as: 9.30-13.45"
           className="text-sm"
         />
       </td>
-      <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]">
-        {durationHours ? `${durationHours.toFixed(2)}小时` : "—"}
+      <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]"> {durationHours ? `${durationHours.toFixed(2)}hours` :"—"}
       </td>
       <td className="px-4 py-3 text-sm font-medium text-[rgba(0,0,0,0.70)]">
         ${wage}
@@ -172,7 +171,7 @@ export function WorkLogAddRow({ staffProfiles, jobs, totalsByJob, onAdd }: Props
             setShowRegoSuggestions(true);
           }}
           onFocus={() => setShowRegoSuggestions(true)}
-          placeholder="输入车牌号"
+          placeholder="Enter license plate number"
           className="bg-white text-sm"
         />
         {selectedJob?.makeModel ? (
@@ -205,20 +204,17 @@ export function WorkLogAddRow({ staffProfiles, jobs, totalsByJob, onAdd }: Props
         <Input
           value={adminNote}
           onChange={(event) => setAdminNote(event.target.value)}
-          placeholder="备注"
+          placeholder="Remark"
           className="text-sm"
         />
       </td>
-      <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]">
-        {totals ? `${totals.hours.toFixed(2)}小时` : "—"}
+      <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]"> {totals ? `${totals.hours.toFixed(2)}hours` :"—"}
       </td>
       <td className={`px-4 py-3 text-sm ${totals && totals.cost > 300 ? "text-red-600 font-semibold" : "text-[rgba(0,0,0,0.60)]"}`}>
         {totals ? `${totals.cost > 300 ? "!" : ""}$${totals.cost.toFixed(2)}` : "—"}
       </td>
       <td className="px-4 py-3">
-        <Button onClick={handleSave} variant="primary" className="h-9" leftIcon={<Save className="size-4" />}>
-          保存
-        </Button>
+        <Button onClick={handleSave} variant="primary" className="h-9" leftIcon={<Save className="size-4" />}>save</Button>
       </td>
     </tr>
   );

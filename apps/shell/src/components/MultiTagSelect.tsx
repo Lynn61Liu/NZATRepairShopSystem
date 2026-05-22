@@ -4,7 +4,7 @@ import { ChevronDown, Search, X } from "lucide-react";
 export type TagOption = {
   id: string;       // e.g. "vip"
   label: string;    // e.g. "VIP"
-  colorKey?: string; // 可选：如果你后面接 tagColorMap
+  colorKey?: string; // Optional: if you follow tagColorMap
 };
 
 type Props = {
@@ -12,7 +12,7 @@ type Props = {
   value: string[];                 // selected ids
   onChange: (next: string[]) => void;
   placeholder?: string;
-  maxChips?: number;               // 默认显示几个 chip，其余显示 +N
+  maxChips?: number;               // A few chips are displayed by default, and +N is displayed for the rest.
 };
 
 export function MultiTagSelect({

@@ -1,7 +1,6 @@
 import { useRef } from "react";
-import { useDrop } from 'react-dnd';
-import type { ArrivalNotice, WorkCard, Status } from '@/types';
-// import { CardItem } from './CardItem';
+import { useDrop } from "react-dnd";
+import type { ArrivalNotice, WorkCard, Status } from "@/types";
 import { CardItem } from "@/features/partFlow/components/CardItem";
 
 interface PartFlowColumnProps {
@@ -16,10 +15,10 @@ interface PartFlowColumnProps {
 }
 
 const statusLabels: Record<Status, string> = {
-  pending_order: "待下单",
-  needs_pt: "需要发PT",
+  pending_order: "Pending order",
+  needs_pt: "PT required",
   parts_trader: "PartsTrader",
-  pickup_or_transit: "待取/在途",
+  pickup_or_transit: "Pickup / In transit",
 };
 
 const statusColors: Record<Status, string> = {
@@ -44,13 +43,13 @@ export function PartFlowColumn({
   onArchiveCard,
   onAddNote,
   onDeleteNote,
-  onArrivalNoticeSent
+  onArrivalNoticeSent,
 }: PartFlowColumnProps) {
   const dropRef = useRef<HTMLDivElement | null>(null);
   const [{ isOver }, drop] = useDrop<{ id: string; status: Status }, void, { isOver: boolean }>(() => ({
-    accept: 'CARD',
+    accept: "CARD",
     drop: (item) => {
-        // 只有当卡片被拖动到不同的列时才触发状态更新
+        // Status updates are only triggered when the card is dragged to a different column
         //DEBUG: console.log(`Dropped card ${item.id} with status ${item.status} to column ${status}`);
         console.log(`Dropped card ${item.id} with status ${item.status} to column ${status}`);
             

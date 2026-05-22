@@ -1,9 +1,6 @@
-/* src/components/Shopfront.css */
-.shopfront-container {
-  padding: 16px;
-  background-color: #f0f2f5; /* 类似淘宝灰色的背景 */
+/*src/components/Shopfront.css */ .shopfront-container { padding: 16px; background-color: #f0f2f5; /* Similar to Taobao gray background*/
   min-height: 100vh;
-  padding-bottom: 80px; /* 底部留白，为了以后放悬浮购物车条 */
+  padding-bottom: 80px; /*Leave the bottom blank for later placement of a floating shopping cart bar.*/
 }
 
 .page-title {
@@ -12,16 +9,16 @@
   color: #333;
 }
 
-/* 核心：响应式网格布局 */
+/*Core: Responsive Grid Layout*/
 .product-grid {
   display: grid;
-  /* 魔法代码：卡片最小160px宽，空间够就自动排布。手机上刚好2列，iPad上3-4列 */
+  /*Magic code: The minimum width of the card is 160px, and it will be automatically arranged if there is enough space. There are exactly 2 columns on the phone and 3-4 columns on the iPad.*/
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 16px; 
 }
-/* --- 下面是新增的采购车相关样式 --- */
+/*---The following are the newly added purchasing car related styles ---*/
 
-/* 底部悬浮条 */
+/*Bottom floating bar*/
 .cart-bar {
   position: fixed;
   bottom: 0;
@@ -34,7 +31,7 @@
   justify-content: space-between;
   align-items: center;
   z-index: 100;
-  /* 如果在带有侧边栏的后台，让它不要挡住左边 */
+  /*If you are in a background with a sidebar, let it not block the left side*/
   margin-left: var(--sidebar-width, 0); 
 }
 
@@ -61,7 +58,7 @@
   cursor: pointer;
 }
 
-/* 弹出的确认清单遮罩层 */
+/*Pop-up confirmation list mask layer*/
 .cart-modal-overlay {
   position: fixed;
   top: 0;
@@ -72,10 +69,10 @@
   z-index: 200;
   display: flex;
   justify-content: center;
-  align-items: flex-end; /* 靠底部弹出 */
+  align-items: flex-end; /*Pop up at the bottom*/
 }
 
-/* 弹出框本体 */
+/*Pop-up box body*/
 .cart-modal {
   background-color: white;
   width: 100%;
@@ -123,12 +120,12 @@
   padding: 12px;
   margin-top: 16px;
   font-size: 14px;
-  resize: none; /* 禁止拖拽缩放 */
+  resize: none; /*Disable drag and zoom*/
 }
 
 .btn-submit {
   width: 100%;
-  background-color: #52c41a; /* 绿色提交按钮 */
+  background-color: #52c41a; /*green submit button*/
   color: white;
   border: none;
   padding: 14px;

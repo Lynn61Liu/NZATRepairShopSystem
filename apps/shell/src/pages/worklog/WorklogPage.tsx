@@ -492,13 +492,13 @@ export function WorklogPage() {
     >
       <div className="mx-auto flex w-full max-w-[1800px] flex-1 flex-col p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-3xl font-semibold text-[rgba(0,0,0,0.72)]">工时明细列表</h1>
+          <h1 className="text-3xl font-semibold text-[rgba(0,0,0,0.72)]">Work Hours Log</h1>
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="ghost" onClick={handleDownloadTemplate}>
-              下载模板
+              Download Template
             </Button>
             <Button variant="primary" onClick={() => fileInputRef.current?.click()}>
-              导入 Excel
+              Import Excel
             </Button>
             <input
               ref={fileInputRef}
@@ -525,13 +525,13 @@ export function WorklogPage() {
         />
         <ConfirmDialog
           open={pendingStaffDelete !== null}
-          title="确认删除员工"
+          title="Confirm Staff Deletion"
           message={
             pendingStaffDelete
-              ? `员工 “${pendingStaffDelete.name}” 关联了 ${pendingStaffDelete.relatedWorklogCount} 条 worklog 记录。\n删除后这些历史 worklog 不会受影响，但该员工将不再出现在员工列表和选择项中。\n是否继续删除？`
+              ? `Staff “${pendingStaffDelete.name}” has ${pendingStaffDelete.relatedWorklogCount} associated worklog records.\nDeleting will not affect these historical records, but the staff member will no longer appear in the staff list or selection options.\nDo you want to continue deleting?`
               : ""
           }
-          confirmLabel="继续删除"
+          confirmLabel="Continue Deleting"
           isProcessing={isDeletingStaff}
           onConfirm={handleConfirmDeleteStaff}
           onClose={() => {

@@ -131,7 +131,7 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
     try {
       const wofRes = await fetchWofServer(jobId);
       if (!wofRes.ok) {
-        throw new Error(wofRes.error || "加载 WOF 记录失败");
+        throw new Error(wofRes.error || "Failed to load WOF records");
       }
       if (isMountedRef.current) {
         const wofData = wofRes.data;
@@ -161,7 +161,7 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
     try {
       const res = await fetchPartsServices(jobId);
       if (!res.ok) {
-        throw new Error(res.error || "加载配件服务失败");
+        throw new Error(res.error || "Failed to load accessories service");
       }
       if (isMountedRef.current) {
         const list = Array.isArray(res.data) ? res.data : [];
@@ -186,7 +186,7 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
     try {
       const res = await fetchMechServices(jobId);
       if (!res.ok) {
-        throw new Error(res.error || "加载机修项目失败");
+        throw new Error(res.error || "Failed to load machine repair project");
       }
       if (isMountedRef.current) {
         const list = Array.isArray(res.data) ? res.data : [];
@@ -211,7 +211,7 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
     try {
       const res = await fetchPaintService(jobId);
       if (!res.ok) {
-        throw new Error(res.error || "加载喷漆服务失败");
+        throw new Error(res.error || "Failed to load paint service");
       }
       const service = res.data?.service ? res.data.service : null;
       if (isMountedRef.current) {
@@ -249,17 +249,17 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
     if (hasWofRecord || wofRecords.length > 0 || wofCheckItems.length > 0) return;
     const res = await createWofServer(jobId);
     if (!res.ok) {
-      toast.error(res.error || "创建失败");
+      toast.error(res.error || "Creation failed");
       return;
     }
     if (jobId) {
       await Promise.all([refreshJobSummary(), refreshWofServer()]);
       if (res.data?.alreadyExists) {
-        toast.success("WOF 服务已存在");
+        toast.success("WOF service already exists");
       } else if (res.data?.xeroSyncQueued) {
-        toast.success("已创建 WOF 服务，Xero draft 正在后台更新");
+        toast.success("WOF service has been created and Xero draft is being updated in the background");
       } else {
-        toast.success("已创建 WOF 服务");
+        toast.success("WOF service created");
       }
     }
   }, [
@@ -276,52 +276,52 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
   const saveWofResult = useCallback(
     async (payload: { result: "Pass" | "Fail"; expiryDate?: string; failReasonId?: string; note?: string }) => {
       if (!jobId) {
-        return { success: false, message: "缺少工单 ID" };
+        return { success: false, message: "Missing ticket ID" };
       }
 
       const res = await createWofResult(jobId, payload);
       if (!res.ok) {
-        toast.error(res.error || "保存失败");
-        return { success: false, message: res.error || "保存失败" };
+        toast.error(res.error || "Save failed");
+        return { success: false, message: res.error || "Save failed" };
       }
 
       await Promise.all([refreshWofServer(), refreshJobSummary()]);
-      toast.success("保存成功");
-      return { success: true, message: "保存成功" };
+      toast.success("Saved successfully");
+      return { success: true, message: "Saved successfully" };
     },
     [jobId, refreshJobSummary, refreshWofServer, toast]
   );
 
   const deleteWofServerForJob = useCallback(async () => {
     if (!jobId) {
-      return { success: false, message: "缺少工单 ID" };
+      return { success: false, message: "Missing ticket ID" };
     }
 
     const res = await deleteWofServer(jobId);
     if (!res.ok) {
-      toast.error(res.error || "删除失败");
-      return { success: false, message: res.error || "删除失败" };
+      toast.error(res.error || "Delete failed");
+      return { success: false, message: res.error || "Delete failed" };
     }
 
     await Promise.all([refreshJobSummary(), refreshWofServer()]);
-    toast.success(res.data?.xeroSyncQueued ? "删除成功，Xero draft 正在后台更新" : "删除成功");
-    return { success: true, message: "删除成功" };
+    toast.success(res.data?.xeroSyncQueued ? "Deletion successful, Xero draft is being updated in the background" : "Delete successfully");
+    return { success: true, message: "Delete successfully" };
   }, [jobId, refreshJobSummary, refreshWofServer, toast]);
 
   const createPaintServiceRow = useCallback(
     async (status?: string, panels?: number) => {
       if (!jobId) {
-        return { success: false, message: "缺少工单 ID" };
+        return { success: false, message: "Missing ticket ID" };
       }
       const res = await createPaintService(jobId, status, panels);
       if (!res.ok) {
-        toast.error(res.error || "创建喷漆服务失败");
-        return { success: false, message: res.error || "创建喷漆服务失败" };
+        toast.error(res.error || "Creating spray painting service failed");
+        return { success: false, message: res.error || "Creating spray painting service failed" };
       }
       setPaintService(res.data ?? null);
-      toast.success("喷漆服务已创建");
+      toast.success("Painting service created");
       notifyPaintBoardRefresh();
-      return { success: true, message: "喷漆服务已创建" };
+      return { success: true, message: "Painting service created" };
     },
     [jobId, toast]
   );
@@ -329,12 +329,12 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
   const updatePaintStageRow = useCallback(
     async (stageIndex: number) => {
       if (!jobId) {
-        return { success: false, message: "缺少工单 ID" };
+        return { success: false, message: "Missing ticket ID" };
       }
       const res = await updatePaintStage(jobId, stageIndex);
       if (!res.ok) {
-        toast.error(res.error || "更新喷漆阶段失败");
-        return { success: false, message: res.error || "更新喷漆阶段失败" };
+        toast.error(res.error || "Update painting phase failed");
+        return { success: false, message: res.error || "Update painting phase failed" };
       }
       setPaintService((prev) =>
         prev
@@ -345,9 +345,9 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
             }
           : prev
       );
-      toast.success("喷漆阶段已更新");
+      toast.success("The painting stage has been updated");
       notifyPaintBoardRefresh();
-      return { success: true, message: "喷漆阶段已更新" };
+      return { success: true, message: "The painting stage has been updated" };
     },
     [jobId, toast]
   );
@@ -355,19 +355,19 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
   const updatePaintPanelsRow = useCallback(
     async (panels: number) => {
       if (!jobId) {
-        return { success: false, message: "缺少工单 ID" };
+        return { success: false, message: "Missing ticket ID" };
       }
       const res = await updatePaintPanels(jobId, panels);
       if (!res.ok) {
-        toast.error(res.error || "更新喷漆片数失败");
-        return { success: false, message: res.error || "更新喷漆片数失败" };
+        toast.error(res.error || "Failed to update the number of paint chips");
+        return { success: false, message: res.error || "Failed to update the number of paint chips" };
       }
       setPaintService((prev) =>
         prev ? { ...prev, panels: typeof res.data?.panels === "number" ? res.data.panels : panels } : prev
       );
-      toast.success("喷漆片数已更新");
+      toast.success("The number of paint chips has been updated");
       notifyPaintBoardRefresh();
-      return { success: true, message: "喷漆片数已更新" };
+      return { success: true, message: "The number of paint chips has been updated" };
     },
     [jobId, toast]
   );
@@ -375,17 +375,17 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
   const deletePaintServiceRow = useCallback(
     async () => {
       if (!jobId) {
-        return { success: false, message: "缺少工单 ID" };
+        return { success: false, message: "Missing ticket ID" };
       }
       const res = await deletePaintService(jobId);
       if (!res.ok) {
-        toast.error(res.error || "删除喷漆服务失败");
-        return { success: false, message: res.error || "删除喷漆服务失败" };
+        toast.error(res.error || "Failed to delete spray painting service");
+        return { success: false, message: res.error || "Failed to delete spray painting service" };
       }
       setPaintService(null);
-      toast.success("喷漆服务已删除");
+      toast.success("Painting service removed");
       notifyPaintBoardRefresh();
-      return { success: true, message: "喷漆服务已删除" };
+      return { success: true, message: "Painting service removed" };
     },
     [jobId, toast]
   );
@@ -393,19 +393,19 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
   const saveJobNotes = useCallback(
     async (notes: string) => {
       if (!jobId) {
-        return { success: false, message: "缺少工单 ID" };
+        return { success: false, message: "Missing ticket ID" };
       }
 
       const res = await updateJobNotes(jobId, notes);
       if (!res.ok) {
-        toast.error(res.error || "保存备注失败");
-        return { success: false, message: res.error || "保存备注失败" };
+        toast.error(res.error || "Failed to save notes");
+        return { success: false, message: res.error || "Failed to save notes" };
       }
 
       setJobData((prev) => (prev ? { ...prev, notes } : prev));
-      toast.success("备注已更新");
+      toast.success("Note has been updated");
       notifyPaintBoardRefresh();
-      return { success: true, message: "备注已更新" };
+      return { success: true, message: "Note has been updated" };
     },
     [jobId, toast]
   );
@@ -413,18 +413,18 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
   const createWofRecordRow = useCallback(
     async (payload: WofRecordUpdatePayload) => {
       if (!jobId) {
-        return { success: false, message: "缺少工单 ID" };
+        return { success: false, message: "Missing ticket ID" };
       }
 
       const res = await createWofRecord(jobId, payload);
       if (!res.ok) {
-        toast.error(res.error || "保存失败");
-        return { success: false, message: res.error || "保存失败" };
+        toast.error(res.error || "Save failed");
+        return { success: false, message: res.error || "Save failed" };
       }
 
       await Promise.all([refreshWofServer(), refreshJobSummary()]);
-      toast.success("保存成功");
-      return { success: true, message: "保存成功" };
+      toast.success("Saved successfully");
+      return { success: true, message: "Saved successfully" };
     },
     [jobId, refreshJobSummary, refreshWofServer, toast]
   );
@@ -432,18 +432,18 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
   const updateWofRecordRow = useCallback(
     async (recordId: string, payload: WofRecordUpdatePayload) => {
       if (!jobId) {
-        return { success: false, message: "缺少工单 ID" };
+        return { success: false, message: "Missing ticket ID" };
       }
 
       const res = await updateWofRecord(jobId, recordId, payload);
       if (!res.ok) {
-        toast.error(res.error || "保存失败");
-        return { success: false, message: res.error || "保存失败" };
+        toast.error(res.error || "Save failed");
+        return { success: false, message: res.error || "Save failed" };
       }
 
       await refreshWofServer();
-      toast.success("保存成功");
-      return { success: true, message: "保存成功" };
+      toast.success("Saved successfully");
+      return { success: true, message: "Saved successfully" };
     },
     [jobId, refreshWofServer, toast]
   );
@@ -451,65 +451,53 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
   const deleteWofRecordRow = useCallback(
     async (recordId: string) => {
       if (!jobId) {
-        return { success: false, message: "缺少工单 ID" };
+        return { success: false, message: "Missing ticket ID" };
       }
 
       const res = await deleteWofRecord(jobId, recordId);
       if (!res.ok) {
-        toast.error(res.error || "删除失败");
-        return { success: false, message: res.error || "删除失败" };
+        toast.error(res.error || "Delete failed");
+        return { success: false, message: res.error || "Delete failed" };
       }
 
       await refreshWofServer();
       await refreshJobSummary();
-      toast.success("删除成功");
-      return { success: true, message: "删除成功" };
+      toast.success("Delete successfully");
+      return { success: true, message: "Delete successfully" };
     },
     [jobId, refreshJobSummary, refreshWofServer, toast]
   );
 
   const importWofRecordsForJob = useCallback(async () => {
     if (!jobId) {
-      return { success: false, message: "缺少工单 ID" };
+      return { success: false, message: "Missing ticket ID" };
     }
     if (wofLoading) {
-      return { success: false, message: "正在加载，请稍后" };
+      return { success: false, message: "Loading, please wait" };
     }
 
     const res = await importWofRecords(jobId);
     if (!res.ok) {
-      toast.error(res.error || "导入失败");
-      return { success: false, message: res.error || "导入失败" };
+      toast.error(res.error || "Import failed");
+      return { success: false, message: res.error || "Import failed" };
     }
 
     await Promise.all([refreshWofServer(), refreshJobSummary()]);
     const inserted = Number(res.data?.inserted ?? 0);
     const updated = Number(res.data?.updated ?? 0);
     const skipped = Number(res.data?.skipped ?? 0);
-    const sourceFile = res.data?.sourceFile ? `（${res.data.sourceFile}）` : "";
-    const message = `导入完成${sourceFile}：新增 ${inserted} 条，更新 ${updated} 条，跳过 ${skipped} 条`;
-    toast.success(message);
-    return {
-      success: true,
-      message,
-    };
-  }, [jobId, wofLoading, refreshJobSummary, refreshWofServer, toast]);
-
-  const createPartsServiceRow = useCallback(
-    async (payload: { description: string; status?: PartsServiceStatus }) => {
-      if (!jobId) {
-        return { success: false, message: "缺少工单 ID" };
+    const sourceFile = res.data?.sourceFile ? `(${res.data.sourceFile})` : ""; const message = `Import completed${sourceFile}: added ${inserted} items, updated ${updated} items, skipped ${skipped} items`; toast.success(message); return { success: true, message, }; }, [jobId, wofLoading, refreshJobSummary, refreshWofServer, toast]); const createPartsServiceRow = useCallback( async (payload: { description: string; status?: PartsServiceStatus }) => { if (!jobId) { return { success: false, message:"Missing work order ID" };
       }
 
       const res = await createPartsService(jobId, payload);
       if (!res.ok) {
-        toast.error(res.error || "保存失败");
-        return { success: false, message: res.error || "保存失败" };
+        toast.error(res.error || "Save failed");
+        return { success: false, message: res.error || "Save failed" };
       }
 
       await refreshPartsServices();
-      toast.success("保存成功");
-      return { success: true, message: "保存成功" };
+      toast.success("Saved successfully");
+      return { success: true, message: "Saved successfully" };
     },
     [jobId, refreshPartsServices, toast]
   );
@@ -517,18 +505,18 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
   const updatePartsServiceRow = useCallback(
     async (serviceId: string, payload: { description?: string; status?: PartsServiceStatus }) => {
       if (!jobId) {
-        return { success: false, message: "缺少工单 ID" };
+        return { success: false, message: "Missing ticket ID" };
       }
 
       const res = await updatePartsService(jobId, serviceId, payload);
       if (!res.ok) {
-        toast.error(res.error || "保存失败");
-        return { success: false, message: res.error || "保存失败" };
+        toast.error(res.error || "Save failed");
+        return { success: false, message: res.error || "Save failed" };
       }
 
       await refreshPartsServices();
-      toast.success("保存成功");
-      return { success: true, message: "保存成功" };
+      toast.success("Saved successfully");
+      return { success: true, message: "Saved successfully" };
     },
     [jobId, refreshPartsServices, toast]
   );
@@ -536,18 +524,18 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
   const deletePartsServiceRow = useCallback(
     async (serviceId: string) => {
       if (!jobId) {
-        return { success: false, message: "缺少工单 ID" };
+        return { success: false, message: "Missing ticket ID" };
       }
 
       const res = await deletePartsService(jobId, serviceId);
       if (!res.ok) {
-        toast.error(res.error || "删除失败");
-        return { success: false, message: res.error || "删除失败" };
+        toast.error(res.error || "Delete failed");
+        return { success: false, message: res.error || "Delete failed" };
       }
 
       await refreshPartsServices();
-      toast.success("删除成功");
-      return { success: true, message: "删除成功" };
+      toast.success("Delete successfully");
+      return { success: true, message: "Delete successfully" };
     },
     [jobId, refreshPartsServices, toast]
   );
@@ -555,16 +543,16 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
   const createMechServiceRow = useCallback(
     async (payload: { description: string; cost?: number | null }) => {
       if (!jobId) {
-        return { success: false, message: "缺少工单 ID" };
+        return { success: false, message: "Missing ticket ID" };
       }
       const res = await createMechService(jobId, payload);
       if (!res.ok) {
-        toast.error(res.error || "保存失败");
-        return { success: false, message: res.error || "保存失败" };
+        toast.error(res.error || "Save failed");
+        return { success: false, message: res.error || "Save failed" };
       }
       await refreshMechServices();
-      toast.success("保存成功");
-      return { success: true, message: "保存成功" };
+      toast.success("Saved successfully");
+      return { success: true, message: "Saved successfully" };
     },
     [jobId, refreshMechServices, toast]
   );
@@ -572,16 +560,16 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
   const updateMechServiceRow = useCallback(
     async (serviceId: string, payload: { description?: string; cost?: number | null }) => {
       if (!jobId) {
-        return { success: false, message: "缺少工单 ID" };
+        return { success: false, message: "Missing ticket ID" };
       }
       const res = await updateMechService(jobId, serviceId, payload);
       if (!res.ok) {
-        toast.error(res.error || "保存失败");
-        return { success: false, message: res.error || "保存失败" };
+        toast.error(res.error || "Save failed");
+        return { success: false, message: res.error || "Save failed" };
       }
       await refreshMechServices();
-      toast.success("保存成功");
-      return { success: true, message: "保存成功" };
+      toast.success("Saved successfully");
+      return { success: true, message: "Saved successfully" };
     },
     [jobId, refreshMechServices, toast]
   );
@@ -589,16 +577,16 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
   const deleteMechServiceRow = useCallback(
     async (serviceId: string) => {
       if (!jobId) {
-        return { success: false, message: "缺少工单 ID" };
+        return { success: false, message: "Missing ticket ID" };
       }
       const res = await deleteMechService(jobId, serviceId);
       if (!res.ok) {
-        toast.error(res.error || "删除失败");
-        return { success: false, message: res.error || "删除失败" };
+        toast.error(res.error || "Delete failed");
+        return { success: false, message: res.error || "Delete failed" };
       }
       await refreshMechServices();
-      toast.success("删除成功");
-      return { success: true, message: "删除成功" };
+      toast.success("Delete successfully");
+      return { success: true, message: "Delete successfully" };
     },
     [jobId, refreshMechServices, toast]
   );
@@ -606,18 +594,18 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
   const createPartsNoteRow = useCallback(
     async (serviceId: string, note: string) => {
       if (!jobId) {
-        return { success: false, message: "缺少工单 ID" };
+        return { success: false, message: "Missing ticket ID" };
       }
 
       const res = await createPartsNote(jobId, serviceId, note);
       if (!res.ok) {
-        toast.error(res.error || "保存失败");
-        return { success: false, message: res.error || "保存失败" };
+        toast.error(res.error || "Save failed");
+        return { success: false, message: res.error || "Save failed" };
       }
 
       await refreshPartsServices();
-      toast.success("保存成功");
-      return { success: true, message: "保存成功" };
+      toast.success("Saved successfully");
+      return { success: true, message: "Saved successfully" };
     },
     [jobId, refreshPartsServices, toast]
   );
@@ -625,18 +613,18 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
   const updatePartsNoteRow = useCallback(
     async (noteId: string, note: string) => {
       if (!jobId) {
-        return { success: false, message: "缺少工单 ID" };
+        return { success: false, message: "Missing ticket ID" };
       }
 
       const res = await updatePartsNote(jobId, noteId, note);
       if (!res.ok) {
-        toast.error(res.error || "保存失败");
-        return { success: false, message: res.error || "保存失败" };
+        toast.error(res.error || "Save failed");
+        return { success: false, message: res.error || "Save failed" };
       }
 
       await refreshPartsServices();
-      toast.success("保存成功");
-      return { success: true, message: "保存成功" };
+      toast.success("Saved successfully");
+      return { success: true, message: "Saved successfully" };
     },
     [jobId, refreshPartsServices, toast]
   );
@@ -644,25 +632,25 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
   const deletePartsNoteRow = useCallback(
     async (noteId: string) => {
       if (!jobId) {
-        return { success: false, message: "缺少工单 ID" };
+        return { success: false, message: "Missing ticket ID" };
       }
 
       const res = await deletePartsNote(jobId, noteId);
       if (!res.ok) {
-        toast.error(res.error || "删除失败");
-        return { success: false, message: res.error || "删除失败" };
+        toast.error(res.error || "Delete failed");
+        return { success: false, message: res.error || "Delete failed" };
       }
 
       await refreshPartsServices();
-      toast.success("删除成功");
-      return { success: true, message: "删除成功" };
+      toast.success("Delete successfully");
+      return { success: true, message: "Delete successfully" };
     },
     [jobId, refreshPartsServices, toast]
   );
 
   const deleteJob = useCallback(async (): Promise<DeleteJobActionResult> => {
     if (!jobId) {
-      return { success: false, message: "缺少工单 ID" };
+      return { success: false, message: "Missing ticket ID" };
     }
     setDeletingJob(true);
     setDeleteError(null);
@@ -671,18 +659,18 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
       if (!res.ok) {
         return {
           success: false,
-          message: res.error || "删除失败",
+          message: res.error || "Delete failed",
           steps: (res.data as { steps?: DeleteJobActionResult["steps"] } | null)?.steps,
         };
       }
 
       return {
         success: true,
-        message: "已删除",
+        message: "Deleted",
         steps: (res.data as { steps?: DeleteJobActionResult["steps"] } | null)?.steps,
       };
     } catch (err) {
-      const message = err instanceof Error ? err.message : "删除失败";
+      const message = err instanceof Error ? err.message : "Delete failed";
       return { success: false, message };
     } finally {
       setDeletingJob(false);
@@ -690,14 +678,14 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
   }, [jobId]);
 
   const archiveJob = useCallback(async () => {
-    if (!jobId) return { success: false, message: "缺少工单 ID" };
-    if (jobData?.status === "Archived") return { success: true, message: "工单已归档" };
+    if (!jobId) return { success: false, message: "Missing ticket ID" };
+    if (jobData?.status === "Archived") return { success: true, message: "Ticket archived" };
 
     setArchivingJob(true);
     try {
       const res = await updateJobStatus(jobId, "Archived");
       if (!res.ok) {
-        const message = res.error || "归档失败";
+        const message = res.error || "Archiving failed";
         toast.error(message);
         return { success: false, message };
       }
@@ -710,8 +698,8 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
             }
           : prev
       );
-      toast.success("已归档");
-      return { success: true, message: "已归档" };
+      toast.success("Archived");
+      return { success: true, message: "Archived" };
     } finally {
       setArchivingJob(false);
     }
@@ -731,20 +719,20 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
 
   const createJobXeroDraftInvoice = useCallback(async () => {
     if (!jobId || !jobData) {
-      return { success: false, message: "缺少工单数据" };
+      return { success: false, message: "Missing ticket data" };
     }
 
     setCreatingXeroInvoice(true);
     try {
       const res = await apiCreateJobXeroDraftInvoice(jobId);
       if (!res.ok) {
-        const message = res.error || "创建 Xero invoice 失败";
+        const message = res.error || "Failed to create Xero invoice";
         toast.error(message);
         return { success: false, message };
       }
 
       await refreshJobSummary();
-      const message = res.data?.alreadyExists ? "Xero invoice 已存在或已在后台处理中" : "Xero invoice 已加入后台创建队列";
+      const message = res.data?.alreadyExists ? "Xero invoice already exists or is being processed in the background" : "Xero invoice has been added to the background creation queue";
       toast.success(message);
       return { success: true, message };
     } finally {
@@ -754,25 +742,25 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
 
   const attachJobXeroInvoice = useCallback(async (invoiceNumber: string) => {
     if (!jobId) {
-      return { success: false, message: "缺少工单 ID" };
+      return { success: false, message: "Missing ticket ID" };
     }
 
     const normalizedInvoiceNumber = invoiceNumber.trim();
     if (!normalizedInvoiceNumber) {
-      return { success: false, message: "Invoice Number 为必填" };
+      return { success: false, message: "Invoice Number is required" };
     }
 
     setAttachingXeroInvoice(true);
     try {
       const res = await apiAttachJobXeroInvoice(jobId, normalizedInvoiceNumber);
       if (!res.ok) {
-        const message = res.error || "关联 Xero invoice 失败";
+        const message = res.error || "Failed to associate Xero invoice";
         toast.error(message);
         return { success: false, message };
       }
 
       await refreshJobSummary();
-      const message = res.data?.alreadyExists ? "Xero invoice 已存在或已在后台处理中" : "已加入后台关联 Xero invoice 队列";
+      const message = res.data?.alreadyExists ? "Xero invoice already exists or is being processed in the background" : "Joined the background associated Xero invoice queue";
       toast.success(message);
       return { success: true, message };
     } finally {
@@ -782,21 +770,21 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
 
   const detachJobXeroInvoice = useCallback(async () => {
     if (!jobId) {
-      return { success: false, message: "缺少工单 ID" };
+      return { success: false, message: "Missing ticket ID" };
     }
 
     setDetachingXeroInvoice(true);
     try {
       const res = await apiDetachJobXeroInvoice(jobId);
       if (!res.ok) {
-        const message = res.error || "解除 Invoice 绑定失败";
+        const message = res.error || "Failed to unbind Invoice";
         toast.error(message);
         return { success: false, message };
       }
 
       await refreshJobSummary();
-      toast.success("Invoice 绑定已解除");
-      return { success: true, message: "Invoice 绑定已解除" };
+      toast.success("Invoice binding has been released");
+      return { success: true, message: "Invoice binding has been released" };
     } finally {
       setDetachingXeroInvoice(false);
     }
@@ -804,14 +792,14 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
 
   const saveTags = useCallback(
     async (tagIds: string[]) => {
-      if (!jobId) return { success: false, message: "缺少工单 ID" };
+      if (!jobId) return { success: false, message: "Missing ticket ID" };
       const res = await updateJobTags(
         jobId,
         tagIds.map((t) => Number(t))
       );
       if (!res.ok) {
-        toast.error(res.error || "保存失败");
-        return { success: false, message: res.error || "保存失败" };
+        toast.error(res.error || "Save failed");
+        return { success: false, message: res.error || "Save failed" };
       }
       const nameMap = new Map(tagOptions.map((t) => [t.id, t.label]));
       setJobData((prev) =>
@@ -822,55 +810,34 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
             }
           : prev
       );
-      toast.success("保存成功");
-      return { success: true, message: "保存成功", tags: res.data?.tags };
+      toast.success("Saved successfully");
+      return { success: true, message: "Saved successfully", tags: res.data?.tags };
     },
     [jobId, tagOptions, toast]
   );
 
   const refreshVehicleInfo = useCallback(async () => {
     if (!jobId) {
-      return { success: false, message: "缺少工单 ID" };
+      return { success: false, message: "Missing ticket ID" };
     }
     const plate = jobData?.vehicle?.plate;
     if (!plate) {
-      return { success: false, message: "缺少车牌信息" };
+      return { success: false, message: "Missing license plate information" };
     }
 
-    const importRes = await requestJson<any>(`/api/carjam/import?plate=${encodeURIComponent(plate)}`, {
-      method: "POST",
-    });
-    if (!importRes.ok) {
-      toast.error(importRes.error || "抓取失败，请稍后重试");
-      return { success: false, message: importRes.error || "抓取失败，请稍后重试" };
-    }
-
-    const jobRes = await fetchJob(jobId);
-    if (!jobRes.ok) {
-      toast.error(jobRes.error || "刷新车辆信息失败");
-      return { success: false, message: jobRes.error || "刷新车辆信息失败" };
-    }
-
-    const data = jobRes.data as any;
-    const job = data?.job ?? data;
-    setJobData(job ?? null);
-
-    const vehicle = job?.vehicle;
-    const label = [vehicle?.year, vehicle?.make, vehicle?.model].filter(Boolean).join(" ");
-    toast.success(label ? `抓取成功：${label}` : "抓取成功");
-    return { success: true, message: label ? `抓取成功：${label}` : "抓取成功" };
+    const importRes = await requestJson<any>(`/api/carjam/import?plate=${encodeURIComponent(plate)}`, { method: "POST", }); if (!importRes.ok) { toast.error(importRes.error || "Fetching failed, please try again later"); return { success: false, message: importRes.error || "Fetch failed, please try again later" }; } const jobRes = await fetchJob(jobId); if (!jobRes.ok) { toast.error(jobRes.error || "Failed to refresh vehicle information"); return { success: false, message: jobRes.error || "Failed to refresh vehicle information" }; } const data = jobRes.data as any; const job = data?.job ?? data; setJobData(job ?? null); const vehicle = job?.vehicle; const label = [vehicle?.year, vehicle?.make, vehicle?.model].filter(Boolean).join(" "); toast.success(label?`Fetched successfully: ${label}`: "Catch successfully"); return { success: true, message: label ?`Fetched successfully: ${label}` : "Fetched successfully" };
   }, [jobId, jobData?.vehicle?.plate, toast]);
 
   const syncVehicleNztaInfo = useCallback(async (): Promise<VehicleNztaSyncActionResult> => {
     if (!jobId) {
-      return { success: false, message: "缺少工单 ID" };
+      return { success: false, message: "Missing ticket ID" };
     }
 
     const res = await apiSyncVehicleNztaInfo(jobId);
     if (!res.ok) {
       return {
         success: false,
-        message: res.error || "NZTA 同步失败",
+        message: res.error || "NZTA sync failed",
         steps: (res.data as { steps?: VehicleNztaSyncActionResult["steps"] } | null)?.steps,
       };
     }
@@ -879,7 +846,7 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
     if (!jobRes.ok) {
       return {
         success: false,
-        message: jobRes.error || "同步成功，但刷新工单详情失败",
+        message: jobRes.error || "Synchronization was successful, but refreshing work order details failed.",
         steps: (res.data as { steps?: VehicleNztaSyncActionResult["steps"] } | null)?.steps,
       };
     }
@@ -887,11 +854,11 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
     const data = jobRes.data as any;
     const job = data?.job ?? data;
     setJobData(job ?? null);
-    toast.success((res.data as { message?: string } | null)?.message || "NZTA 同步完成");
+    toast.success((res.data as { message?: string } | null)?.message || "NZTA synchronization completed");
 
     return {
       success: true,
-      message: (res.data as { message?: string } | null)?.message || "NZTA 同步完成",
+      message: (res.data as { message?: string } | null)?.message || "NZTA synchronization completed",
       steps: (res.data as { steps?: VehicleNztaSyncActionResult["steps"] } | null)?.steps,
     };
   }, [jobId, toast]);
@@ -904,11 +871,11 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
       vin?: string | null;
       nzFirstRegistration?: string | null;
     }) => {
-      if (!jobId) return { success: false, message: "缺少工单 ID" };
+      if (!jobId) return { success: false, message: "Missing ticket ID" };
 
       const res = await updateVehicleInfo(jobId, payload);
       if (!res.ok) {
-        const message = res.error || "保存车辆信息失败";
+        const message = res.error || "Failed to save vehicle information";
         toast.error(message);
         return { success: false, message };
       }
@@ -925,8 +892,8 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
             }
           : prev
       );
-      toast.success("车辆信息已更新");
-      return { success: true, message: "车辆信息已更新", vehicle: nextVehicle };
+      toast.success("Vehicle information has been updated");
+      return { success: true, message: "Vehicle information has been updated", vehicle: nextVehicle };
     },
     [jobId, toast]
   );
@@ -937,11 +904,11 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
         | { type: "Business"; customerId: string }
         | { type: "Personal"; name: string; phone?: string | null; email?: string | null; address?: string | null; notes?: string | null }
     ) => {
-      if (!jobId) return { success: false, message: "缺少工单 ID" };
+      if (!jobId) return { success: false, message: "Missing ticket ID" };
 
       const res = await updateJobCustomer(jobId, payload);
       if (!res.ok) {
-        const message = res.error || "保存客户信息失败";
+        const message = res.error || "Failed to save customer information";
         toast.error(message);
         return { success: false, message };
       }
@@ -950,7 +917,7 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
       const nextInvoice = res.data?.invoice ?? null;
       const nextSteps = res.data?.steps;
       const overallSuccess = typeof res.data?.success === "boolean" ? Boolean(res.data.success) : true;
-      const message = res.data?.message || (overallSuccess ? "客户信息已更新" : "客户信息已更新，但 invoice Contact Name 更新失败");
+      const message = res.data?.message || (overallSuccess ? "Customer information has been updated" : "Customer information updated, but invoice Contact Name update failed");
       setJobData((prev) =>
         prev
           ? {
@@ -976,7 +943,7 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
           : prev
       );
       if (overallSuccess) {
-        toast.success("客户信息已更新");
+        toast.success("Customer information has been updated");
       } else {
         toast.error(message);
       }
@@ -1052,7 +1019,7 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
 
     const loadJob = async () => {
       if (!jobId) {
-        setLoadError("缺少工单 ID");
+        setLoadError("Missing ticket ID");
         setLoading(false);
         return;
       }
@@ -1063,7 +1030,7 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
       try {
         const res = await fetchJob(jobId);
         if (!res.ok) {
-          throw new Error(res.error || "加载工单失败");
+          throw new Error(res.error || "Failed to load work order");
         }
 
         const data = res.data;
@@ -1078,7 +1045,7 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
         }
       } catch (err) {
         if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : "加载工单失败");
+          setLoadError(err instanceof Error ? err.message : "Failed to load work order");
           setJobData(null);
           setLoading(false);
         }

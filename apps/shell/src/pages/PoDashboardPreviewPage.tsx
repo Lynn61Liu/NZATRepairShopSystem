@@ -106,12 +106,12 @@ export function PoDashboardPreviewPage() {
 
   const summaryCards: SummaryCard[] = useMemo(
     () => [
-      { label: "Needs PO", value: summary?.needsPo ?? 0, note: "所有仍在跟进的工单" },
-      { label: "Draft", value: summary?.draft ?? 0, note: "未发出 request 邮件" },
-      { label: "Awaiting Reply", value: summary?.awaitingReply ?? 0, note: "已发邮件，等待回复或继续跟进" },
-      { label: "Escalation Required", value: summary?.escalationRequired ?? 0, note: "催发 2 次后仍未回复" },
-      { label: "Pending Confirmation", value: summary?.pendingConfirmation ?? 0, note: "已检测到 PO，待人工确认" },
-      { label: "PO Confirmed", value: summary?.poConfirmed ?? 0, note: "PO 已确认" },
+      { label: "Needs PO", value: summary?.needsPo ?? 0, note: " All Jobs" },
+      { label: "Draft", value: summary?.draft ?? 0, note: "Not Sent Request Email" },
+      { label: "Awaiting Reply", value: summary?.awaitingReply ?? 0, note: "Email Sent, Awaiting Reply or Follow-up" },
+      { label: "Escalation Required", value: summary?.escalationRequired ?? 0, note: "Not Replied After 2 Reminders" },
+      { label: "Pending Confirmation", value: summary?.pendingConfirmation ?? 0, note: "PO Detected, Awaiting Manual Confirmation" },
+      { label: "PO Confirmed", value: summary?.poConfirmed ?? 0, note: "PO Confirmed" },
     ],
     [summary]
   );
@@ -264,7 +264,7 @@ export function PoDashboardPreviewPage() {
             <div>
               <div className="text-lg font-semibold text-[var(--ds-text)]">PO Jobs Queue</div>
               <div className="text-sm text-[var(--ds-muted)]">
-                当前 KPI：<span className="font-medium text-[var(--ds-text)]">{selectedFilter}</span>
+                Current <span className="font-medium text-[var(--ds-text)]">{selectedFilter}</span>
               </div>
             </div>
             <label className="flex items-center gap-2 rounded-xl border border-[var(--ds-border)] bg-white px-3 py-2 text-sm text-[var(--ds-muted)]">

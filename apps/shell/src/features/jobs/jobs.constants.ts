@@ -1,20 +1,20 @@
 import type { JobStatus } from "@/types/JobType";
 import type { TagOption } from "@/components/MultiTagSelect";
 
-// 1) GRID_COLS：表格列宽配置集中
+// 1) GRID_COLS: Centralized table column width configuration
 export const GRID_COLS =
-  // <640：隐藏 电话 + 创建时间
+  // <640: Hide phone number + creation time
   "grid-cols-[30px_80px_90px_100px_70px_140px_80px_60px_60px_60px_80px_64px] " +
   // ≥640 (sm)
   "sm:grid-cols-[30px_90px_100px_120px_80px_180px_100px_64px_64px_64px_100px_64px] " +
   // ≥768 (md)
   "md:grid-cols-[30px_100px_100px_130px_80px_140px_110px_65px_65px_65px_90px_64px] " +
-  // ≥1024 (lg)：显示客户电话
+  // ≥1024 (lg): Display customer phone number
   "lg:grid-cols-[30px_110px_110px_130px_80px_140px_110px_65px_65px_65px_90px_100px_64px] " +
-  // ≥1440：完整显示所有字段（包括创建时间）
+  // ≥1440: Display all fields in full (including creation time)
   "1440:grid-cols-[30px_120px_120px_160px_80px_140px_120px_65px_65px_65px_90px_110px_150px_64px]";
 
-// 2) TAG_OPTIONS：筛选 Tag 配置集中（id=存储值，label=展示值）
+// 2) TAG_OPTIONS: Filter Tag configuration set (id=storage value, label=display value)
 export const TAG_OPTIONS: TagOption[] = [
   { id: "badge", label: "Badge" },
   { id: "vip", label: "VIP" },
@@ -23,20 +23,20 @@ export const TAG_OPTIONS: TagOption[] = [
   { id: "repeat", label: "Repeat" },
 ];
 
-// 3) pageSize：分页大小配置集中
+// 3) pageSize: Centralized paging size configuration
 export const JOBS_PAGE_SIZE = 20;
 
-// 4) Status 的 label 映射集中（中英都可以在这里控制）
+// 4) Status label mapping is centralized (both Chinese and English can be controlled here)
 export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
-  Completed: "维修完成",
-  "In Progress": "进行中",
+  Completed: "Repair completed",
+  "In Progress": "in progress",
   Pending: "Pending",
-  Ready: "可交车",
-  Archived: "归档",
-  Cancelled: "取消",
+  Ready: "Available for delivery",
+  Archived: "Archive",
+  Cancelled: "Cancel",
 };
 
-// 5) Status 的样式配置集中（StatusPill 不再 if-else）
+// 5) Status' style configuration is centralized (StatusPill is no longer if-else)
 export const JOB_STATUS_STYLES: Record<
   JobStatus,
   { bg: string; bd: string; tx: string; dot: string }

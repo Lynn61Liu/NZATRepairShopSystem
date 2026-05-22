@@ -8,7 +8,7 @@ services:
 
   api:
     platform: linux/amd64
-    image: ghcr.io/lynn61liu/nzat-api:latest
+    image: ghcr.io/lynn61liu/nzat-api:${API_IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file:
       - .env
@@ -44,7 +44,7 @@ services:
 
   web:
     platform: linux/amd64
-    image: ghcr.io/lynn61liu/nzat-web:latest
+    image: ghcr.io/lynn61liu/nzat-web:${WEB_IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       - api

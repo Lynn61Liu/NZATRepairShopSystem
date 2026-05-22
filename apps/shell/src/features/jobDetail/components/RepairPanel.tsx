@@ -45,7 +45,7 @@ export function RepairPanel({
 }: RepairPanelProps) {
   return (
     <PartsPanel
-      title={mode === "parts" ? "配件服务" : "机修服务"}
+      title={mode === "parts" ? "Accessories service" : "Machine repair service"}
       showMech={mode === "mech"}
       showParts={mode === "parts"}
       openCreateTrigger={mode === "parts" ? openPartsCreateTrigger : undefined}

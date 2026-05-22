@@ -36,7 +36,7 @@ type PartsPanelProps = {
 };
 
 export function PartsPanel({
-  title = "机修服务",
+  title = "Machine repair service",
   showMech = true,
   showParts = true,
   openCreateTrigger,
@@ -98,7 +98,7 @@ export function PartsPanel({
     <div className="space-y-4 mt-4">
       <SectionCard
         title={title}
-        // subtitle="管理配件状态与备注"
+        // subtitle="Manage accessory status and remarks"
         actions={
           onCreateService || onCreateMechService ? (
             <PartsToolbar
@@ -114,49 +114,21 @@ export function PartsPanel({
         <div className="mt-4 space-y-4">
           {showMech && creatingMech ? (
             <div className="border border-gray-200 rounded-lg bg-purple-50 p-3 space-y-3 mt-4">
-              <div className="text-xs font-semibold text-gray-600">机修项目</div>
-              <Textarea
-                rows={2}
-                value={mechDescription}
-                onChange={(event) => setMechDescription(event.target.value)}
-                placeholder="输入机修项目描述..."
+              <div className="text-xs font-semibold text-gray-600">Machine repair project</div> <Textarea rows={2} value={mechDescription} onChange={(event) => setMechDescription(event.target.value)} placeholder="Enter mechanical service description..."
               />
               <div className="flex items-center gap-2">
                 <Input
                   type="number"
-                  placeholder="费用"
+                  placeholder="cost"
                   value={mechCost}
                   onChange={(event) => setMechCost(event.target.value)}
                   className="h-8 w-28"
                 />
                 <button
                   onClick={handleCreateMech}
-                  className="px-3 py-1.5 text-xs bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-1"
-                  disabled={mechSaving}
-                >
-                  保存
-                </button>
-                <button
-                  onClick={() => setCreatingMech(false)}
-                  className="px-3 py-1.5 text-xs bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-50 flex items-center gap-1"
-                >
-                  取消
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          {showParts && creating ? (
-            <div className="border border-gray-200 rounded-lg bg-blue-50 p-3 space-y-3 mt-4">
+                  className="px-3 py-1.5 text-xs bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-1"disabled={mechSaving} > save </button> <button onClick={() => setCreatingMech(false)} className="px-3 py-1.5 text-xs bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-50 flex items-center gap-1"> Cancel </button> </div> </div> ) : null} {showParts && creating ? ( <div className="border border-gray-200 rounded-lg bg-blue-50 p-3 space-y-3 mt-4">
               <div className="flex items-center gap-3 w-max">
-                <span className=" font-medium  uppercase w-12">状态</span>
-                <PartsStatusSelect value={status} onChange={setStatus} />
-              </div>
-              <Textarea
-                rows={3}
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="输入配件描述..."
+                <span className=" font-medium  uppercase w-12">Status</span> <PartsStatusSelect value={status} onChange={setStatus} /> </div> <Textarea rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Enter part description..."
               />
               <div className="flex items-center gap-2">
                 <button
@@ -164,23 +136,9 @@ export function PartsPanel({
                   className="px-3 py-1.5 text-xs bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-1"
                   disabled={saving}
                 >
-                  <Check className="w-4 h-4" />
-                  保存
-                </button>
-                <button
-                  onClick={() => setCreating(false)}
-                  className="px-3 py-1.5 text-xs bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-50 flex items-center gap-1"
+                  <Check className="w-4 h-4"/> save </button> <button onClick={() => setCreating(false)} className="px-3 py-1.5 text-xs bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-50 flex items-center gap-1"
                 >
-                  <X className="w-4 h-4" />
-                  取消
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          {isLoading ? <div className="text-sm text-gray-500">加载中...</div> : null}
-
-          <div className="space-y-3">
+                  <X className="w-4 h-4"/> Cancel </button> </div> </div> ) : null} {isLoading? <div className="text-sm text-gray-500">Loading...</div> : null} <div className="space-y-3">
             {showMech
               ? mechServices.map((service) => (
                   <MechServiceCard
@@ -208,7 +166,7 @@ export function PartsPanel({
               (showMech ? mechServices.length : 0) === 0 &&
               !isLoading) ? (
               <div className="text-sm text-gray-500">
-                {showParts && !showMech ? "暂无配件服务记录" : "暂无机修服务记录"}
+                {showParts && !showMech ? "No spare parts service record yet" : "No machine repair service record yet"}
               </div>
             ) : null}
           </div>

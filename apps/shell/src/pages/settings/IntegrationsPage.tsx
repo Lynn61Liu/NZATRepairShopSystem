@@ -246,39 +246,7 @@ export function IntegrationsPage() {
             <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[rgba(0,0,0,0.44)]">API Ready</div>
             <div className="mt-2 text-sm font-medium text-[rgba(0,0,0,0.7)]">{gmailHealth?.apiReady ? "Ready" : "Not ready"}</div>
             <div className="mt-1 text-xs text-[rgba(0,0,0,0.5)]">
-              {gmailHealth?.apiReady ? `Active account: ${gmailHealth.authorizedEmail || "linked"}` : (gmailHealth?.apiMissing ?? []).join(", ") || "-"}
-            </div>
-          </Card>
-          <Card className="border-[rgba(0,0,0,0.08)] p-4 shadow-none">
-            <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[rgba(0,0,0,0.44)]">How It Works</div>
-            <div className="mt-2 text-xs leading-5 text-[rgba(0,0,0,0.56)]">
-              用户点击 connect 后，会跳到 Google 授权页。授权完成后，refresh token 写入 `gmail_accounts`，然后这里可以切默认账号。
-            </div>
-          </Card>
-        </div>
-
-        <div className="mt-5">
-          {loading ? (
-            <div className="py-6 text-sm text-[rgba(0,0,0,0.5)]">Loading Gmail accounts...</div>
-          ) : gmailAccounts.length === 0 ? (
-            <EmptyState message="No Gmail account has been connected yet." actionLabel="Connect Gmail" onAction={() => openConnect("gmail")} />
-          ) : (
-            <div className="space-y-3">
-              {gmailAccounts.map((account) => (
-                <Card key={account.id} className="p-4 shadow-none">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="text-sm font-semibold text-[rgba(0,0,0,0.76)]">{account.email}</div>
-                        {account.isDefault ? <Badge tone="success">Default</Badge> : null}
-                        {account.isActive ? <Badge>Active</Badge> : <Badge tone="warning">Inactive</Badge>}
-                        {account.hasRefreshToken ? <Badge>Refresh Token</Badge> : <Badge tone="warning">No Token</Badge>}
-                      </div>
-                      <div className="text-xs text-[rgba(0,0,0,0.5)]">Updated: {formatDate(account.updatedAt)}</div>
-                    </div>
-                    <Button
-                      onClick={() => void setDefaultGmail(account.id)}
-                      disabled={account.isDefault || busyKey === `gmail:${account.id}`}
+              {gmailHealth?.apiReady ? `Active account: ${gmailHealth.authorizedEmail || "linked"}`: (gmailHealth?.apiMissing ?? []).join(", ") || "-"} </div> </Card> <Card className="border-[rgba(0,0,0,0.08)] p-4 shadow-none"> <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[rgba(0,0,0,0.44)]">How It Works</div> <div className="mt-2 text-xs leading-5 text-[rgba(0,0,0,0.56)]"> After the user clicks connect, it will jump to the Google authorization page. After authorization is completed, the refresh token is written`gmail_accounts`, and then you can switch to the default account here. </div> </Card> </div> <div className="mt-5"> {loading ? ( <div className="py-6 text-sm text-[rgba(0,0,0,0.5)]">Loading Gmail accounts...</div> ) : gmailAccounts.length === 0 ? ( <EmptyState message="No Gmail account has been connected yet." actionLabel="Connect Gmail" onAction={() => openConnect("gmail")} /> ) : ( <div className="space-y-3"> {gmailAccounts.map((account) => ( <Card key={account.id} className="p-4 shadow-none"> <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"> <div className="space-y-2"> <div className="flex flex-wrap items-center gap-2"> <div className="text-sm font-semibold text-[rgba(0,0,0,0.76)]">{account.email}</div> {account.isDefault ? <Badge tone="success">Default</Badge> : null} {account.isActive ? <Badge>Active</Badge> : <Badge tone="warning">Inactive</Badge>} {account.hasRefreshToken ? <Badge>Refresh Token</Badge> : <Badge tone="warning">No Token</Badge>} </div> <div className="text-xs text-[rgba(0,0,0,0.5)]">Updated: {formatDate(account.updatedAt)}</div> </div> <Button onClick={() => void setDefaultGmail(account.id)} disabled={account.isDefault || busyKey ===`gmail:${account.id}`}
                       leftIcon={<ShieldCheck className="h-4 w-4" />}
                     >
                       {busyKey === `gmail:${account.id}` ? "Switching..." : account.isDefault ? "Current Default" : "Set Default"}
@@ -324,42 +292,7 @@ export function IntegrationsPage() {
             <div className="mt-2 text-sm font-medium text-[rgba(0,0,0,0.7)]">{xeroHealth?.apiReady ? "Ready" : "Not ready"}</div>
             <div className="mt-1 text-xs text-[rgba(0,0,0,0.5)]">
               {xeroHealth?.apiReady
-                ? `${xeroHealth.tenantName || "Tenant"}${xeroHealth.tenantId ? ` · ${xeroHealth.tenantId}` : ""}`
-                : (xeroHealth?.apiMissing ?? []).join(", ") || "-"}
-            </div>
-          </Card>
-          <Card className="border-[rgba(0,0,0,0.08)] p-4 shadow-none">
-            <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[rgba(0,0,0,0.44)]">How It Works</div>
-            <div className="mt-2 text-xs leading-5 text-[rgba(0,0,0,0.56)]">
-              用户授权后，refresh token 和 tenant 信息写入 `xero_tokens`。切换默认账号后，后端会使用默认 tenant 调用 Xero API。
-            </div>
-          </Card>
-        </div>
-
-        <div className="mt-5">
-          {loading ? (
-            <div className="py-6 text-sm text-[rgba(0,0,0,0.5)]">Loading Xero accounts...</div>
-          ) : xeroAccounts.length === 0 ? (
-            <EmptyState message="No Xero tenant has been connected yet." actionLabel="Connect Xero" onAction={() => openConnect("xero")} />
-          ) : (
-            <div className="space-y-3">
-              {xeroAccounts.map((account) => (
-                <Card key={account.id} className="p-4 shadow-none">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="text-sm font-semibold text-[rgba(0,0,0,0.76)]">{account.tenantName || account.tenantId || "Unnamed tenant"}</div>
-                        {account.isDefault ? <Badge tone="success">Default</Badge> : null}
-                        {account.isActive ? <Badge>Active</Badge> : <Badge tone="warning">Inactive</Badge>}
-                        {account.hasRefreshToken ? <Badge>Refresh Token</Badge> : <Badge tone="warning">No Token</Badge>}
-                      </div>
-                      <div className="text-xs text-[rgba(0,0,0,0.5)]">
-                        Tenant ID: {account.tenantId || "-"} · Updated: {formatDate(account.updatedAt)}
-                      </div>
-                    </div>
-                    <Button
-                      onClick={() => void setDefaultXero(account.id)}
-                      disabled={account.isDefault || busyKey === `xero:${account.id}`}
+                ? `${xeroHealth.tenantName || "Tenant"}${xeroHealth.tenantId ? ` · ${xeroHealth.tenantId}` : ""}`: (xeroHealth?.apiMissing ?? []).join(", ") || "-"} </div> </Card> <Card className="border-[rgba(0,0,0,0.08)] p-4 shadow-none"> <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[rgba(0,0,0,0.44)]">How It Works</div> <div className="mt-2 text-xs leading-5 text-[rgba(0,0,0,0.56)]"> After user authorization, refresh token and tenant information are written`xero_tokens`. After switching the default account, the backend will use the default tenant to call the Xero API. </div> </Card> </div> <div className="mt-5"> {loading ? ( <div className="py-6 text-sm text-[rgba(0,0,0,0.5)]">Loading Xero accounts...</div> ) : xeroAccounts.length === 0 ? ( <EmptyState message="No Xero tenant has been connected yet." actionLabel="Connect Xero" onAction={() => openConnect("xero")} /> ) : ( <div className="space-y-3"> {xeroAccounts.map((account) => ( <Card key={account.id} className="p-4 shadow-none"> <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"> <div className="space-y-2"> <div className="flex flex-wrap items-center gap-2"> <div className="text-sm font-semibold text-[rgba(0,0,0,0.76)]">{account.tenantName || account.tenantId || "Unnamed tenant"}</div> {account.isDefault ? <Badge tone="success">Default</Badge> : null} {account.isActive ? <Badge>Active</Badge> : <Badge tone="warning">Inactive</Badge>} {account.hasRefreshToken ? <Badge>Refresh Token</Badge> : <Badge tone="warning">No Token</Badge>} </div> <div className="text-xs text-[rgba(0,0,0,0.5)]"> Tenant ID: {account.tenantId || "-"} · Updated: {formatDate(account.updatedAt)} </div> </div> <Button onClick={() => void setDefaultXero(account.id)} disabled={account.isDefault || busyKey ===`xero:${account.id}`}
                       leftIcon={<ShieldCheck className="h-4 w-4" />}
                     >
                       {busyKey === `xero:${account.id}` ? "Switching..." : account.isDefault ? "Current Default" : "Set Default"}

@@ -51,14 +51,14 @@ export function WofToolbar({ isLoading, onRefresh, onDelete, onAdd, onOpenNzta }
 
   const handleDelete = async () => {
     if (!onDelete) return;
-    if (!window.confirm("确定删除该 WOF 记录及相关数据？")) return;
+    if (!window.confirm("Are you sure you want to delete this WOF record and related data?")) return;
     setDeleteMessage(null);
     setDeleteError(null);
     const response = await onDelete();
     if (response.success) {
-      setDeleteMessage(response.message || "删除成功");
+      setDeleteMessage(response.message || "Delete successfully");
     } else {
-      setDeleteError(response.message || "删除失败");
+      setDeleteError(response.message || "Delete failed");
     }
   };
 
@@ -70,12 +70,12 @@ export function WofToolbar({ isLoading, onRefresh, onDelete, onAdd, onOpenNzta }
     try {
       const response = await onRefresh();
       if (response.success) {
-        setRefreshMessage(response.message || "导入成功");
+        setRefreshMessage(response.message || "Import successful");
       } else {
-        setRefreshError(response.message || "导入失败");
+        setRefreshError(response.message || "Import failed");
       }
     } catch (err) {
-      setRefreshError(err instanceof Error ? err.message : "导入失败");
+      setRefreshError(err instanceof Error ? err.message : "Import failed");
     } finally {
       setRefreshing(false);
     }
@@ -93,45 +93,21 @@ export function WofToolbar({ isLoading, onRefresh, onDelete, onAdd, onOpenNzta }
       {refreshMessage ? <div className="text-xs text-green-600">{refreshMessage}</div> : null}
       {refreshError ? <div className="text-xs text-red-600">{refreshError}</div> : null}
       <Button className="flex items-center gap-2" onClick={handleRefreshClick} disabled={isLoading || refreshing}>
-        <RefreshCw className="w-4 h-4" />
-        表格导入
-      </Button>
-      <Button className="flex items-center gap-2" onClick={onAdd} disabled={isLoading}>
-        手工添加
-      </Button>
-      <Button className="flex items-center gap-2" onClick={onOpenNzta}>
+        <RefreshCw className="w-4 h-4"/> Table import </Button> <Button className="flex items-center gap-2"onClick={onAdd} disabled={isLoading}> Add manually </Button> <Button className="flex items-center gap-2" onClick={onOpenNzta}>
         <ExternalLink className="w-4 h-4" />
         {JOB_DETAIL_TEXT.buttons.openNzta}
       </Button>
       <Button
         leftIcon={<Trash2 className="w-4 h-4" />}
-        className="border-red-300 text-red-700 hover:bg-red-50"
-        onClick={handleDelete}
-        disabled={isLoading}
-      >
-        删除WOF服务
-      </Button>
-
-      {showRefreshConfirm ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+        className="border-red-300 text-red-700 hover:bg-red-50"onClick={handleDelete} disabled={isLoading} > Delete WOF service </Button> {showRefreshConfirm? ( <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <div className="w-full max-w-sm rounded-lg bg-white p-4 shadow-lg">
-            <div className="text-sm font-semibold text-gray-900">提示</div>
-            <div className="mt-2 text-sm text-gray-600">
-              本次刷新会覆盖之前抓取的 Excel 数据，手动添加的记录不会受影响。
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setShowRefreshConfirm(false)}>
-                取消
-              </Button>
-              <Button
-                variant="primary"
+            <div className="text-sm font-semibold text-gray-900">Tip</div> <div className="mt-2 text-sm text-gray-600"> This refresh will overwrite the previously captured Excel data, and manually added records will not be affected. </div> <div className="mt-4 flex justify-end gap-2">
+              <Button variant="ghost"onClick={() => setShowRefreshConfirm(false)}> Cancel </Button> <Button variant="primary"
                 onClick={() => {
                   setShowRefreshConfirm(false);
                   void handleRefresh();
                 }}
-              >
-                确认刷新
-              </Button>
+              >Confirm refresh</Button>
             </div>
           </div>
         </div>

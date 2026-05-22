@@ -162,10 +162,7 @@ export function TagsPage() {
 
   return (
     <div className="space-y-4 text-[14px]">
-      <h1 className="text-2xl font-semibold text-[rgba(0,0,0,0.72)]">Tag 管理</h1>
-
-      {loadError ? (
-        <Alert variant="error" description={loadError} onClose={() => setLoadError(null)} />
+      <h1 className="text-2xl font-semibold text-[rgba(0,0,0,0.72)]">Tag management</h1> {loadError? ( <Alert variant="error" description={loadError} onClose={() => setLoadError(null)} />
       ) : null}
       {actionError ? (
         <Alert variant="error" description={actionError} onClose={() => setActionError(null)} />

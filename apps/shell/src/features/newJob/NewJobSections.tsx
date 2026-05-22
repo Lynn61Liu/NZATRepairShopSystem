@@ -32,16 +32,15 @@ export function VehicleSection({
   onImport,
 }: VehicleSectionProps) {
   return (
-    <SectionCard title="车辆信息" titleIcon={<CarFront size={18} />} titleClassName="text-lg font-semibold">
+    <SectionCard title="vehicle information" titleIcon={<CarFront size={18} />} titleClassName="text-lg font-semibold">
       <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[320px_minmax(0,1fr)] xl:items-start">
         <div className="min-w-0 space-y-1">
-          <label className="text-base text-[rgba(0,0,0,0.55)] mb-1 block">
-            车牌号 <span className="text-red-500">*</span>
+          <label className="text-base text-[rgba(0,0,0,0.55)] mb-1 block"> License plate number <span className="text-red-500">*</span>
           </label>
           <div className="flex flex-wrap gap-2 items-end">
             <div className="flex-shrink-0">
               <Input
-                placeholder="输入车牌"
+                placeholder="Enter license plate"
                 value={rego}
                 onChange={onRegoChange}
                 className={[
@@ -60,18 +59,12 @@ export function VehicleSection({
               onClick={onImport}
               disabled={!rego || importState === "loading"}
             >
-              {importState === "loading" ? "抓取中" : "抓取"}
+              {importState === "loading" ? "Fetching" : "crawl"}
             </Button>
           </div>
-          {rego ? <div className="text-base text-[rgba(0,0,0,0.45)]">长度 {rego.length}</div> : null}
-          {importState === "loading" && (
-            <div className="text-base text-[rgba(37,99,235,0.85)] mt-1">正在抓取车辆信息…</div>
-          )}
-          {importState === "error" && <div className="text-base text-red-600 mt-1">{importError}</div>}
-          <div className="text-base text-[rgba(0,0,0,0.45)] mt-1">例：ABC1234</div>
-        </div>
-
-        {vehicleInfo && importState === "success" && <VehicleInfoBanner info={vehicleInfo} />}
+          {rego ? <div className="text-base text-[rgba(0,0,0,0.45)]">Length {rego.length}</div> : null} {importState ==="loading" && (
+            <div className="text-base text-[rgba(37,99,235,0.85)] mt-1">Capturing vehicle information...</div> )} {importState ==="error" && <div className="text-base text-red-600 mt-1">{importError}</div>}
+          <div className="text-base text-[rgba(0,0,0,0.45)] mt-1">Example: ABC1234</div> </div> {vehicleInfo && importState ==="success" && <VehicleInfoBanner info={vehicleInfo} />}
       </div>
     </SectionCard>
   );
@@ -110,7 +103,7 @@ export function ServicesSection({
 
   return (
     <SectionCard
-      title="服务类型"
+      title="Service type"
       titleIcon={<ClipboardList size={18} />}
       titleClassName="text-lg font-semibold"
     >
@@ -147,15 +140,14 @@ export function ServicesSection({
                     <div>
                       <div className="text-base font-semibold text-[rgba(0,0,0,0.88)]">{service.label}</div>
                       <div className="text-base text-[rgba(0,0,0,0.55)]">
-                        {/* {serviceDescriptions[service.id] || "请选择对应服务"} */}
+                        {/*{serviceDescriptions[service.id] || "Please select the corresponding service"}*/}
                       </div>
                     </div>
                   </div>
                 </button>
                 {service.id === "paint" && selected && showPaintPanels ? (
                   <div className="ml-auto flex items-center justify-end gap-2">
-                    <label className="text-base font-semibold whitespace-nowrap text-[rgba(0,0,0,0.88)]">
-                      喷漆片数 <span className="text-red-500">*</span>
+                    <label className="text-base font-semibold whitespace-nowrap text-[rgba(0,0,0,0.88)]"> Number of paint chips <span className="text-red-500">*</span>
                     </label>
                     <Input
                       type="number"
@@ -164,7 +156,7 @@ export function ServicesSection({
                       value={paintPanels}
                       onChange={(event) => onPaintPanelsChange(event.target.value)}
                       className="h-[30px] w-[120px] rounded-[10px] bg-white"
-                      placeholder="输入片数"
+                      placeholder="Enter the number of slices"
                     />
                   </div>
                 ) : null}
@@ -211,12 +203,10 @@ export function ServicesSection({
                       ))}
                     </div>
                   ) : (
-                    <div className="text-base text-[rgba(0,0,0,0.50)]">暂无已配置的喷漆子服务</div>
+                    <div className="text-base text-[rgba(0,0,0,0.50)]">There is currently no configured spray paint sub-service</div>
                   )}
                 </div>
               ) : null}
-
-
             </div>
           );
         })}
@@ -267,11 +257,10 @@ export function CustomerSection({
   matchHint,
 }: CustomerSectionProps) {
   return (
-    <SectionCard title="客户信息" titleIcon={<UserRound size={18} />} titleClassName="text-lg font-semibold">
+    <SectionCard title="Customer information" titleIcon={<UserRound size={18} />} titleClassName="text-lg font-semibold">
       <div className="mt-3 space-y-4">
         <div>
-          <label className="text-base text-[rgba(0,0,0,0.55)] mb-2 block">
-            客户类型 <span className="text-red-500">*</span>
+          <label className="text-base text-[rgba(0,0,0,0.55)] mb-2 block"> Customer Type <span className="text-red-500">*</span>
           </label>
           <CustomerTypeToggle value={customerType} onChange={onCustomerTypeChange} />
         </div>
@@ -285,11 +274,9 @@ export function CustomerSection({
         {customerType === "personal" ? (
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-base text-[rgba(0,0,0,0.55)] mb-1 block">
-                名字
-              </label>
+              <label className="text-base text-[rgba(0,0,0,0.55)] mb-1 block">Name</label>
               <Input
-                placeholder="输入客户名字"
+                placeholder="Enter customer name"
                 value={personalName}
                 list="new-job-personal-customer-options"
                 onChange={(event) => onPersonalNameChange(event.target.value)}
@@ -302,35 +289,26 @@ export function CustomerSection({
               </datalist>
             </div>
             <div>
-              <label className="text-base text-[rgba(0,0,0,0.55)] mb-1 block">
-                电话
-              </label>
+              <label className="text-base text-[rgba(0,0,0,0.55)] mb-1 block">Phone</label>
               <Input
-                placeholder="输入电话"
+                placeholder="Enter phone number"
                 value={personalPhone}
                 onChange={(event) => onPersonalPhoneChange(event.target.value)}
               />
             </div>
-            {/* <div>
-              <label className="text-base text-[rgba(0,0,0,0.55)] mb-1 block">微信</label>
-              <Input
-                placeholder="输入微信"
-                value={personalWechat}
-                onChange={(event) => onPersonalWechatChange(event.target.value)}
-              />
-            </div> */}
+            {/*<div> <label className="text-base text-[rgba(0,0,0,0.55)] mb-1 block">WeChat</label> <Input placeholder="Enter WeChat" value={personalWechat} onChange={(event) => onPersonalWechatChange(event.target.value)} /> </div>*/}
             <div>
-              <label className="text-base text-[rgba(0,0,0,0.55)] mb-1 block">邮箱</label>
+              <label className="text-base text-[rgba(0,0,0,0.55)] mb-1 block">Email</label>
               <Input
-                placeholder="输入邮箱"
+                placeholder="Enter email"
                 value={personalEmail}
                 onChange={(event) => onPersonalEmailChange(event.target.value)}
               />
             </div>
             <div className="">
-              <label className="text-base text-[rgba(0,0,0,0.55)] mb-1 block">地址</label>
+              <label className="text-base text-[rgba(0,0,0,0.55)] mb-1 block">Address</label>
               <AddressAutocomplete
-                placeholder="输入地址"
+                placeholder="Enter address"
                 value={customerAddress}
                 onChange={onCustomerAddressChange}
               />
@@ -338,11 +316,10 @@ export function CustomerSection({
           </div>
         ) : (
           <div>
-            <label className="text-base text-[rgba(0,0,0,0.55)] mb-1 block">
-              选择商户 <span className="text-red-500">*</span>
+            <label className="text-base text-[rgba(0,0,0,0.55)] mb-1 block"> Select merchant <span className="text-red-500">*</span>
             </label>
             <Select value={businessId} onChange={(event) => onBusinessChange(event.target.value)}>
-              <option value="">-- 请选择 --</option>
+              <option value="">-- Please select --</option>
               {businessOptions.map((biz) => (
                 <option key={biz.id} value={biz.id}>
                   {biz.label}
@@ -364,8 +341,7 @@ type NotesSectionProps = {
 export function NotesSection({ notes, onNotesChange }: NotesSectionProps) {
   const [isOpen, setIsOpen] = useState(true);
   return (
-    <SectionCard
-      title="备注"
+    <SectionCard title="Notes"
       titleIcon={<NotebookText size={18} />}
       titleClassName="text-lg font-semibold"
       actions={
@@ -373,15 +349,15 @@ export function NotesSection({ notes, onNotesChange }: NotesSectionProps) {
           className="text-base text-[var(--ds-muted)] hover:text-[var(--ds-text)]"
           onClick={() => setIsOpen((prev) => !prev)}
         >
-          {isOpen ? "收起" : "展开"}
+          {isOpen ? "close" : "Expand"}
         </button>
       }
     >
       {isOpen ? (
         <div className="mt-3">
-          <label className="text-base text-[rgba(0,0,0,0.55)] mb-1 block">备注信息（选填）</label>
+          <label className="text-base text-[rgba(0,0,0,0.55)] mb-1 block">Remarks information (optional)</label>
           <textarea
-            placeholder="输入备注信息"
+            placeholder="Enter notes"
             value={notes}
             onChange={(event) => onNotesChange(event.target.value)}
             rows={4}
@@ -405,11 +381,7 @@ export function ActionsRow({ onSave }: ActionsRowProps) {
   return (
     <div className="flex gap-3 justify-end bg-transparent p-0">
       <Link to="/jobs">
-        <Button variant="ghost">取消</Button>
-      </Link>
-      <Button variant="primary" onClick={onSave}>
-        保存
-      </Button>
+        <Button variant="ghost">Cancel</Button> </Link> <Button variant="primary" onClick={onSave}>save</Button>
     </div>
   );
 }

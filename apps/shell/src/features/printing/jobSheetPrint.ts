@@ -31,7 +31,7 @@ const toDDMMYYYY = (value?: string) => {
   const s = String(value ?? "").trim();
   if (!s) return "";
 
-  // 兼容：ISO / "YYYY/MM/DD HH:mm" / "YYYY-MM-DD HH:mm"
+  // Compatible with: ISO / "YYYY/MM/DD HH:mm" / "YYYY-MM-DD HH:mm"
   const normalized = s.replace(/\//g, "-").replace(" ", "T");
   const d = new Date(normalized);
   if (!isNaN(d.getTime())) {
@@ -41,7 +41,7 @@ const toDDMMYYYY = (value?: string) => {
     return `${dd}/${mm}/${yyyy}`;
   }
 
-  // 兜底：从字符串切 YYYY-MM-DD
+  // Bottom line: cut YYYY-MM-DD from string
   const m = s.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
   if (m) {
     const yyyy = m[1];
@@ -62,7 +62,7 @@ const field = (
   rotate?: boolean
 ) => {
   if (rotate) {
-    // 沿用旧系统 rotate 逻辑：width=h, height=w, rotate(90deg) translateY(-w)
+    // Inherit the old system rotate logic: width=h, height=w, rotate(90deg) translateY(-w)
     return `<div class="field" style="left:${x}px;top:${y}px;width:${h}px;height:${w}px;font-size:${sizePt}pt;transform-origin:top left;transform:rotate(90deg) translateY(-${w}px);">${escapeHtml(
       text
     )}</div>`;
@@ -75,7 +75,7 @@ const field = (
 export const buildJobSheetHtml = (type: JobSheetType, row: JobSheetRow, notes: string) => {
   const isMech = type === "mech";
 
-  // 新系统字段映射（只用 row）
+  // New system field mapping (row only)
   const rego = String(row?.plate ?? "").trim().toUpperCase();
   const makeModel = String(row?.vehicleModel ?? "").trim();
   const customer = String(row?.customerCode || row?.customerName || "").trim();
@@ -83,7 +83,7 @@ export const buildJobSheetHtml = (type: JobSheetType, row: JobSheetRow, notes: s
   const comments = String(notes ?? "").trim();
   const panels = row?.panels === null || row?.panels === undefined ? "" : String(row.panels);
 
-  // 新增字段（MECH 模板）
+  // New fields (MECH template)
   const nzFirstReg = String(row?.nzFirstRegistration ?? "").trim();
 
   const vin = String(row?.vin ?? "").trim();
@@ -92,7 +92,7 @@ export const buildJobSheetHtml = (type: JobSheetType, row: JobSheetRow, notes: s
     ? "/print_templates/mech.png"
     : "/print_templates/pnp.png";
 
-  // 旧系统像素尺寸（用于坐标对齐）
+  // Old system pixel dimensions (used for coordinate alignment)
   const pageW = isMech ? 794 : 1123;
   const pageH = isMech ? 1123 : 794;
 
@@ -136,7 +136,7 @@ export const buildJobSheetHtml = (type: JobSheetType, row: JobSheetRow, notes: s
     @page { size: A4 ${isMech ? "portrait" : "landscape"}; margin: 0; }
     html, body { margin: 0; padding: 0; }
 
-    /* 强制打印背景 */
+    /*Force printing background*/
     .page{
       position: relative;
       width: ${pageW}px;

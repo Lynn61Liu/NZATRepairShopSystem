@@ -51,7 +51,7 @@ export function PartsServiceCard({
 
   const handleDelete = async () => {
     if (!onDeleteService) return;
-    if (!window.confirm("确定删除这条配件服务？")) return;
+    if (!window.confirm("Are you sure you want to delete this accessory service?")) return;
     await onDeleteService(service.id);
   };
 
@@ -61,10 +61,10 @@ export function PartsServiceCard({
         <div className="flex-1 space-y-2  ">
           <div className="flex items-start gap-3 flex-col  ">
              <div className="flex items-center gap-3 w-max">
-          {/* <span className=" font-medium  uppercase w-12">状态</span> */}
+          {/*<span className=" font-medium uppercase w-12">Status</span>*/}
           <PartsStatusSelect value={service.status} onChange={handleStatusChange} />
         </div>
-            {/* <span className="text-xs font-medium text-gray-500 uppercase">配件描述</span> */}
+            {/*<span className="text-xs font-medium text-gray-500 uppercase">Accessory description</span>*/}
           
           {editing ? (
             <div className="flex items-start gap-2 w-full ">
@@ -78,7 +78,7 @@ export function PartsServiceCard({
                 <button
                   onClick={handleSave}
                   className="p-1.5 text-green-600 hover:bg-green-100 rounded transition-colors"
-                  title="保存"
+                  title="save"
                   disabled={saving}
                 >
                   <Check className="w-4 h-4" />
@@ -86,7 +86,7 @@ export function PartsServiceCard({
                 <button
                   onClick={handleCancel}
                   className="p-1.5 text-gray-600 hover:bg-gray-200 rounded transition-colors"
-                  title="取消"
+                  title="Cancel"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -95,18 +95,12 @@ export function PartsServiceCard({
           ) : (
             // font-size: 24px; font-weight: 500;
             <p className="text-xl font-bold text-black whitespace-pre-line break-words w-full">
-              {service.description || <span className="text-gray-400 italic">暂无描述</span>}
-            </p>
-          )}
-           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
+              {service.description || <span className="text-gray-400 italic">No description yet</span>} </p> )} </div> </div> <div className="flex items-center gap-2">
           {!editing && onUpdateService ? (
             <button
               onClick={() => setEditing(true)}
               className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-              title="编辑"
+              title="edit"
             >
               <Edit2 className="w-3.5 h-3.5" />
             </button>
@@ -115,7 +109,7 @@ export function PartsServiceCard({
             <button
               onClick={handleDelete}
               className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
-              title="删除"
+              title="delete"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>

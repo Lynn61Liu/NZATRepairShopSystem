@@ -3,6 +3,6 @@ import type { ServiceOption } from "./newJob.types";
 
 export const serviceOptions: ServiceOption[] = [
   { id: "wof", label: "WOF", icon: FileText },
-  { id: "mech", label: "机修", icon: Wrench },
-  { id: "paint", label: "喷漆", icon: Droplets },
+  { id: "mech", label: "Machine repair", icon: Wrench },
+  { id: "paint", label: "spray paint", icon: Droplets },
 ];

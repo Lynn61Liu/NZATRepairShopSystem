@@ -17,8 +17,8 @@ export function buildDateRange(filters: JobsFilters): { start: Date; end: Date }
 
   switch (filters.timeRange) {
     case "week": {
-      // 本周：周一~周日
-      const day = today.getDay() || 7; // 周日=0 -> 7
+      // This week: Monday~Sunday
+      const day = today.getDay() || 7; // Sunday=0 -> 7
       start.setDate(today.getDate() - day + 1);
       end.setDate(today.getDate() + (7 - day));
       start.setHours(0, 0, 0, 0);
@@ -27,7 +27,7 @@ export function buildDateRange(filters: JobsFilters): { start: Date; end: Date }
     }
 
     case "lastWeek": {
-      // 上周：上周一~上周日
+      // Last week: last Monday ~ last Sunday
       const day = today.getDay() || 7;
       const thisMonday = new Date(today);
       thisMonday.setDate(today.getDate() - day + 1);
@@ -43,11 +43,11 @@ export function buildDateRange(filters: JobsFilters): { start: Date; end: Date }
     }
 
     case "month": {
-      // 本月：1号~当月最后一天（修复 end=31）
+      // This month: 1st~last day of the month (repair end=31)
       const y = today.getFullYear();
       const m = today.getMonth();
       const monthStart = new Date(y, m, 1);
-      const monthEnd = new Date(y, m + 1, 0); // 当月最后一天
+      const monthEnd = new Date(y, m + 1, 0); // last day of the month
 
       monthStart.setHours(0, 0, 0, 0);
       monthEnd.setHours(23, 59, 59, 999);
@@ -63,7 +63,7 @@ export function buildDateRange(filters: JobsFilters): { start: Date; end: Date }
       if (s) s.setHours(0, 0, 0, 0);
       if (e) e.setHours(23, 59, 59, 999);
 
-      // 缺一边就用另一边补齐
+      // If one side is missing, use the other side to make up for it.
       if (s && e) return { start: s, end: e };
       if (s && !e) return { start: s, end: s };
       if (!s && e) return { start: e, end: e };
@@ -81,12 +81,12 @@ export function filterJobs(rows: JobRow[], filters: JobsFilters): JobRow[] {
   const s = filters.search.trim().toLowerCase();
   const customer = filters.customer.trim().toLowerCase();
 
-  // tags：只算一次 lower（避免每行重复计算）
+  // tags: only count lower once (to avoid repeated calculations for each row)
   const selectedTagsLower = filters.selectedTags.map((t) => t.toLowerCase());
   const dateRange = filters.timeRange ? buildDateRange(filters) : null;
 
   return rows.filter((r) => {
-    // 搜索过滤
+    // Search filter
     if (s) {
       const customerText = (r.customerCode || r.customerName).toLowerCase();
       const notesText = String(r.notes || "").toLowerCase();
@@ -99,14 +99,14 @@ export function filterJobs(rows: JobRow[], filters: JobsFilters): JobRow[] {
       if (!hit) return false;
     }
 
-    // Job Type: 默认隐藏 Archived，只有筛选时才显示
+    // Job Type: Archived is hidden by default and will only be displayed when filtering
     if (!filters.jobType && r.vehicleStatus === "Archived") return false;
     if (filters.jobType && r.vehicleStatus !== filters.jobType) return false;
 
-    // WOF 状态
+    // WOF status
     if (filters.wofStatus && r.wofStatus !== filters.wofStatus) return false;
 
-    // 喷漆状态
+    // Paint condition
     if (filters.paintStatus) {
       const hasPaintService = Boolean(r.paintStatus) || typeof r.paintCurrentStage === "number";
       if (!hasPaintService) return false;
@@ -114,20 +114,20 @@ export function filterJobs(rows: JobRow[], filters: JobsFilters): JobRow[] {
       if (paintStage !== filters.paintStatus) return false;
     }
 
-    // 日期范围
+    // date range
     if (dateRange) {
       const rowDate = parseJobCreatedAt(r.createdAt);
       if (!rowDate) return false;
       if (rowDate < dateRange.start || rowDate > dateRange.end) return false;
     }
 
-    // 客户
+    // client
     if (customer) {
       const customerText = (r.customerCode || r.customerName).toLowerCase();
       if (!customerText.includes(customer)) return false;
     }
 
-    // Tag：任意命中（OR）
+    // Tag: any hit (OR)
     if (selectedTagsLower.length > 0) {
       const rowTagsLower = r.selectedTags.map((t) => t.toLowerCase());
       const hit = rowTagsLower.some((t) => selectedTagsLower.includes(t));

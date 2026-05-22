@@ -61,13 +61,7 @@ export function WofResultsList({
   }, [effectiveResults, failReasons]);
 
   if (isLoading) {
-    return <div className="py-6 text-center text-sm text-[var(--ds-muted)]">加载中...</div>;
-  }
-
-  if (!effectiveResults.length && !showCreate) return null;
-
-  return (
-    <div className="space-y-3">
+    return <div className="py-6 text-center text-sm text-[var(--ds-muted)]">Loading...</div>; } if (!effectiveResults.length && !showCreate) return null; return ( <div className="space-y-3">
       {/* manual new results */}
       {showCreate ? (
         <WofResultItem

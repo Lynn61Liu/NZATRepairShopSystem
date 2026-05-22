@@ -33,5 +33,5 @@ The primary API container connects to the local Redis container over the interna
 Secondary Mac should point its `DB_CONN_STRING` at the Linux server's public database endpoint, for example:
 
 ```dotenv
-DB_CONN_STRING=Host=45.114.124.101;Port=5437;Database=workshop;Username=postgres;Password=...
+DB_CONN_STRING=Host=45.114.124.101;Port=5437;Database=nzat_demo;Username=nzat_demo_user;Password=change_this_to_a_strong_password
 ```

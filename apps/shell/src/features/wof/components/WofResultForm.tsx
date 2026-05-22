@@ -61,9 +61,9 @@ export function WofResultForm({ failReasons, onSave }: WofResultFormProps) {
     });
     setSaving(false);
     if (response.success) {
-      setSaveMessage(response.message || "保存成功");
+      setSaveMessage(response.message || "Saved successfully");
     } else {
-      setSaveError(response.message || "保存失败");
+      setSaveError(response.message || "Save failed");
     }
     setResult("Pass");
     setExpiryDate("");
@@ -98,7 +98,7 @@ export function WofResultForm({ failReasons, onSave }: WofResultFormProps) {
             <div className="mt-2 space-y-2">
               <input
                 className="h-9 w-full rounded-[8px] border border-[var(--ds-border)] px-3"
-                placeholder="输入字母筛选..."
+                placeholder="Enter letters to filter..."
                 value={failReasonQuery}
                 onChange={(event) => setFailReasonQuery(event.target.value)}
               />

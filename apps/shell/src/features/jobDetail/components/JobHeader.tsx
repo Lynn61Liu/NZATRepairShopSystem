@@ -120,10 +120,10 @@ export function JobHeader({
     const res = await onSaveTags(selectedTagIds);
     setSavingTags(false);
     if (res.success) {
-      setTagMessage(res.message || "已更新标签");
+      setTagMessage(res.message || "Label updated");
       setEditingTags(false);
     } else {
-      setTagError(res.message || "更新失败");
+      setTagError(res.message || "Update failed");
     }
   };
 
@@ -135,10 +135,10 @@ export function JobHeader({
     const res = await onSaveNotes(noteDraft);
     setSavingNote(false);
     if (res.success) {
-      setNoteMessage(res.message || "备注已更新");
+      setNoteMessage(res.message || "Note has been updated");
       setEditingNote(false);
     } else {
-      setNoteError(res.message || "备注更新失败");
+      setNoteError(res.message || "Note update failed");
     }
   };
 
@@ -213,14 +213,13 @@ export function JobHeader({
             </button>
             {editingTags ? (
               <div className="absolute left-0 top-full z-50 mt-2 w-[520px] max-w-[90vw] rounded-[12px] border border-[rgba(0,0,0,0.12)] bg-white p-3 shadow-lg">
-                <div className="text-sm font-semibold text-[rgba(0,0,0,0.72)] mb-2">选择标签</div>
-                {tagMessage ? <div className="text-xs text-green-600 mb-2">{tagMessage}</div> : null}
+                <div className="text-sm font-semibold text-[rgba(0,0,0,0.72)] mb-2">Select tag</div> {tagMessage ? <div className="text-xs text-green-600 mb-2">{tagMessage}</div> : null}
                 {tagError ? <div className="text-xs text-red-600 mb-2">{tagError}</div> : null}
                 <MultiTagSelect
                   options={tagOptions}
                   value={selectedTagIds}
                   onChange={setSelectedTagIds}
-                  placeholder="选择标签"
+                  placeholder="Select label"
                   maxChips={3}
                 />
                 <div className="mt-3 flex justify-end gap-2">
@@ -238,23 +237,13 @@ export function JobHeader({
 
         <div className="flex items-center gap-3 ml-auto">
           <Button leftIcon={<Archive className="w-4 h-4" />} onClick={() => void onArchive?.()} disabled={isArchiving || status === "Archived"}>
-            {isArchiving ? "归档中..." : JOB_DETAIL_TEXT.buttons.archive}
+            {isArchiving ? "Archiving..." : JOB_DETAIL_TEXT.buttons.archive}
           </Button>
           <Button
             leftIcon={<Trash2 className="w-4 h-4" />}
-            className="border-red-300 text-red-700 hover:bg-red-50"
-            onClick={onDelete}
-            disabled={isDeleting}
-          >
-            删除Job
-          </Button>
-        </div>
-      </div>
-
-      <div className="flex w-full flex-wrap items-start gap-3">
+            className="border-red-300 text-red-700 hover:bg-red-50"onClick={onDelete} disabled={isDeleting} > Delete Job </Button> </div> </div> <div className="flex w-full flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
-          <div className=" text-[rgba(0,0,0,0.55)] mb-1">工单备注</div>
-          {noteMessage ? <div className="text-xs text-green-600 mb-1">{noteMessage}</div> : null}
+          <div className=" text-[rgba(0,0,0,0.55)] mb-1">Work order notes</div> {noteMessage? <div className="text-xs text-green-600 mb-1">{noteMessage}</div> : null}
           {noteError ? <div className="text-xs text-red-600 mb-1">{noteError}</div> : null}
           {editingNote ? (
             <>
@@ -263,32 +252,17 @@ export function JobHeader({
                 rows={3}
                 value={noteDraft}
                 onChange={(event) => setNoteDraft(event.target.value)}
-                placeholder="输入备注信息"
+                placeholder="Enter remark information"
               />
               <div className="mt-2 flex gap-2">
-                <Button variant="primary" onClick={saveNotes} disabled={savingNote || !onSaveNotes}>
-                  保存
-                </Button>
-                <Button
-                  onClick={() => {
-                    setNoteDraft(notes);
-                    setEditingNote(false);
-                  }}
-                  disabled={savingNote}
-                >
-                  取消
-                </Button>
-              </div>
-            </>
-          ) : (
-            <div className="flex items-end gap-2">
+                <Button variant="primary"onClick={saveNotes} disabled={savingNote || !onSaveNotes}> save </Button> <Button onClick={() => { setNoteDraft(notes); setEditingNote(false); }} disabled={savingNote} > Cancel </Button> </div> </> ) : ( <div className="flex items-end gap-2">
               <div className="min-h-[72px] flex-1 whitespace-pre-wrap rounded-[8px] border border-[rgba(0,0,0,0.10)] bg-white px-3 py-2 text-sm text-[var(--ds-text)]">
                 {noteDraft?.trim() ? noteDraft : "—"}
               </div>
               <button
                 type="button"
                 className=" mt-1 inline-flex h-7 w-7 items-center justify-center rounded-full border border-[rgba(0,0,0,0.10)] text-[rgba(0,0,0,0.55)] hover:text-[rgba(0,0,0,0.8)] hover:bg-[rgba(0,0,0,0.04)]"
-                title="编辑备注"
+                title="Editor's Notes"
                 onClick={() => setEditingNote(true)}
               >
                 <Pencil className="h-4 w-4" />
@@ -298,12 +272,7 @@ export function JobHeader({
         </div>
 
         <div className="flex flex-col items-center gap-2 ml-40">
-          <Button variant="primary" onClick={handlePaintClick}>
-            喷漆打印
-          </Button>
-          <Button variant="primary" onClick={() => handlePrint("mech")}>
-            机修打印
-          </Button>
+          <Button variant="primary"onClick={handlePaintClick}> spray paint printing </Button> <Button variant="primary" onClick={() => handlePrint("mech")}>Machine repair printing</Button>
           {externalInvoiceId ? (
             <XeroButton
               onClick={openXero}

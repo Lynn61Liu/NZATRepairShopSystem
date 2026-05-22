@@ -45,7 +45,7 @@ This project uses PostgreSQL. The `docker-compose.yml` already includes a `db` s
 
 The connection string is configured via `.env`:
 ```
-DB_CONN_STRING=Host=db;Port=5432;Database=workshop;Username=postgres;Password=postgres
+DB_CONN_STRING=Host=db;Port=5432;Database=nzat_demo;Username=nzat_demo_user;Password=change_this_to_a_strong_password
 ```
 
 ### Automatic Init Flow (Recommended)

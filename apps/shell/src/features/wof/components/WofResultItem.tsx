@@ -98,133 +98,7 @@ const toYYYYMMDD = (value?: string | null) => {
     const yyyy = m[1];
     const mm = String(m[2]).padStart(2, "0");
     const dd = String(m[3]).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  }
-  return "";
-};
-
-const buildWofPrintData = (record: WofCheckItem, context?: WofPrintContext): WofPrintData => {
-  const makeModel = String(record.makeModel ?? "").trim() || String(context?.vehicleMakeModel ?? "").trim();
-  const odoRaw = String(record.odo ?? "").trim();
-  const odoText =
-    odoRaw ||
-    (context?.vehicleOdometer !== null && context?.vehicleOdometer !== undefined
-      ? String(context.vehicleOdometer)
-      : "");
-
-  const inspectionDate = toYYYYMMDD(record.occurredAt);
-  const isRecheck = record.recordState === "Recheck";
-
-  return {
-    jobId: String(context?.jobId ?? record.wofId ?? ""),
-    recordId: String(record.id ?? ""),
-    recordStateLabel: String(record.recordState ?? record.wofUiState ?? ""),
-    rego: String(record.rego ?? ""),
-    makeModel,
-    nzFirstRegistration: String(context?.nzFirstRegistration ?? ""),
-    vin: String(context?.vin ?? ""),
-    odoText,
-    organisationName: String(record.organisationName ?? ""),
-    customerName: String(context?.customerName ?? ""),
-    customerPhone: String(context?.customerPhone ?? ""),
-    customerEmail: String(context?.customerEmail ?? ""),
-    customerAddress: String(context?.customerAddress ?? ""),
-    inspectionDate,
-    inspectionNumber: String(record.id ?? ""),
-    recheckDate: isRecheck ? inspectionDate : "",
-    recheckNumber: String(record.id ?? ""),
-    recheckOdo: isRecheck ? odoText : "",
-    isNewWof: Boolean(record.isNewWof),
-    newWofDate: toYYYYMMDD(record.newWofDate),
-    authCode: String(record.authCode ?? ""),
-    checkSheet: String(record.checkSheet ?? ""),
-    csNo: String(record.csNo ?? ""),
-    wofLabel: String(record.wofLabel ?? ""),
-    labelNo: String(record.labelNo ?? ""),
-    msNumber: "",
-    failReasons: String(record.failReasons ?? ""),
-    previousExpiryDate: toYYYYMMDD(record.previousExpiryDate),
-    failRecheckDate: record.recordState === "Fail" ? formatNzDatePlusDays(28) : "",
-    note: String(record.note ?? ""),
-    placeholderDash: "---------",
-    placeholderCheck: "√",
-    placeholderMs: " MS6539   ",
-    placeholderCode: "A21350 ",
-  };
-};
-
-export function WofResultItem({
-  record,
-  printContext,
-  onUpdate,
-  onDelete,
-  failReasons = [],
-  isDraft,
-  onCreate,
-  onCancel,
-}: WofResultItemProps) {
-  const toast = useToast();
-  const normalizedRecord = useMemo(() => normalizeRecord(record), [record]);
-  const [editing, setEditing] = useState(Boolean(isDraft));
-  const [form, setForm] = useState<WofFormState>(() =>
-    isDraft ? createEmptyWofFormState() : toWofFormState(normalizedRecord)
-  );
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [failReasonQuery, setFailReasonQuery] = useState("");
-  const [selectedFailReason, setSelectedFailReason] = useState("");
-  const { printTemplate } = useTemplatePrinter({
-    onPopupBlocked: () => toast.error("无法打开打印窗口，请允许弹窗"),
-  });
-
-  useEffect(() => {
-    if (isDraft) return;
-    setForm(toWofFormState(normalizedRecord));
-  }, [isDraft, normalizedRecord]);
-
-  useEffect(() => {
-    if (!message) return;
-    const timer = window.setTimeout(() => setMessage(null), 5000);
-    return () => window.clearTimeout(timer);
-  }, [message]);
-
-  useEffect(() => {
-    if (!error) return;
-    const timer = window.setTimeout(() => setError(null), 5000);
-    return () => window.clearTimeout(timer);
-  }, [error]);
-
-  useEffect(() => {
-    if (!editing) return;
-    if (form.occurredAt) return;
-    setForm((prev) => ({ ...prev, occurredAt: formatNzDate(new Date()) }));
-  }, [editing, form.occurredAt]);
-
-  useEffect(() => {
-    if (!editing) {
-      setFailReasonQuery("");
-    }
-  }, [editing]);
-
-  const mergedFailReasons = useMemo(() => {
-    const base = String(normalizedRecord.failReasons ?? "").trim();
-    const extra = base
-      ? base
-          .split(/[,;|\n]+/g)
-          .map((item) => item.trim())
-          .filter(Boolean)
-      : [];
-    const fromApi = Array.isArray(failReasons) ? failReasons : [];
-    const map = new Map<string, { id: string; label: string }>();
-    fromApi.forEach((reason) => {
-      if (!reason?.label) return;
-      map.set(reason.label, { id: reason.id, label: reason.label });
-    });
-    extra.forEach((label) => {
-      if (!map.has(label)) {
-        map.set(label, { id: `sheet:${label}`, label });
+    return `${yyyy}-${mm}-${dd}`; } return ""; }; const buildWofPrintData = (record: WofCheckItem, context?: WofPrintContext): WofPrintData => { const makeModel = String(record.makeModel ?? "").trim() || String(context?.vehicleMakeModel ?? "").trim(); const odoRaw = String(record.odo ?? "").trim(); const odoText = odoRaw || (context?.vehicleOdometer !== null && context?.vehicleOdometer !== undefined ? String(context.vehicleOdometer) : ""); const inspectionDate = toYYYYMMDD(record.occurredAt); const isRecheck = record.recordState === "Recheck"; return { jobId: String(context?.jobId ?? record.wofId ?? ""), recordId: String(record.id ?? ""), recordStateLabel: String(record.recordState ?? record.wofUiState ?? ""), rego: String(record.rego ?? ""), makeModel, nzFirstRegistration: String(context?.nzFirstRegistration ?? ""), vin: String(context?.vin ?? ""), odoText, organisationName: String(record.organisationName ?? ""), customerName: String(context?.customerName ?? ""), customerPhone: String(context?.customerPhone ?? ""), customerEmail: String(context?.customerEmail ?? ""), customerAddress: String(context?.customerAddress ?? ""), inspectionDate, inspectionNumber: String(record.id ?? ""), recheckDate: isRecheck ? inspectionDate : "", recheckNumber: String(record.id ?? ""), recheckOdo: isRecheck ? odoText : "", isNewWof: Boolean(record.isNewWof), newWofDate: toYYYYMMDD(record.newWofDate), authCode: String(record.authCode ?? ""), checkSheet: String(record.checkSheet ?? ""), csNo: String(record.csNo ?? ""), wofLabel: String(record.wofLabel ?? ""), labelNo: String(record.labelNo ?? ""), msNumber: "", failReasons: String(record.failReasons ?? ""), previousExpiryDate: toYYYYMMDD(record.previousExpiryDate), failRecheckDate: record.recordState === "Fail" ? formatNzDatePlusDays(28) : "", note: String(record.note ?? ""), placeholderDash: "---------", placeholderCheck: "√", placeholderMs: " MS6539 ", placeholderCode: "A21350 ", }; }; export function WofResultItem({ record, printContext, onUpdate, onDelete, failReasons = [], isDraft, onCreate, onCancel, }: WofResultItemProps) { const toast = useToast(); const normalizedRecord = useMemo(() => normalizeRecord(record), [record]); const [editing, setEditing] = useState(Boolean(isDraft)); const [form, setForm] = useState<WofFormState>(() => isDraft ? createEmptyWofFormState() : toWofFormState(normalizedRecord) ); const [saving, setSaving] = useState(false); const [message, setMessage] = useState<string | null>(null); const [error, setError] = useState<string | null>(null); const [deleting, setDeleting] = useState(false); const [failReasonQuery, setFailReasonQuery] = useState(""); const [selectedFailReason, setSelectedFailReason] = useState(""); const { printTemplate } = useTemplatePrinter({ onPopupBlocked: () => toast.error("Unable to open the print window. Please allow pop-ups"), }); useEffect(() => { if (isDraft) return; setForm(toWofFormState(normalizedRecord)); }, [isDraft, normalizedRecord]); useEffect(() => { if (!message) return; const timer = window.setTimeout(() => setMessage(null), 5000); return () => window.clearTimeout(timer); }, [message]); useEffect(() => { if (!error) return; const timer = window.setTimeout(() => setError(null), 5000); return () => window.clearTimeout(timer); }, [error]); useEffect(() => { if (!editing) return; if (form.occurredAt) return; setForm((prev) => ({ ...prev, occurredAt: formatNzDate(new Date()) })); }, [editing, form.occurredAt]); useEffect(() => { if (!editing) { setFailReasonQuery(""); } }, [editing]); const mergedFailReasons = useMemo(() => { const base = String(normalizedRecord.failReasons ?? "").trim(); const extra = base ?base .split(/[,;|\n]+/g) .map((item) => item.trim()) .filter(Boolean) :[]; const fromApi = Array.isArray(failReasons) ? failReasons : []; const map = new Map<string, { id: string; label: string }>(); fromApi.forEach((reason) => { if (!reason?.label) return; map.set(reason.label, { id: reason.id, label: reason.label }); }); extra.forEach((label) => { if (!map.has(label)) { map.set(label, { id:`sheet:${label}`, label });
       }
     });
     return Array.from(map.values());
@@ -276,15 +150,15 @@ export function WofResultItem({
     const response = isDraft && onCreate ? await onCreate(payload) : await onUpdate!(record.id, payload);
     setSaving(false);
     if (response.success) {
-      setMessage(response.message || "保存成功");
-      toast.success(response.message || "保存成功");
+      setMessage(response.message || "Saved successfully");
+      toast.success(response.message || "Saved successfully");
       if (isDraft) {
         onCancel?.();
       } else {
         setEditing(false);
       }
     } else {
-      const message = response.message || "保存失败";
+      const message = response.message || "Save failed";
       setError(message);
       toast.error(message);
     }
@@ -294,20 +168,20 @@ export function WofResultItem({
     const jobId = printContext?.jobId ?? normalizedRecord.wofId;
     const recordId = record.id;
     if (!jobId || !recordId) {
-      const message = "无法打印：缺少 jobId 或 recordId。";
+      const message = "Unable to print: missing jobId or recordId.";
       setError(message);
       toast.error(message);
       return;
     }
     const payload: WofPrintData = buildWofPrintData(normalizedRecord, { ...printContext, jobId: String(jobId) });
     printTemplate({ type: "wof", data: payload });
-    setMessage("已发送打印任务");
-    toast.success("已发送打印任务");
+    setMessage("Print job sent");
+    toast.success("Print job sent");
   };
 
   const handleDelete = async () => {
     if (isDraft || !onDelete) return;
-    if (!window.confirm("确定删除这条 WOF 记录？")) return;
+    if (!window.confirm("Are you sure you want to delete this WOF record?")) return;
 
     setDeleting(true);
     setMessage(null);
@@ -316,11 +190,11 @@ export function WofResultItem({
     setDeleting(false);
 
     if (response.success) {
-      toast.success(response.message || "删除成功");
+      toast.success(response.message || "Delete successfully");
       return;
     }
 
-    const nextMessage = response.message || "删除失败";
+    const nextMessage = response.message || "Delete failed";
     setError(nextMessage);
     toast.error(nextMessage);
   };
@@ -365,35 +239,15 @@ export function WofResultItem({
               <div className="ml-auto" />
             )}
             {isDraft ? (
-              <Button variant="ghost" onClick={onCancel}>
-                取消
-              </Button>
-            ) : (
-              <Button variant="ghost" onClick={() => setEditing((v) => !v)}>
-                {editing ? "取消" : "修改"}
+              <Button variant="ghost"onClick={onCancel}> Cancel </Button> ) : ( <Button variant="ghost" onClick={() => setEditing((v) => !v)}>
+                {editing ? "Cancel" : "Revise"}
               </Button>
             )}
             {!isDraft ? (
               <Button
                 variant="ghost"
                 className="text-red-600 hover:bg-red-50"
-                leftIcon={<Trash2 className="h-4 w-4" />}
-                onClick={() => {
-                  void handleDelete();
-                }}
-                disabled={deleting || saving}
-              >
-                删除
-              </Button>
-            ) : null}
-            {editing ? (
-              <Button variant="primary" onClick={handleSave} disabled={saving}>
-                保存
-              </Button>
-            ) : null}
-          </div>
-
-          {message ? <div className="text-xs text-green-600 mb-2">{message}</div> : null}
+                leftIcon={<Trash2 className="h-4 w-4"/>} onClick={() => { void handleDelete(); }} disabled={deleting || saving} > Delete </Button> ) : null} {editing ? ( <Button variant="primary"onClick={handleSave} disabled={saving}> save </Button> ) : null} </div> {message? <div className="text-xs text-green-600 mb-2">{message}</div> : null}
           {error ? <div className="text-xs text-red-600 mb-2">{error}</div> : null}
 
           <div className="grid grid-cols-1 gap-2 text-sm md:grid-cols-2">
@@ -490,7 +344,7 @@ export function WofResultItem({
                   <span className="ml-2 inline-flex items-center gap-2">
                     <input
                       className="w-32 rounded border px-2 py-1 text-xs"
-                      placeholder="搜索..."
+                      placeholder="search..."
                       value={failReasonQuery}
                       onChange={(e) => setFailReasonQuery(e.target.value)}
                     />

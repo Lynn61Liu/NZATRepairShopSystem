@@ -75,193 +75,10 @@ export function WorkLogRow({
   useEffect(() => {
     if (!forceEditing) return;
     setEditData(log);
-    setEditTimeRange(`${log.start_time}-${log.end_time}`);
-    setEditRegoInput(log.rego);
-    setIsEditing(true);
-  }, [forceEditing, log]);
-
-  const saveEdit = () => {
-    if (!editData.staff_name.trim() || !editData.rego.trim() || !editTimeRange.trim()) {
-      toast.error("请填写必填项：员工姓名、车牌号、开始-结束时间");
-      return;
-    }
-    const parsed = parseTimeRange(editTimeRange);
-    if (!parsed) {
-      toast.error("开始-结束时间格式必须为 9.30-13.45 或 9:30-13:45");
-      return;
-    }
-
-    onEdit({
-      ...editData,
-      service_type: editData.service_type ?? "PNP",
-      start_time: parsed.start,
-      end_time: parsed.end,
-    });
-    setIsEditing(false);
-    toast.success("工时记录已更新");
-  };
-
-  if (isEditing) {
-    const parsedEditRange = parseTimeRange(editTimeRange);
-    const editHours = parsedEditRange?.hours ?? 0;
-    const editWage = calculateWage(
-      parsedEditRange?.start ?? editData.start_time,
-      parsedEditRange?.end ?? editData.end_time,
-      editData.cost_rate
-    );
-    const editTotalsKey = editData.job_id || editData.rego;
-    const editTotals = editTotalsKey ? totalsByJob?.get(editTotalsKey) : undefined;
-
-    return (
-      <tr className="border-b border-slate-200 hover:bg-slate-50">
-        <td className="px-4 py-3">
-          <Input
-            type="date"
-            value={editData.work_date}
-            onChange={(event) => setEditData((prev) => ({ ...prev, work_date: event.target.value }))}
-            className="text-sm"
-          />
-        </td>
-        <td className="relative w-[120px] max-w-[140px] overflow-visible px-4 py-3">
-          <Input
-            value={editData.staff_name}
-            onChange={(event) => {
-              setEditData((prev) => ({ ...prev, staff_name: event.target.value }));
-              setShowStaffSuggestions(true);
-            }}
-            onFocus={() => setShowStaffSuggestions(true)}
-            placeholder="输入姓名"
-            className="bg-white text-sm"
-          />
-          {showStaffSuggestions && filteredStaff.length > 0 ? (
-            <div className="absolute left-4 right-4 top-[calc(100%-4px)] z-[60] max-h-40 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-lg">
-              {filteredStaff.map((staff) => (
-                <button
-                  type="button"
-                  key={staff.id}
-                  onClick={() => {
-                    setEditData((prev) => ({
-                      ...prev,
-                      staff_name: staff.name,
-                      staff_id: staff.id,
-                      team: "",
-                      role: staff.role,
-                      cost_rate: staff.cost_rate,
-                    }));
-                    setShowStaffSuggestions(false);
-                  }}
-                  className="block w-full px-3 py-2 text-left text-sm hover:bg-blue-50"
-                >
-                  {staff.name}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </td>
-        <td className="px-4 py-3">
-          <select
-            value={editData.service_type ?? "PNP"}
-            onChange={(event) =>
-              setEditData((prev) => ({ ...prev, service_type: event.target.value as "PNP" | "MECH" }))
-            }
-            className="h-9 w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-white px-2 text-sm text-[rgba(0,0,0,0.70)]"
-          >
-            <option value="PNP">PNP</option>
-            <option value="MECH">MECH</option>
-          </select>
-        </td>
-        <td className="px-4 py-3">
-          <Input
-            value={editTimeRange}
-            onChange={(event) => setEditTimeRange(event.target.value)}
-            placeholder="如: 9.30-13.45"
-            className="text-sm"
-          />
-        </td>
-        <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]">
-          {editHours ? `${editHours.toFixed(2)}小时` : "—"}
-        </td>
-        <td className="px-4 py-3 text-sm font-medium text-[rgba(0,0,0,0.70)]">
-          ${editWage.toFixed(2)}
-        </td>
-        <td className="relative overflow-visible px-4 py-3">
-          <Input
-            value={editRegoInput}
-            onChange={(event) => {
-              const value = event.target.value.toUpperCase();
-              setEditRegoInput(value);
-              setShowRegoSuggestions(true);
-              const job = jobs.find((item) => item.rego === value);
-              setEditData((prev) => ({
-                ...prev,
-                rego: value,
-                job_id: job?.id,
-                job_note: job?.note || prev.job_note,
-              }));
-            }}
-            onFocus={() => setShowRegoSuggestions(true)}
-            className="text-sm"
-          />
-          {makeModel ? (
-            <div className="mt-1 text-xs text-[rgba(0,0,0,0.45)]">{makeModel}</div>
-          ) : null}
-          {showRegoSuggestions && filteredJobs.length > 0 ? (
-            <div className="absolute left-4 right-4 top-[calc(100%-4px)] z-[60] max-h-40 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-lg">
-              {filteredJobs.map((job) => (
-                <button
-                  type="button"
-                  key={job.id}
-                  onClick={() => {
-                    setEditRegoInput(job.rego);
-                    setEditData((prev) => ({
-                      ...prev,
-                      rego: job.rego,
-                      job_id: job.id,
-                      job_note: job.note || prev.job_note,
-                    }));
-                    setShowRegoSuggestions(false);
-                  }}
-                  className="block w-full px-3 py-2 text-left text-sm hover:bg-blue-50"
-                >
-                  {job.rego} ({job.created_date})
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </td>
-        <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)] text-center">
-          {selectedJob?.panels ?? "—"}
-        </td>
-        <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]">{selectedJob?.note || editData.job_note}</td>
-        <td className="px-4 py-3">
-          <Input
-            value={editData.admin_note}
-            onChange={(event) => setEditData((prev) => ({ ...prev, admin_note: event.target.value }))}
-            placeholder="备注"
-            className="text-sm"
-          />
-        </td>
-        <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]">
-          {editTotals ? `${editTotals.hours.toFixed(2)}小时` : "—"}
+    setEditTimeRange(`${log.start_time}-${log.end_time}`); setEditRegoInput(log.rego); setIsEditing(true); }, [forceEditing, log]); const saveEdit = () => { if (!editData.staff_name.trim() || !editData.rego.trim() || !editTimeRange.trim()) { toast.error("Please fill in required fields: employee name, plate number, start-end time"); return; } const parsed = parseTimeRange(editTimeRange); if (!parsed) { toast.error("Start-end time must be in 9.30-13.45 or 9:30-13:45 format"); return; } onEdit({ ...editData, service_type: editData.service_type ?? "PNP", start_time: parsed.start, end_time: parsed.end, }); setIsEditing(false); toast.success("Working record has been updated"); }; if (isEditing) { const parsedEditRange = parseTimeRange(editTimeRange); const editHours = parsedEditRange?.hours ?? 0; const editWage = calculateWage( parsedEditRange?.start ?? editData.start_time, parsedEditRange?.end ?? editData.end_time, editData.cost_rate ); const editTotalsKey = editData.job_id || editData.rego; const editTotals = editTotalsKey ? totalsByJob?.get(editTotalsKey) : undefined; return ( <tr className="border-b border-slate-200 hover:bg-slate-50"> <td className="px-4 py-3"> <Input type="date" value={editData.work_date} onChange={(event) => setEditData((prev) => ({ ...prev, work_date: event.target.value }))} className="text-sm" /> </td> <td className="relative w-[120px] max-w-[140px] overflow-visible px-4 py-3"> <Input value={editData.staff_name} onChange={(event) => { setEditData((prev) => ({ ...prev, staff_name: event.target.value })); setShowStaffSuggestions(true); }} onFocus={() => setShowStaffSuggestions(true)} placeholder="Enter name" className="bg-white text-sm" /> {showStaffSuggestions && filteredStaff.length > 0 ? ( <div className="absolute left-4 right-4 top-[calc(100%-4px)] z-[60] max-h-40 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-lg"> {filteredStaff.map((staff) => ( <button type="button" key={staff.id} onClick={() => { setEditData((prev) => ({ ...prev, staff_name: staff.name, staff_id: staff.id, team: "", role: staff.role, cost_rate: staff.cost_rate, })); setShowStaffSuggestions(false); }} className="block w-full px-3 py-2 text-left text-sm hover:bg-blue-50" > {staff.name} </button> ))} </div> ) : null} </td> <td className="px-4 py-3"> <select value={editData.service_type ?? "PNP"} onChange={(event) => setEditData((prev) => ({ ...prev, service_type: event.target.value as "PNP" | "MECH" })) } className="h-9 w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-white px-2 text-sm text-[rgba(0,0,0,0.70)]" > <option value="PNP">PNP</option> <option value="MECH">MECH</option> </select> </td> <td className="px-4 py-3"> <Input value={editTimeRange} onChange={(event) => setEditTimeRange(event.target.value)} placeholder="eg: 9.30-13.45" className="text-sm" /> </td> <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]"> {editHours?`${editHours.toFixed(2)} hours`: "—"} </td> <td className="px-4 py-3 text-sm font-medium text-[rgba(0,0,0,0.70)]"> ${editWage.toFixed(2)} </td> <td className="relative overflow-visible px-4 py-3"> <Input value={editRegoInput} onChange={(event) => { const value = event.target.value.toUpperCase(); setEditRegoInput(value); setShowRegoSuggestions(true); const job = jobs.find((item) => item.rego === value); setEditData((prev) => ({ ...prev, rego: value, job_id: job?.id, job_note: job?.note || prev.job_note, })); }} onFocus={() => setShowRegoSuggestions(true)} className="text-sm" /> {makeModel ? ( <div className="mt-1 text-xs text-[rgba(0,0,0,0.45)]">{makeModel}</div> ) : null} {showRegoSuggestions && filteredJobs.length > 0 ? ( <div className="absolute left-4 right-4 top-[calc(100%-4px)] z-[60] max-h-40 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-lg"> {filteredJobs.map((job) => ( <button type="button" key={job.id} onClick={() => { setEditRegoInput(job.rego); setEditData((prev) => ({ ...prev, rego: job.rego, job_id: job.id, job_note: job.note || prev.job_note, })); setShowRegoSuggestions(false); }} className="block w-full px-3 py-2 text-left text-sm hover:bg-blue-50" > {job.rego} ({job.created_date}) </button> ))} </div> ) : null} </td> <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)] text-center"> {selectedJob?.panels ?? "—"} </td> <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]">{selectedJob?.note || editData.job_note}</td> <td className="px-4 py-3"> <Input value={editData.admin_note} onChange={(event) => setEditData((prev) => ({ ...prev, admin_note: event.target.value }))} placeholder="remarks" className="text-sm" /> </td> <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]"> {editTotals?`${editTotals.hours.toFixed(2)} hours` : "—"}
         </td>
         <td className={`px-4 py-3 text-sm ${editTotals && editTotals.cost > 300 ? "text-red-600 font-semibold" : "text-[rgba(0,0,0,0.60)]"}`}>
-          {editTotals ? `${editTotals.cost > 300 ? "!" : ""}$${editTotals.cost.toFixed(2)}` : "—"}
-        </td>
-        <td className="px-4 py-3">
-          <div className="flex gap-1">
-            <Button onClick={saveEdit} className="h-8 px-3">
-              保存
-            </Button>
-            <Button onClick={() => { setEditData(log); setEditTimeRange(`${log.start_time}-${log.end_time}`); setEditRegoInput(log.rego); setIsEditing(false); }} className="h-8 px-3">
-              取消
-            </Button>
-          </div>
-        </td>
-      </tr>
-    );
-  }
-
-  const regoDisplay = customerCode ? `${log.rego} - ${customerCode}` : log.rego;
+          {editTotals ? `${editTotals.cost > 300 ? "!" : ""}$${editTotals.cost.toFixed(2)}`: "—"} </td> <td className="px-4 py-3"> <div className="flex gap-1"> <Button onClick={saveEdit} className="h-8 px-3"> save </Button> <Button onClick={() => { setEditData(log); setEditTimeRange(`${log.start_time}-${log.end_time}`); setEditRegoInput(log.rego); setIsEditing(false); }} className="h-8 px-3"> Cancel </Button> </div> </td> </tr> ); } const regoDisplay = customerCode?`${log.rego} - ${customerCode}` : log.rego;
 
   return (
     <tr className={`border-b border-slate-200 hover:bg-slate-50 ${rowColor}`}>
@@ -277,8 +94,7 @@ export function WorkLogRow({
       <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]">
         {log.start_time}-{log.end_time}
       </td>
-      <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]">
-        {durationHours ? `${durationHours.toFixed(2)}小时` : "—"}
+      <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]"> {durationHours ? `${durationHours.toFixed(2)}hours` :"—"}
       </td>
       <td className="px-4 py-3 text-sm font-medium text-[rgba(0,0,0,0.70)]">
         ${wage.toFixed(2)}
@@ -307,8 +123,7 @@ export function WorkLogRow({
       </td>
       <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]">{log.job_note}</td>
       <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]">{log.admin_note || "—"}</td>
-      <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]">
-        {totals ? `${totals.hours.toFixed(2)}小时` : "—"}
+      <td className="px-4 py-3 text-sm text-[rgba(0,0,0,0.60)]"> {totals ? `${totals.hours.toFixed(2)}hours` :"—"}
       </td>
       <td className={`px-4 py-3 text-sm ${totals && totals.cost > 300 ? "text-red-600 font-semibold" : "text-[rgba(0,0,0,0.60)]"}`}>
         {totals ? `${totals.cost > 300 ? "!" : ""}$${totals.cost.toFixed(2)}` : "—"}
@@ -329,7 +144,7 @@ export function WorkLogRow({
               type="button"
               onClick={() => log.flags.forEach((flag) => onDismissFlag(flag))}
               className="rounded-md p-2 text-red-500 hover:bg-red-50 hover:text-red-700"
-              title={`${log.flags.map((flag) => flagLabel(flag)).join("，")}，点击解除标记`}
+              title={`${log.flags.map((flag) => flagLabel(flag)).join(", ")}, click to unmark`}
             >
               <AlertTriangle className="size-4" />
             </button>

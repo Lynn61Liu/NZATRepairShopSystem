@@ -11,12 +11,12 @@ const Shopfront = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [orderNote, setOrderNote] = useState('');
   
-  // 搜索和分类状态
+  // Search and sort status
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
   useEffect(() => {
-    // 获取后端真实数据（现在后端会带上 categoryName 了）
+    // Get the real data from the backend (the backend will now have categoryName)
     fetch(procurementApi('/products'))
       .then(res => res.json())
       .then(data => {
@@ -25,7 +25,7 @@ const Shopfront = () => {
           name: p.name,
           spec: p.specification || '',
           stock: p.currentStock || 0,
-          categoryName: p.categoryName || 'Uncategorized', // 接收分类名称
+          categoryName: p.categoryName || 'Uncategorized', // receive category name
           isTool: false, 
           img: p.imageUrl || `https://via.placeholder.com/300x200?text=${encodeURIComponent(p.name)}`
         }));
@@ -34,7 +34,7 @@ const Shopfront = () => {
       .catch(err => console.error("Failed to load backend data:", err));
   }, []);
 
-  // 动态提取左侧分类菜单
+  // Dynamically extract the left category menu
   const categories = useMemo(() => {
     const cats = new Set(products.map(p => p.categoryName));
     return ['All', ...Array.from(cats)];
@@ -92,7 +92,7 @@ const Shopfront = () => {
 
   const totalItems = Object.values(cart).reduce((sum, qty) => sum + qty, 0);
 
-  // 核心过滤逻辑：同时满足“搜索词”和“左侧分类”才显示
+  // Core filtering logic: display only when "search terms" and "left classification" are met simultaneously
   const filteredProducts = products.filter(product => {
     const matchSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                         product.spec.toLowerCase().includes(searchTerm.toLowerCase());
@@ -105,7 +105,7 @@ const Shopfront = () => {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-800 m-0">Internal Supplies Request / Procurement</h1>
         
-        {/* 搜索框 */}
+        {/*search box*/}
         <input 
           type="text" 
           placeholder="🔍 Search by item name or specification..." 
@@ -116,7 +116,7 @@ const Shopfront = () => {
       </div>
       
       <div className="flex gap-6 items-start">
-        {/* === 左侧分类导航树 === */}
+        {/*=== Classification navigation tree on the left ===*/}
         <div className="w-48 bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col overflow-hidden sticky top-6 shrink-0">
           <div className="p-3 bg-gray-50 border-b border-gray-200 font-bold text-gray-700 text-sm">
             Item Categories
@@ -138,7 +138,7 @@ const Shopfront = () => {
           </div>
         </div>
 
-        {/* === 右侧商品网格 === */}
+        {/*=== Product grid on the right ===*/}
         <div className="flex-1">
           <div className="product-grid">
             {products.length === 0 ? (
@@ -175,7 +175,7 @@ const Shopfront = () => {
         </div>
       )}
 
-      {/* 弹窗部分保持不变 */}
+      {/*The pop-up part remains unchanged*/}
       {isModalOpen && (
         <div className="cart-modal-overlay">
           <div className="cart-modal">

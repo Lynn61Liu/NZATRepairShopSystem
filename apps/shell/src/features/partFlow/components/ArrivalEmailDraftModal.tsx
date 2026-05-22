@@ -90,12 +90,12 @@ export function ArrivalEmailDraftModal({ card, onClose, onSent }: ArrivalEmailDr
     });
 
     if (!res.ok || !res.data?.arrivalNotice) {
-      toast.error(res.error || "邮件发送失败");
+      toast.error(res.error || "Email sending failed");
       setSending(false);
       return;
     }
 
-    toast.success("客户提醒邮件已发送");
+    toast.success("Customer reminder email has been sent");
     await onSent(res.data.arrivalNotice);
     setSending(false);
     onClose();
@@ -106,16 +106,10 @@ export function ArrivalEmailDraftModal({ card, onClose, onSent }: ArrivalEmailDr
       <div className="flex w-full max-w-3xl max-h-[90vh] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         <div className="flex items-start justify-between border-b border-[rgba(0,0,0,0.08)] px-6 py-5">
           <div>
-            <div className="text-lg font-semibold text-[var(--ds-text)]">客户到货提醒邮件</div>
-            <div className="mt-1 text-sm text-[var(--ds-muted)]">
-              主题和正文已经先帮您生成，发送前都可以修改。
-            </div>
-          </div>
-          <button
-            type="button"
+            <div className="text-lg font-semibold text-[var(--ds-text)]">Customer arrival reminder email</div> <div className="mt-1 text-sm text-[var(--ds-muted)]"> The subject and body text have been generated for you and can be modified before sending. </div> </div> <button type="button"
             onClick={onClose}
             className="rounded-full p-2 text-[var(--ds-muted)] transition hover:bg-[rgba(0,0,0,0.05)] hover:text-[var(--ds-text)]"
-            title="关闭"
+            title="closure"
           >
             <X className="h-5 w-5" />
           </button>
@@ -131,46 +125,28 @@ export function ArrivalEmailDraftModal({ card, onClose, onSent }: ArrivalEmailDr
           </div>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-[var(--ds-text)]">收件人</span>
-            <Input
-              value={to}
-              onChange={(event) => setTo(event.target.value)}
-              placeholder="customer@example.com"
+            <span className="text-sm font-medium text-[var(--ds-text)]">Recipient</span> <Input value={to} onChange={(event) => setTo(event.target.value)} placeholder="customer@example.com"
             />
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-[var(--ds-text)]">邮件主题</span>
-            <Input
-              value={subject}
-              onChange={(event) => setSubject(event.target.value)}
-              placeholder="请输入邮件主题"
+            <span className="text-sm font-medium text-[var(--ds-text)]">Email subject</span> <Input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Please enter an email subject"
             />
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-[var(--ds-text)]">邮件正文</span>
-            <Textarea
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
-              rows={12}
-              placeholder="请输入邮件正文"
+            <span className="text-sm font-medium text-[var(--ds-text)]">Email text</span> <Textarea value={body} onChange={(event) => setBody(event.target.value)} rows={12} placeholder="Please enter the email body"
             />
             <div className="text-xs text-[var(--ds-muted)]">The shared company HTML signature will be appended automatically when sending.</div>
           </label>
         </div>
 
-        <div className="flex items-center justify-end gap-3 border-t border-[rgba(0,0,0,0.08)] bg-[rgba(248,250,252,0.9)] px-6 py-4">
-          <Button onClick={onClose} disabled={sending}>
-            取消
-          </Button>
-          <Button
-            variant="primary"
+        <div className="flex items-center justify-end gap-3 border-t border-[rgba(0,0,0,0.08)] bg-[rgba(248,250,252,0.9)] px-6 py-4"> <Button onClick={onClose} disabled={sending}> Cancel </Button> <Button variant="primary"
             onClick={handleSend}
             disabled={!to.trim() || !subject.trim() || sending}
             leftIcon={<Send className="h-4 w-4" />}
           >
-            {sending ? "发送中..." : card.arrivalNotice.sentAt ? "再次发送" : "确认发送"}
+            {sending ? "Sending..." : card.arrivalNotice.sentAt ? "Send again" : "Confirm sending"}
           </Button>
         </div>
       </div>

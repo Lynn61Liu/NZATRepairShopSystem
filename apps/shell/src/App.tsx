@@ -17,10 +17,10 @@ import { PaintBoardPage } from "./pages/paint/PaintBoardPage";
 import { PaintTechBoardPage } from "./pages/paint/PaintTechBoardPage";
 import { WorklogPage } from "./pages/worklog/WorklogPage";
 import { PoDashboardPreviewPage } from "./pages/PoDashboardPreviewPage";
-import { WofSchedulePage } from "./pages/WofSchedulePage"; // 保留原有的 WofSchedule
+import { WofSchedulePage } from "./pages/WofSchedulePage"; // Keep the original WofSchedule
 import { ToastProvider } from "@/components/ui";
 
-// --- [从 Eric 版引入] 采购相关组件 ---
+// --- [Introduced from Eric version] Procurement related components ---
 import Shopfront from "./components/Shopfront";
 import { ProcurementAdmin } from "./pages/procurement/ProcurementAdmin";
 // ----------------------------------
@@ -28,7 +28,7 @@ import { ProcurementAdmin } from "./pages/procurement/ProcurementAdmin";
 const router = createBrowserRouter([
   { path: "/paint-tech", element: <PaintTechBoardPage /> },
 
-  // --- [新增] 给师傅用的独立全屏页面 ---
+  // --- [New] Independent full-screen page for masters ---
   { path: "/staff-shop", element: <Shopfront /> },
 
   {
@@ -38,7 +38,7 @@ const router = createBrowserRouter([
       { index: true, element: <DashboardPage /> },
       { path: "jobs", element: <JobsPage /> },
       { path: "paint-board", element: <PaintBoardPage /> },
-      { path: "wof-schedule", element: <WofSchedulePage /> }, // 保留
+      { path: "wof-schedule", element: <WofSchedulePage /> }, // reserve
       { path: "po-dashboard-preview", element: <PoDashboardPreviewPage /> },
       { path: "worklog", element: <WorklogPage /> },
       { path: "parts-flow", element: <PartFlowPage /> },
@@ -53,7 +53,7 @@ const router = createBrowserRouter([
       { path: "service-settings", element: <ServiceCatalogPage /> },
       { path: "integrations", element: <IntegrationsPage /> },
       
-      // --- [新增] 采购系统路由 ---
+      // --- [New] Procurement system routing ---
       { path: "shop", element: <Shopfront /> },
       { path: "procurement-admin", element: <ProcurementAdmin /> },
       // -----------------------

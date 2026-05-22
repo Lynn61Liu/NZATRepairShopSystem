@@ -121,9 +121,9 @@ function isWithinDateRange(rowDate: string, preset: DateFilterPreset, startDate:
 }
 
 const dateFilterOptions: Array<{ key: DateFilterPreset; label: string }> = [
-  { key: "7d", label: "最近1周" },
-  { key: "1m", label: "最近1个月" },
-  { key: "custom", label: "自定义日期" },
+  { key: "7d", label: "Last 7 Days" },
+  { key: "1m", label: "Last 1 Month" },
+  { key: "custom", label: "Custom Date" },
 ];
 
 const paymentFilterOptions: Array<{ key: PaymentWayFilter; label: string }> = [
@@ -296,7 +296,7 @@ export function InvoicePage() {
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div className="flex flex-1 flex-col gap-4 lg:flex-row lg:items-end lg:gap-8">
             <div className="space-y-2">
-              <div className="text-sm font-semibold text-[var(--ds-text)]">付款方式筛选</div>
+              <div className="text-sm font-semibold text-[var(--ds-text)]">Filter by Payment</div>
               <div className="flex flex-wrap gap-2">
                 {paymentFilterOptions.map((option) => {
                   const isActive = paymentFilter === option.key;
@@ -320,7 +320,7 @@ export function InvoicePage() {
             </div>
 
             <div className="space-y-2">
-              <div className="text-sm font-semibold text-[var(--ds-text)]">日期筛选</div>
+              <div className="text-sm font-semibold text-[var(--ds-text)]">Date Filter</div>
               <div className="flex flex-wrap gap-2">
                 {dateFilterOptions.map((option) => {
                   const isActive = dateFilterPreset === option.key;
@@ -363,7 +363,7 @@ export function InvoicePage() {
       {!loading && error ? <Card className="p-5 text-sm text-red-600">{error}</Card> : null}
       {!loading && !error && actionError ? <Card className="p-5 text-sm text-red-600">{actionError}</Card> : null}
       {!loading && !error && groups.length === 0 ? (
-        <Card className="p-5 text-sm text-[var(--ds-muted)]">目前没有 invoice payment 记录。</Card>
+        <Card className="p-5 text-sm text-[var(--ds-muted)]">No invoice payments found.</Card>
       ) : null}
 
       {!loading && !error
@@ -376,7 +376,7 @@ export function InvoicePage() {
                     <div>
                       <div className="text-lg font-semibold text-[var(--ds-text)]">{formatNzDateTitle(group.date)}</div>
                       <div className="mt-1 text-sm text-[var(--ds-muted)]">
-                        Invoice 总数：{group.items.length}
+                        Invoice Total: {group.items.length}
                       </div>
                     </div>
                   </div>

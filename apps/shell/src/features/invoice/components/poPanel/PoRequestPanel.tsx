@@ -88,7 +88,7 @@ type Props = {
   selectedMerchantEmail: string;
   correlationId: string;
   vehicleRego: string;
-  // 【新增并修改】加回了年份，加上问号表示它是可选的，这样就算外部没传也不会报错
+  // [New and modified] Added back the year, and added a question mark to indicate that it is optional, so that no error will be reported even if it is not transmitted externally.
   vehicleYear: string; 
   vehicleModel: string;
   vehicleMake: string;
@@ -117,7 +117,7 @@ export function PoRequestPanel({
   selectedMerchantEmail,
   correlationId,
   vehicleRego,
-  vehicleYear, // 【新增】接收年份
+  vehicleYear, // 【New】Receipt year
   vehicleModel,
   vehicleMake,
   snapshotTotal,
@@ -164,7 +164,7 @@ export function PoRequestPanel({
     ];
   }, [merchantEmailRecipients, selectedMerchantEmail]);
 
-  // 【修改】按你的要求调整顺序，加上年份，并且去掉了 from NZAT
+  // [Modification] Adjust the order according to your requirements, add the year, and remove from NZAT
   const vehicleLabel = useMemo(
     () => `${[vehicleRego, vehicleYear, vehicleMake, vehicleModel].filter(Boolean).join(" ")}`,
     [vehicleRego, vehicleYear, vehicleMake, vehicleModel]
@@ -197,7 +197,7 @@ export function PoRequestPanel({
       ? selectedRecipient.name.trim()
       : "Team";
 
-  // 【修改】正文模板，保留了空行，完美排版，加入了年份
+  // [Modification] The text template retains blank lines, perfectly typeset, and adds the year
   const defaultBody = useMemo(() => {
     const itemsHtml = items
       .map(
@@ -311,58 +311,7 @@ export function PoRequestPanel({
       }
 
       if (event.detectedPoNumber) {
-        currentRound = [...currentRound, { key: `${event.id}-po`, label: "Get PO" }];
-      }
-
-      flushCurrentRound(false);
-    }
-
-    flushCurrentRound(true);
-
-    if (hasConfirmedPo) {
-      if (rounds.length === 0) {
-        rounds.push([{ key: "confirmed-only", label: "PO Confirmed" }]);
-      } else {
-        const lastRoundIndex = rounds.length - 1;
-        rounds[lastRoundIndex] = [
-          ...rounds[lastRoundIndex],
-          { key: "po-confirmed", label: "PO Confirmed" },
-        ];
-      }
-    }
-
-    return rounds;
-  }, [threadEvents, hasConfirmedPo]);
-
-  const flattenedStateSteps = useMemo(
-    () =>
-      stateRounds.flatMap((round, roundIndex) =>
-        round.map((item, index) => ({
-          ...item,
-          showConnector:
-            index < round.length - 1 || roundIndex < stateRounds.length - 1,
-        }))
-      ),
-    [stateRounds]
-  );
-
-  const supplierReplyCount = threadEvents.filter((event) => event.type === "reply").length;
-  const lastThreadTimestamp = threadEvents[0]?.timestamp ?? "暂无记录";
-  const latestThreadEvent = threadEvents[0];
-  const isDraftRound = threadEvents.length === 0;
-
-  useEffect(() => {
-    setTo(selectedMerchantEmail);
-  }, [selectedMerchantEmail]);
-
-  useEffect(() => {
-    if (isDraftRound) {
-      setSubject(defaultSubject);
-      return;
-    }
-    
-    const trimmed = latestThreadEvent?.subject?.trim() || defaultSubject;
-    const replySubject = /^re:/i.test(trimmed) ? trimmed : `Re: ${trimmed}`;
+        currentRound = [...currentRound, { key: `${event.id}-po`, label: "Get PO" }]; } flushCurrentRound(false); } flushCurrentRound(true); if (hasConfirmedPo) { if (rounds. length === 0) { rounds.push([{ key: "confirmed-only", label: "PO Confirmed" }]); } else { const lastRoundIndex = rounds.length - 1; rounds[lastRoundIndex] = [ ...rounds[lastRoundIndex], { key: "po-confirmed", label: "PO Confirmed" }, ]; } } return rounds; }, [threadEvents, hasConfirmedPo]); const flattenedStateSteps = useMemo( () => stateRounds.flatMap((round, roundIndex) => round.map((item, index) => ({ ...item, showConnector: index < round.length - 1 || roundIndex < stateRounds.length - 1, })) ), [stateRounds] ); const supplierReplyCount = threadEvents.filter((event) => event.type === "reply").length; const lastThreadTimestamp = threadEvents[0]?.timestamp ?? "No record yet"; const latestThreadEvent = threadEvents[0]; const isDraftRound = threadEvents.length === 0; useEffect(() => { setTo(selectedMerchantEmail); }, [selectedMerchantEmail]); useEffect(() => { if (isDraftRound) { setSubject(defaultSubject); return; } const trimmed = latestThreadEvent?.subject?.trim() || defaultSubject; const replySubject = /^re:/i.test(trimmed) ? trimmed :`Re: ${trimmed}`;
     setSubject(replySubject);
   }, [defaultSubject, isDraftRound, latestThreadEvent?.subject]);
 
@@ -620,262 +569,25 @@ export function PoRequestPanel({
               activeTab === "compose"
                 ? "border-b-2 border-sky-500 text-sky-700"
                 : "border-b-2 border-transparent text-slate-500 hover:text-slate-700"
-            }`}
-            onClick={() => setActiveTab("compose")}
-          >
-            <Settings2 className="h-4 w-4" />
-            写邮件
-          </button>
-          <button
-            type="button"
-            className={`inline-flex items-center gap-2 px-5 py-3 font-sans text-sm font-medium transition ${
+            }`} onClick={() => setActiveTab("compose")} > <Settings2 className="h-4 w-4" /> write email </button> <button type="button" className={`inline-flex items-center gap-2 px-5 py-3 font-sans text-sm font-medium transition ${
               activeTab === "thread"
                 ? "border-b-2 border-sky-500 text-sky-700"
                 : "border-b-2 border-transparent text-slate-500 hover:text-slate-700"
-            }`}
-            onClick={() => setActiveTab("thread")}
-          >
-            <MessageSquareText className="h-4 w-4" />
-            来往信息
-            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-100 px-1.5 text-xs text-slate-600">
-              {threadEvents.length}
-            </span>
-          </button>
-          <button
-            type="button"
-            className={`inline-flex items-center gap-2 px-5 py-3 font-sans text-sm font-medium transition ${
+            }`} onClick={() => setActiveTab("thread")} > <MessageSquareText className="h-4 w-4" /> Contact information <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-100 px-1.5 text-xs text-slate-600"> {threadEvents.length} </span> </button> <button type="button" className={`inline-flex items-center gap-2 px-5 py-3 font-sans text-sm font-medium transition ${
               activeTab === "detection"
                 ? "border-b-2 border-sky-500 text-sky-700"
                 : "border-b-2 border-transparent text-slate-500 hover:text-slate-700"
-            }`}
-            onClick={() => setActiveTab("detection")}
-          >
-            PO Detection
-          </button>
-        </div>
-
-        <div className="bg-slate-50 p-5">
-          {activeTab === "compose" ? (
-            <div className="space-y-3 text-sm text-slate-600">
-              <div>
-                <div className="mb-1 font-semibold text-slate-900">To</div>
-                <Textarea
-                  rows={2}
-                  value={to}
-                  onChange={(event) => setTo(event.target.value)}
-                  placeholder="输入一个或多个邮箱，使用逗号分隔"
-                  disabled={readOnly}
-                />
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {selectedEmails.map((email) => (
-                    <button
-                      key={email}
-                      type="button"
-                      onClick={() => removeRecipient(email)}
-                      disabled={readOnly}
-                      className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:border-slate-300"
-                    >
-                      <span>{email}</span>
-                      <X className="h-3 w-3" />
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-2 flex items-center gap-2">
-                  <Select
-                    value={quickAddRecipient}
-                    onChange={(event) => {
-                      if (readOnly) return;
-                      const nextValue = event.target.value;
-                      if (nextValue) {
-                        appendRecipient(nextValue);
-                      }
-                      setQuickAddRecipient("");
-                    }}
-                    disabled={readOnly}
-                  >
-                    <option value="">快速添加商户 / staff 邮箱</option>
-                    {recipientOptions.map((recipient) => (
-                      <option key={`${recipient.email}-${recipient.kind}`} value={recipient.email}>
+            }`} onClick={() => setActiveTab("detection")} > PO Detection </button> </div> <div className="bg-slate-50 p-5"> {activeTab === "compose" ? ( <div className="space-y-3 text-sm text-slate-600"> <div> <div className="mb-1 font-semibold text-slate-900">To</div> <Textarea rows={2} value={to} onChange={(event) => setTo(event.target.value)} placeholder="Enter one or more email addresses, separated by commas" disabled={readOnly} /> <div className="mt-2 flex flex-wrap gap-2"> {selectedEmails.map((email) => ( <button key={email} type="button" onClick={() => removeRecipient(email)} disabled={readOnly} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:border-slate-300" > <span>{email}</span> <X className="h-3 w-3" /> </button> ))} </div> <div className="mt-2 flex items-center gap-2"> <Select value={quickAddRecipient} onChange={(event) => { if (readOnly) return; const nextValue = event.target.value; if (nextValue) { appendRecipient(nextValue); } setQuickAddRecipient(""); }} disabled={readOnly} > <option value="">Quickly add merchant/staff email</option> {recipientOptions.map((recipient) => ( <option key={`${recipient.email}-${recipient.kind}`} value={recipient.email}>
                         {recipient.email}{" "}
-                        ({recipient.kind === "staff" ? `${recipient.name || "staff"} - ${recipient.title || "-"}` : "team"})
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-              </div>
-              <div>
-                <div className="mb-1 font-semibold text-slate-900">Subject</div>
-                <Input
-                  value={subject}
-                  onChange={(event) => setSubject(event.target.value)}
-                  disabled={readOnly || !isDraftRound}
-                />
-              </div>
-              <div>
-                <div className="mb-1 font-semibold text-slate-900">正文</div>
-                <div
-                  ref={editorRef}
-                  contentEditable={!readOnly}
-                  className={`min-h-[280px] w-full overflow-auto rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-md [&_table]:max-w-full ${readOnly ? "cursor-not-allowed opacity-50" : ""}`}
-                  onInput={syncBodyFromEditor}
-                  onPaste={handleEditorPaste}
-                  onDrop={handleEditorDrop}
-                  onDragOver={(event) => {
-                    if (!readOnly) {
-                      event.preventDefault();
-                    }
-                  }}
-                  onClick={handleEditorClick}
-                />
-                {selectedDraftImageActive ? (
-                  <div className="mt-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                    <span className="shrink-0 font-medium text-slate-700">图片宽度</span>
-                    <input
-                      type="range"
-                      min={MIN_DRAFT_IMAGE_WIDTH}
-                      max={MAX_DRAFT_IMAGE_WIDTH}
-                      value={selectedDraftImageWidth}
-                      onChange={(event) => resizeSelectedDraftImage(Number(event.target.value))}
-                      className="min-w-[140px] accent-sky-600"
-                    />
-                    <Input
-                      type="number"
-                      min={MIN_DRAFT_IMAGE_WIDTH}
-                      max={MAX_DRAFT_IMAGE_WIDTH}
-                      value={selectedDraftImageWidth}
-                      onChange={(event) => resizeSelectedDraftImage(Number(event.target.value))}
-                      className="max-w-[100px] text-xs"
-                    />
-                    <span className="shrink-0">px</span>
-                  </div>
-                ) : null}
-                <div className="mt-1 text-xs text-slate-500">
-                  支持直接复制/拖入截图或图片；点击正文里的图片后可调整大小。
-                </div>
-              </div>
-              <div className="flex items-center justify-end gap-2 mt-4">
-                {isModified && !readOnly ? (
-                  <Button className="h-10 px-4" leftIcon={<X className="h-4 w-4" />} onClick={handleCancel}>
-                    Cancel
-                  </Button>
-                ) : null}
-                <Button
-                  variant={sendDisabled ? "ghost" : "primary"}
-                  className={[
-                    "h-10 px-4",
-                    sendDisabled ? "border-slate-200 bg-slate-200 text-slate-500 hover:bg-slate-200" : "",
-                  ].join(" ")}
-                  leftIcon={<Send className="h-4 w-4" />}
-                  onClick={handleSend}
-                  disabled={sendDisabled}
-                >
-                  {sending
-                    ? "Sending..."
-	                    : draftSendBlocked
-	                      ? "External Send Detected"
-	                    : draftSendLocked
-	                      ? `PO Request Locked${sendLockHint ? ` (${sendLockHint})` : ""}`
-	                      : sendDisabled
-                        ? "PO Request Sent"
-                        : "Send PO Request"}
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          {activeTab === "thread" ? (
-            <div>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="flex items-center gap-3 text-sm">
-                  <div className="inline-flex items-center gap-1 text-slate-500">
-                    <Clock3 className="h-4 w-4" />
-                    最近: {lastThreadTimestamp}
-                  </div>
-                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 font-semibold text-emerald-700">
-                    {supplierReplyCount} 条回复
-                  </span>
-                </div>
-              </div>
-
-              <div className="mt-5 space-y-3">
-                {threadEvents.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-8 text-center text-sm text-slate-500">
-                    暂无真实来往邮件记录
-                  </div>
-                ) : (
-                  threadEvents.map((event) => (
-                    <div key={event.id} className="rounded-2xl border border-slate-300 bg-white px-5 py-4">
-                      <button
-                        type="button"
-                        className="flex w-full items-center justify-between gap-4 text-left"
-                        onClick={() => setExpandedEventId((prev) => (prev === event.id ? null : event.id))}
-                      >
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span
-                              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                        ({recipient.kind === "staff" ? `${recipient.name || "staff"} - ${recipient.title || "-"}`: "team"}) </option> ))} </Select> </div> </div> <div> <div className="mb-1 font-semibold text-slate-900">Subject</div> <Input value={subject} onChange={(event) => setSubject(event.target.value)} disabled={readOnly || !isDraftRound} /> </div> <div> <div className="mb-1 font-semibold text-slate-900">Text</div> <div ref={editorRef} contentEditable={!readOnly} className={`min-h-[280px] w-full overflow-auto rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-md [&_table]:max-w-full ${readOnly ? "cursor-not-allowed opacity-50" : ""}`} onInput={syncBodyFromEditor} onPaste={handleEditorPaste} onDrop={handleEditorDrop} onDragOver={(event) => { if (!readOnly) { event.preventDefault(); } }} onClick={handleEditorClick} /> {selectedDraftImageActive? ( <div className="mt-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600"> <span className="shrink-0 font-medium text-slate-700">Image width</span> <input type="range" min={MIN_DRAFT_IMAGE_WIDTH} max={MAX_DRAFT_IMAGE_WIDTH} value={selectedDraftImageWidth} onChange={(event) => resizeSelectedDraftImage(Number(event.target.value))} className="min-w-[140px] accent-sky-600" /> <Input type="number" min={MIN_DRAFT_IMAGE_WIDTH} max={MAX_DRAFT_IMAGE_WIDTH} value={selectedDraftImageWidth} onChange={(event) => resizeSelectedDraftImage(Number(event.target.value))} className="max-w-[100px] text-xs" /> <span className="shrink-0">px</span> </div> ) : null} <div className="mt-1 text-xs text-slate-500"> Supports direct copying/drag-in of screenshots or images; click on the image in the text to resize it. </div> </div> <div className="flex items-center justify-end gap-2 mt-4"> {isModified && !readOnly ? ( <Button className="h-10 px-4" leftIcon={<X className="h-4 w-4" />} onClick={handleCancel}> Cancel </Button> ) : null} <Button variant={sendDisabled ? "ghost" : "primary"} className={[ "h-10 px-4", sendDisabled ? "border-slate-200 bg-slate-200 text-slate-500 hover:bg-slate-200" : "", ].join(" ")} leftIcon={<Send className="h-4 w-4" />} onClick={handleSend} disabled={sendDisabled} > {sending ? "Sending..." : draftSendBlocked ? "External Send Detected" : draftSendLocked ?`PO Request Locked${sendLockHint ? ` (${sendLockHint})` : ""}`: sendDisabled ? "PO Request Sent" : "Send PO Request"} </Button> </div> </div> ) : null} {activeTab === "thread" ? ( <div> <div className="flex flex-wrap items-start justify-between gap-3"> <div className="flex items-center gap-3 text-sm"> <div className="inline-flex items-center gap-1 text-slate-500"> <Clock3 className="h-4 w-4" /> Recent: {lastThreadTimestamp} </div> <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 font-semibold text-emerald-700"> {supplierReplyCount} replies </span> </div> </div> <div className="mt-5 space-y-3"> {threadEvents.length === 0 ? ( <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-8 text-center text-sm text-slate-500"> There is currently no real email record </div> ) : ( threadEvents.map((event) => ( <div key={event.id} className="rounded-2xl border border-slate-300 bg-white px-5 py-4"> <button type="button" className="flex w-full items-center justify-between gap-4 text-left" onClick={() => setExpandedEventId((prev) => (prev === event.id ? null : event.id))} > <div className="min-w-0"> <div className="flex flex-wrap items-center gap-2"> <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
                                 event.type === "reply"
                                   ? "bg-emerald-100 text-emerald-700"
                                   : event.type === "reminder"
                                     ? "bg-amber-100 text-amber-700"
                                     : "bg-blue-100 text-blue-700"
-                              }`}
-                            >
-                              {event.type === "reply" ? (
-                                <MailCheck className="h-3.5 w-3.5" />
-                              ) : event.type === "reminder" ? (
-                                <Clock3 className="h-3.5 w-3.5" />
-                              ) : (
-                                <Send className="h-3.5 w-3.5" />
-                              )}
-                              <span>{event.type === "reply" ? "回复" : event.type === "reminder" ? "催发" : "发出"}</span>
-                            </span>
-                            <span className="truncate text-xl font-semibold text-slate-800">
-                              {event.type === "reply" ? event.from || selectedMerchantEmail : event.to || selectedMerchantEmail}
-                            </span>
-                            {(event.attachments?.length || 0) > 0 ? (
-                              <span className="inline-flex items-center gap-1 text-sm text-slate-500">
-                                <Paperclip className="h-4 w-4" />
-                                {event.attachments?.length}
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <div className=" text-sm text-slate-500">{event.timestamp}</div>
-                          <ChevronDown
-                            className={`ml-auto mt-1 h-4 w-4 text-slate-400 transition-transform ${
+                              }`} > {event.type === "reply" ? ( <MailCheck className="h-3.5 w-3.5" /> ) : event.type === "reminder" ? ( <Clock3 className="h-3.5 w-3.5" /> ) : ( <Send className="h-3.5 w-3.5" /> )} <span>{event.type === "reply" ? "Reply" : event.type === "reminder" ? "Follow-up" : "Sent"}</span> </span> <span className="truncate text-xl font-semibold text-slate-800"> {event.type === "reply" ? event.from || selectedMerchantEmail : event.to || selectedMerchantEmail} </span> {(event.attachments?.length || 0) > 0 ? ( <span className="inline-flex items-center gap-1 text-sm text-slate-500"> <Paperclip className="h-4 w-4" /> {event.attachments?.length} </span> ) : null} </div> </div> <div className="shrink-0 text-right"> <div className=" text-sm text-slate-500">{event.timestamp}</div> <ChevronDown className={`ml-auto mt-1 h-4 w-4 text-slate-400 transition-transform ${
                               expandedEventId === event.id ? "rotate-180" : ""
-                            }`}
-                          />
-                        </div>
-                      </button>
-                      {expandedEventId === event.id ? (
-                        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                          <div className="mb-4 text-slate-500 font-medium space-y-1">
-                            {event.from && <div>发件人: {event.from}</div>}
-                            {event.to && <div>收件人: {event.to}</div>}
-                            {event.subject && <div>主题: {event.subject}</div>}
-                          </div>
-                          
-                          {event.type === "reminder" && !event.body ? (
-                            <div className="whitespace-pre-wrap">
-                              提醒邮件已发给 {selectedMerchantEmail}。\n\n请尽快回复当前 PO 请求（{correlationId}）。
-                            </div>
-                          ) : (
-                            <div
-                              className="email-content-preview max-w-full overflow-auto break-words [&_img]:h-auto [&_img]:max-w-full [&_table]:max-w-full"
-                              dangerouslySetInnerHTML={{ __html: event.body || event.description || "" }}
-                            />
-                          )}
-                          
-                          {event.attachments?.length ? (
-                            <div className="mt-4 space-y-2 border-t border-slate-200 pt-3">
-                              <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Attachments</div>
-                              <div className="space-y-2">
-                                {event.attachments.map((attachment) => (
-                                  <div
-                                    key={`${event.id}-${attachment.fileName}-${attachment.attachmentId || attachment.mimeType}`}
+                            }`} /> </div> </button> {expandedEventId === event.id ? ( <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"> <div className="mb-4 text-slate-500 font-medium space-y-1"> {event.from && <div>Sender: {event.from}</div>} {event.to && <div>Recipient: {event.to}</div>} {event.subject && <div>Subject: {event.subject}</div>} </div> {event.type === "reminder" && !event.body ? ( <div className="whitespace-pre-wrap"> A reminder email has been sent to {selectedMerchantEmail}. \n\nPlease reply to the current PO request ({correlationId}) as soon as possible. </div> ) : ( <div className="email-content-preview max-w-full overflow-auto break-words [&_img]:h-auto [&_img]:max-w-full [&_table]:max-w-full" dangerouslySetInnerHTML={{ __html: event.body || event.description || "" }} /> )} {event.attachments?.length ? ( <div className="mt-4 space-y-2 border-t border-slate-200 pt-3"> <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Attachments</div> <div className="space-y-2"> {event.attachments.map((attachment) => ( <div key={`${event.id}-${attachment.fileName}-${attachment.attachmentId || attachment.mimeType}`}
                                     className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2"
                                   >
                                     <div className="min-w-0">
@@ -924,16 +636,7 @@ export function PoRequestPanel({
 
               <Button
                 className="mt-5 h-11 px-5"
-                leftIcon={<MessageSquareText className="h-4 w-4" />}
-                onClick={handleReplyInThread}
-                disabled={readOnly || !latestThreadEvent}
-              >
-                在线程中回复
-              </Button>
-            </div>
-          ) : null}
-
-          {activeTab === "detection" ? (
+                leftIcon={<MessageSquareText className="h-4 w-4"/>} onClick={handleReplyInThread} disabled={readOnly || !latestThreadEvent} > Reply in thread </Button> </div> ) : null} {activeTab ==="detection" ? (
             <PoDetectionPanel
               embedded
               detections={detections}

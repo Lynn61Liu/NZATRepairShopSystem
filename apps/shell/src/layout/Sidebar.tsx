@@ -41,7 +41,7 @@ export function Sidebar() {
     return subscribeWorklogCostAlert((count) => setWorklogAlertCount(count));
   }, []);
 
-  // --- 保留正式版中的 WOF 排班表计数逻辑 ---
+  // --- Retain the WOF schedule counting logic in the official version ---
   useEffect(() => {
     let cancelled = false;
 
@@ -184,7 +184,7 @@ export function Sidebar() {
             </span>
           </NavLink>
 
-          {/* --- [从 eric 版融合] 内部采购商城前台 --- */}
+          {/*--- [Integrated from eric version] Internal procurement mall front desk ---*/}
           <NavLink
             to="/shop"
             className={({ isActive }) =>
@@ -194,7 +194,7 @@ export function Sidebar() {
             Internal Shop
           </NavLink>
 
-          {/* --- [从 eric 版融合] 老板专属采购审核看板 --- */}
+          {/*--- [Integrated from eric version] Boss's exclusive procurement review board ---*/}
           <NavLink
             to="/procurement-admin"
             className={({ isActive }) =>

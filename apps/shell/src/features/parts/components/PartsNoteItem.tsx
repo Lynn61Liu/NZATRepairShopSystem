@@ -32,7 +32,7 @@ export function PartsNoteItem({ note, onUpdate, onDelete }: PartsNoteItemProps) 
 
   const handleDelete = async () => {
     if (!onDelete) return;
-    if (!window.confirm("确定删除这条备注？")) return;
+    if (!window.confirm("Are you sure you want to delete this note?")) return;
     await onDelete(note.id);
   };
 
@@ -50,7 +50,7 @@ export function PartsNoteItem({ note, onUpdate, onDelete }: PartsNoteItemProps) 
             <button
               onClick={handleSave}
               className="p-1.5 text-green-600 hover:bg-green-100 rounded transition-colors"
-              title="保存"
+              title="save"
               disabled={saving}
             >
               <Check className="w-4 h-4" />
@@ -58,7 +58,7 @@ export function PartsNoteItem({ note, onUpdate, onDelete }: PartsNoteItemProps) 
             <button
               onClick={handleCancel}
               className="p-1.5 text-gray-600 hover:bg-gray-200 rounded transition-colors"
-              title="取消"
+              title="Cancel"
             >
               <X className="w-4 h-4" />
             </button>
@@ -77,7 +77,7 @@ export function PartsNoteItem({ note, onUpdate, onDelete }: PartsNoteItemProps) 
               <button
                 onClick={() => setEditing(true)}
                 className="p-1 text-blue-600 hover:bg-blue-100 rounded transition-colors"
-                title="编辑"
+                title="edit"
               >
                 <Edit2 className="w-3.5 h-3.5" />
               </button>
@@ -86,7 +86,7 @@ export function PartsNoteItem({ note, onUpdate, onDelete }: PartsNoteItemProps) 
               <button
                 onClick={handleDelete}
                 className="p-1 text-red-600 hover:bg-red-100 rounded transition-colors"
-                title="删除"
+                title="delete"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>

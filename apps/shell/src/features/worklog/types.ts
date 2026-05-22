@@ -1,6 +1,6 @@
 export type WorklogRole = "Technician" | "Admin" | "Supervisor" | "Manager";
 export type WorklogSource = "tech" | "admin";
-export type WorklogTaskType = "喷漆" | "抛光" | "拆装" | "打磨" | "检查" | "清洁";
+export type WorklogTaskType = "spray paint" | "polishing" | "Disassembly and assembly" | "polish" | "examine" | "clean";
 export type WorklogFlag = "duplicate" | "overlap" | "long_session";
 
 export type WorklogStaffProfile = {

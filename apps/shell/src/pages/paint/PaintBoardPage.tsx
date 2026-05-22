@@ -140,7 +140,7 @@ export function PaintBoardPage() {
       setLoadError(null);
       const res = await fetchPaintBoard();
       if (!res.ok) {
-        if (!cancelled) setLoadError(res.error || "加载失败");
+        if (!cancelled) setLoadError(res.error || "Loading failed");
         setLoading(false);
         return;
       }
@@ -211,120 +211,7 @@ export function PaintBoardPage() {
   }, []);
 
   const handleRowClick = (id: string) => {
-    navigate(`/jobs/${id}`);
-  };
-
-  const handleStageChange = async (jobId: string, nextStage: StageKey) => {
-    const stageIndex = PAINT_STAGE_INDEX_BY_KEY[nextStage];
-    await updatePaintStage(jobId, stageIndex);
-    const res = await fetchPaintBoard();
-    if (res.ok) {
-      const list = Array.isArray(res.data?.jobs) ? res.data.jobs : [];
-      setJobs(list);
-    }
-    notifyPaintBoardRefresh();
-  };
-
-  const handleResetFilters = () => {
-    setSelectedStage("all");
-    setOverdueOnly(false);
-    setCreatedFrom("");
-    setCreatedTo("");
-  };
-
-  return (
-    <div
-      className="flex h-full min-h-0 flex-col gap-5"
-      style={{
-        fontFamily: '"Manrope","Plus Jakarta Sans","Space Grotesk","Segoe UI",sans-serif',
-      }}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2 ">
-          {/* <div className="text-xl font-semibold text-slate-800 ml-2 mr-4">筛选</div> */}
-         <div><Select
-            value={selectedStage}
-            onChange={(event) => setSelectedStage(event.target.value as "all" | StageKey)}
-            className="h-9 w-[140px]"
-          >
-            <option value="all">全部阶段</option>
-            {Object.entries(STAGES).map(([key, stage]) => (
-              <option key={key} value={key}>
-                {stage.label}
-              </option>
-            ))}
-          </Select></div> 
-          
-          <label className="flex items-center gap-2 rounded-xl border border-[rgba(15,23,42,0.08)] bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">
-            <input
-              type="checkbox"
-              checked={overdueOnly}
-              onChange={(event) => setOverdueOnly(event.target.checked)}
-              className="h-4 w-4 accent-blue-600"
-            />
-            仅逾期
-          </label>
-          <div>
-
-        
-          <Input
-            type="date"
-            value={createdFrom}
-            onChange={(event) => setCreatedFrom(event.target.value)}
-            className="h-9 w-[150px]"
-          />
-            </div>
-          <span className="text-xs text-slate-400">到</span>
-          <div>
-          <Input
-            type="date"
-            value={createdTo}
-            onChange={(event) => setCreatedTo(event.target.value)}
-            className="h-9 w-[150px]"
-          />
-            </div>
-          <button
-            type="button"
-            className="rounded-xl border border-[rgba(15,23,42,0.08)] bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm hover:text-slate-800"
-            onClick={handleResetFilters}
-          >
-            重置
-          </button>
-        </div>
-      </div>
-
-      <div
-        className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border border-[rgba(15,23,42,0.08)] bg-white/90 shadow-sm"
-        style={{ maxHeight: BOARD_MAX_HEIGHT }}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[rgba(15,23,42,0.06)] px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="text-xl font-semibold text-slate-800">Paint Status Timeline</div>
-            <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-600">
-              {overdueCount} overdue
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-500">
-            {Object.values(STAGES).map((stage) => (
-              <span key={stage.label} className="flex items-center gap-2">
-                <span className={`h-2.5 w-2.5 rounded-full ${stage.dot}`} />
-                {stage.label}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        <div ref={tableViewportRef} className="paint-board-scroll min-h-0 flex-1 overflow-y-scroll overflow-x-hidden">
-          {loading ? (
-            <div className="p-6 text-sm text-[var(--ds-muted)]">加载中...</div>
-          ) : loadError ? (
-            <div className="p-6 text-sm text-red-600">{loadError}</div>
-          ) : sortedJobs.length === 0 ? (
-            <div className="p-6 text-sm text-[var(--ds-muted)]">暂无喷漆数据</div>
-          ) : null}
-          <div
-            className="grid w-full"
-            style={{ gridTemplateColumns: `${LEFT_COLUMN_WIDTH}px minmax(0,1fr)` }}
+    navigate(`/jobs/${id}`); }; const handleStageChange = async (jobId: string, nextStage: StageKey) => { const stageIndex = PAINT_STAGE_INDEX_BY_KEY[nextStage]; await updatePaintStage(jobId, stageIndex); const res = await fetchPaintBoard(); if (res.ok) { const list = Array.isArray(res.data?.jobs) ? res.data.jobs : []; setJobs(list); } notifyPaintBoardRefresh(); }; const handleResetFilters = () => { setSelectedStage("all"); setOverdueOnly(false); setCreatedFrom(""); setCreatedTo(""); }; return ( <div className="flex h-full min-h-0 flex-col gap-5" style={{ fontFamily: '"Manrope","Plus Jakarta Sans","Space Grotesk","Segoe UI",sans-serif', }} > <div className="flex flex-wrap items-center justify-between gap-3"> <div className="flex flex-wrap items-center gap-2"> {/*<div className="text-xl font-semibold text-slate-800 ml-2 mr-4">Filter</div>*/} <div><Select value={selectedStage} onChange={(event) => setSelectedStage(event.target.value as "all" | StageKey)} className="h-9 w-[140px]" > <option value="all">All stages</option> {Object.entries(STAGES).map(([key, stage]) => ( <option key={key} value={key}> {stage.label} </option> ))} </Select></div> <label className="flex items-center gap-2 rounded-xl border border-[rgba(15,23,42,0.08)] bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm"> <input type="checkbox" checked={overdueOnly} onChange={(event) => setOverdueOnly(event.target.checked)} className="h-4 w-4 accent-blue-600" /> Only overdue </label> <div> <Input type="date" value={createdFrom} onChange={(event) => setCreatedFrom(event.target.value)} className="h-9 w-[150px]" /> </div> <span className="text-xs text-slate-400">to</span> <div> <Input type="date" value={createdTo} onChange={(event) => setCreatedTo(event.target.value)} className="h-9 w-[150px]" /> </div> <button type="button" className="rounded-xl border border-[rgba(15,23,42,0.08)] bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm hover:text-slate-800" onClick={handleResetFilters} > reset </button> </div> </div> <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border border-[rgba(15,23,42,0.08)] bg-white/90 shadow-sm" style={{ maxHeight: BOARD_MAX_HEIGHT }} > <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[rgba(15,23,42,0.06)] px-6 py-4"> <div className="flex items-center gap-3"> <div className="text-xl font-semibold text-slate-800">Paint Status Timeline</div> <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-600"> {overdueCount} overdue </span> </div> <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-500"> {Object.values(STAGES).map((stage) => ( <span key={stage.label} className="flex items-center gap-2"> <span className={`h-2.5 w-2.5 rounded-full ${stage.dot}`} /> {stage.label} </span> ))} </div> </div> <div ref={tableViewportRef} className="paint-board-scroll min-h-0 flex-1 overflow-y-scroll overflow-x-hidden"> {loading ? ( <div className="p-6 text-sm text-[var(--ds-muted)]">Loading...</div> ) : loadError ? ( <div className="p-6 text-sm text-red-600">{loadError}</div> ) : sortedJobs.length === 0 ? ( <div className="p-6 text-sm text-[var(--ds-muted)]">No painting data</div> ) : null} <div className="grid w-full" style={{ gridTemplateColumns:`${LEFT_COLUMN_WIDTH}px minmax(0,1fr)` }}
           >
             <div className="border-b border-[rgba(15,23,42,0.06)] bg-slate-50 px-6 py-4 text-xs font-semibold tracking-[0.12em] text-slate-400">
               VEHICLE DETAILS
@@ -376,38 +263,7 @@ export function PaintBoardPage() {
                 <>
                   <div
                     key={`${job.id}-info`}
-                    className={`border-b border-[rgba(15,23,42,0.06)] px-6 py-4 ${rowBg} cursor-pointer hover:bg-slate-200/80`}
-                    onClick={() => handleRowClick(job.id)}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          {overdue ? (
-                            <AlertCircle className="h-4 w-4 text-red-500" />
-                          ) : null}
-                          <div className="text-base font-semibold text-slate-800">{job.plate}</div>
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          {job.year} · {job.make} {job.model}
-                        </div>
-                        <div className="mt-1 text-xs text-slate-400">
-                          <span
-                            className={[
-                              "rounded-full border px-2 py-0.5 text-[11px] font-semibold",
-                              overdue
-                                ? "border-2 border-red-400 bg-red-50 text-red-700 shadow-[0_0_0_2px_rgba(239,68,68,0.08)]"
-                                : "border-slate-200 bg-slate-50 text-slate-600",
-                            ].join(" ")}
-                          >
-                            {durationDays}天在店{overdue ? " !" : ""}
-                          </span>
-                          {job.daysInStage ? (
-                            <span className="ml-2 text-red-500">{job.daysInStage}d in stage</span>
-                          ) : null}
-                        </div>
-                      </div>
-                      <select
-                        className={`rounded-full px-2 py-1 text-[11px] font-semibold ${stage.pill} bg-transparent`}
+                    className={`border-b border-[rgba(15,23,42,0.06)] px-6 py-4 ${rowBg} cursor-pointer hover:bg-slate-200/80`} onClick={() => handleRowClick(job.id)} > <div className="flex items-start justify-between gap-3"> <div> <div className="flex items-center gap-2"> {overdue ? ( <AlertCircle className="h-4 w-4 text-red-500" /> ) : null} <div className="text-base font-semibold text-slate-800">{job.plate}</div> </div> <div className="text-xs text-slate-500"> {job.year} · {job.make} {job.model} </div> <div className="mt-1 text-xs text-slate-400"> <span className={[ "rounded-full border px-2 py-0.5 text-[11px] font-semibold", overdue ? "border-2 border-red-400 bg-red-50 text-red-700 shadow-[0_0_0_2px_rgba(239,68,68,0.08)]" : "border-slate-200 bg-slate-50 text-slate-600", ].join(" ")} > {durationDays}Tianzai Store{overdue ? " !" : ""} </span> {job.daysInStage ? ( <span className="ml-2 text-red-500">{job.daysInStage}d in stage</span> ) : null} </div> </div> <select className={`rounded-full px-2 py-1 text-[11px] font-semibold ${stage.pill} bg-transparent`}
                         value={stageKey}
                         onChange={(event) => {
                           event.stopPropagation();
@@ -452,9 +308,7 @@ export function PaintBoardPage() {
                           className={`absolute left-0 top-0 h-full rounded-full ${stage.bar}`}
                           style={{ width: `${Math.max(12, Math.round(progressPct * 100))}%` }}
                         />
-                        <span className="relative z-10">{durationDays}天</span>
-                        {overdue ? (
-                          <span className="relative z-10 ml-2 rounded-full bg-red-500 px-1 text-[10px] text-white">
+                        <span className="relative z-10">{durationDays} days</span> {overdue ? ( <span className="relative z-10 ml-2 rounded-full bg-red-500 px-1 text-[10px] text-white">
                             !
                           </span>
                         ) : null}

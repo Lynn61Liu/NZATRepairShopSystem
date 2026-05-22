@@ -321,14 +321,7 @@ export function MainColumn({
             onClick={() => {
               setPartsTabVisibleForCreate(true);
               setPartsCreateTrigger((prev) => prev + 1);
-              handleTabChange("Parts");
-            }}
-          >
-            添加配件
-          </Button>
-        </div>
-
-        {activeTab === "WOF" ? (
+              handleTabChange("Parts"); }} > Add accessories </Button> </div> {activeTab ==="WOF" ? (
           <WofPanel
               hasRecord={hasWofRecord}
               hasService={jobData.hasWofService}

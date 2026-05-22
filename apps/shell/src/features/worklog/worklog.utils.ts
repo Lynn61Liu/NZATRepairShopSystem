@@ -149,7 +149,7 @@ export function getStaffRowColor(name: string, colorMap?: Map<string, { pill: st
 }
 
 export function flagLabel(flag: WorklogFlag) {
-  if (flag === "duplicate") return "可能重复";
-  if (flag === "overlap") return "时间重叠";
-  return "长时间作业";
+  if (flag === "duplicate") return "possible duplicate";
+  if (flag === "overlap") return "time overlap";
+  return "Long working hours";
 }
