@@ -29,8 +29,6 @@ import { ProcurementAdmin } from "./pages/procurement/ProcurementAdmin";
 const router = createBrowserRouter([
   { path: "/paint-tech", element: <PaintTechBoardPage /> },
   { path: "/customer/new-job", element: <CustomerSelfServiceNewJobPage /> },
-
-  // --- [新增] 给师傅用的独立全屏页面 ---
   { path: "/staff-shop", element: <Shopfront /> },
 
   {
@@ -40,7 +38,7 @@ const router = createBrowserRouter([
       { index: true, element: <DashboardPage /> },
       { path: "jobs", element: <JobsPage /> },
       { path: "paint-board", element: <PaintBoardPage /> },
-      { path: "wof-schedule", element: <WofSchedulePage /> }, // 保留
+      { path: "wof-schedule", element: <WofSchedulePage /> }, 
       { path: "po-dashboard-preview", element: <PoDashboardPreviewPage /> },
       { path: "worklog", element: <WorklogPage /> },
       { path: "parts-flow", element: <PartFlowPage /> },
