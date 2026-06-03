@@ -19,6 +19,7 @@ import { WorklogPage } from "./pages/worklog/WorklogPage";
 import { PoDashboardPreviewPage } from "./pages/PoDashboardPreviewPage";
 import { WofSchedulePage } from "./pages/WofSchedulePage"; // 保留原有的 WofSchedule
 import { ToastProvider } from "@/components/ui";
+import { CustomerSelfServiceNewJobPage } from "./pages/customerSelfService/CustomerSelfServiceNewJobPage";
 
 // --- [从 Eric 版引入] 采购相关组件 ---
 import Shopfront from "./components/Shopfront";
@@ -27,6 +28,7 @@ import { ProcurementAdmin } from "./pages/procurement/ProcurementAdmin";
 
 const router = createBrowserRouter([
   { path: "/paint-tech", element: <PaintTechBoardPage /> },
+  { path: "/customer/new-job", element: <CustomerSelfServiceNewJobPage /> },
 
   // --- [新增] 给师傅用的独立全屏页面 ---
   { path: "/staff-shop", element: <Shopfront /> },

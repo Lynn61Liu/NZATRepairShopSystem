@@ -126,6 +126,7 @@ builder.Services.AddScoped<XeroTokenService>();
 builder.Services.AddScoped<XeroInvoiceService>();
 builder.Services.AddScoped<XeroPaymentService>();
 builder.Services.AddScoped<JobInvoiceService>();
+builder.Services.AddScoped<NewJobCreationService>();
 builder.Services.AddScoped<InvoiceOutboxService>();
 builder.Services.AddSingleton<InvoiceOutboxKickService>();
 builder.Services.AddScoped<GmailAccountService>();

@@ -10,7 +10,7 @@ const PRINT_FRAME_ID = "print-template-frame";
 const isPrintDebugEnabled = () => {
   try {
     const params = new URLSearchParams(window.location.search);
-    const flag = params.get("printDebug");
+    const flag = params.get("printDebug") ?? params.get("printdebug") ?? params.get("printerdebug");
     if (flag === "1" || flag === "true") return true;
     const stored = window.localStorage.getItem("printDebug");
     return stored === "1" || stored === "true";
