@@ -150,7 +150,7 @@ export function NewJobPage() {
     [paintOptions, paintOptionChoices]
   );
   const mechOptionsLine = useMemo(
-    () => (selectedMechOptionLabels.length ? selectedMechOptionLabels.join("，") : ""),
+    () => (selectedMechOptionLabels.length ? selectedMechOptionLabels.join(", ") : ""),
     [selectedMechOptionLabels]
   );
   const normalizedPartsDescriptions = useMemo(
@@ -159,59 +159,59 @@ export function NewJobPage() {
   );
   const partsSummaryLine = useMemo(() => {
     if (!normalizedPartsDescriptions.length) return "";
-    return `配件：${normalizedPartsDescriptions.join("，")}`;
+    return `Parts: ${normalizedPartsDescriptions.join(", ")}`;
   }, [normalizedPartsDescriptions]);
   const selectedServiceSummaries = useMemo(() => {
     const rows: string[] = [];
     if (selectedServices.includes("wof")) {
       rows.push(
         selectedWofOptionLabels.length
-          ? `WOF（${selectedWofOptionLabels.join("，")}）`
+          ? `WOF (${selectedWofOptionLabels.join(", ")})`
           : (serviceLabelMap.wof || "WOF")
       );
     }
     if (selectedServices.includes("mech")) {
       rows.push(
         selectedMechOptionLabels.length
-          ? `机修（${selectedMechOptionLabels.join("，")}）`
-          : (serviceLabelMap.mech || "机修")
+          ? `Mechanical (${selectedMechOptionLabels.join(", ")})`
+          : (serviceLabelMap.mech || "Mechanical")
       );
     }
     if (selectedServices.includes("paint")) {
       rows.push(
         selectedPaintOptionLabels.length
-          ? `喷漆（${selectedPaintOptionLabels.join("，")}；${paintPanels || "1"}片）`
-          : `喷漆（${paintPanels || "1"}片）`
+          ? `Paint (${selectedPaintOptionLabels.join(", ")}; ${paintPanels || "1"} panels)`
+          : `Paint (${paintPanels || "1"} panels)`
       );
     }
     return rows;
   }, [selectedServices, serviceLabelMap, selectedWofOptionLabels, selectedMechOptionLabels, selectedPaintOptionLabels, paintPanels]);
-  const customerTypeLabel = customerType === "business" ? "商户客户" : "个人客户";
+  const customerTypeLabel = customerType === "business" ? "Business customer" : "Personal customer";
   const customerDisplayName =
     customerType === "business"
-      ? selectedBusiness?.label?.trim() || "未填写"
-      : personalName.trim() || "未填写";
+      ? selectedBusiness?.label?.trim() || "Not entered"
+      : personalName.trim() || "Not entered";
   const missingRequiredFields = useMemo(() => {
     const missing: string[] = [];
-    if (!rego.trim()) missing.push("车牌号码");
-    if (customerType === "business" && !businessId) missing.push("商户名称");
-    if (showPaintPanels && !paintPanels.trim()) missing.push("喷漆片数");
+    if (!rego.trim()) missing.push("Plate number");
+    if (customerType === "business" && !businessId) missing.push("Business customer");
+    if (showPaintPanels && !paintPanels.trim()) missing.push("Paint panel count");
     return missing;
   }, [rego, customerType, businessId, showPaintPanels, paintPanels]);
 
   const autoNotes = useMemo(() => {
     const items: string[] = [];
     if (selectedServices.includes("wof")) {
-      items.push(selectedWofOptionLabels.length ? selectedWofOptionLabels.join("，") : (serviceLabelMap.wof || "WOF"));
+      items.push(selectedWofOptionLabels.length ? selectedWofOptionLabels.join(", ") : (serviceLabelMap.wof || "WOF"));
     }
     if (selectedServices.includes("mech") && selectedMechOptionLabels.length) {
-      items.push(selectedMechOptionLabels.join("，"));
+      items.push(selectedMechOptionLabels.join(", "));
     }
     if (selectedServices.includes("paint") && selectedPaintOptionLabels.length) {
-      items.push(selectedPaintOptionLabels.join("，"));
+      items.push(selectedPaintOptionLabels.join(", "));
     }
     if (items.length === 0) return "";
-    return items.join("，");
+    return items.join(", ");
   }, [
     selectedServices,
     serviceLabelMap,
@@ -480,7 +480,7 @@ export function NewJobPage() {
 
     if (res.ok) return data;
     if (res.status === 404) return null;
-    throw new Error(data?.error || "读取数据库失败");
+    throw new Error(data?.error || "Failed to read from the database");
   };
 
   const applyPersonalCustomer = (customer: {
@@ -512,8 +512,8 @@ export function NewJobPage() {
       setCustomerMatchHint({
         message:
           payload?.source === "job"
-            ? "已匹配历史工单里的商户客户信息。"
-            : "已匹配这台车之前绑定的商户客户信息。",
+            ? "Matched business customer details from a previous job."
+            : "Matched business customer details previously linked to this vehicle.",
       });
       return;
     }
@@ -522,8 +522,8 @@ export function NewJobPage() {
     setCustomerMatchHint({
       message:
         payload?.source === "job"
-          ? "已匹配历史工单里的客户信息。"
-          : "已匹配这台车之前绑定的客户信息。",
+          ? "Matched customer details from a previous job."
+          : "Matched customer details previously linked to this vehicle.",
     });
   };
 
@@ -535,7 +535,7 @@ export function NewJobPage() {
     if (!matched) return;
 
     applyPersonalCustomer(matched);
-    setCustomerMatchHint({ message: "已匹配现有客户资料并自动填充。"});
+    setCustomerMatchHint({ message: "Matched an existing customer profile and filled the details automatically."});
   };
 
   const importVehicle = async (plate: string) => {
@@ -556,12 +556,12 @@ export function NewJobPage() {
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        throw new Error(data?.error || "导入失败，请稍后重试 or Link");
+        throw new Error(data?.error || "Import failed. Please try again later or link manually.");
       }
 
       const dbData = await fetchVehicleFromDb(plate);
       if (!dbData) {
-        throw new Error("已导入，但未在数据库中找到车辆");
+        throw new Error("Imported successfully, but the vehicle was not found in the database.");
       }
 
       // console.log("vehicle from db", dbData?.vehicle ?? dbData);
@@ -570,7 +570,7 @@ export function NewJobPage() {
       setImportState("success");
     } catch (err) {
       setImportState("error");
-      setImportError(err instanceof Error ? err.message : "导入失败，请稍后重试");
+      setImportError(err instanceof Error ? err.message : "Import failed. Please try again later.");
     }
   };
 
@@ -596,7 +596,7 @@ export function NewJobPage() {
       await importVehicle(normalized);
     } catch (err) {
       setImportState("error");
-      setImportError(err instanceof Error ? err.message : "导入失败，请稍后重试");
+      setImportError(err instanceof Error ? err.message : "Import failed. Please try again later.");
     }
   };
 
@@ -642,19 +642,19 @@ export function NewJobPage() {
     if (saving) return;
     setFormAlert(null);
     if (!rego) {
-      setFormAlert({ variant: "error", message: "请输入车牌号" });
+      setFormAlert({ variant: "error", message: "Please enter a plate number." });
       return;
     }
     if (customerType === "business" && (!businessId || !selectedBusiness)) {
-      setFormAlert({ variant: "error", message: "请选择有效的商户客户。" });
+      setFormAlert({ variant: "error", message: "Please select a valid business customer." });
       return;
     }
     if (!createNewInvoice && !existingInvoiceNumber.trim()) {
-      setFormAlert({ variant: "error", message: "关闭新建 Invoice 后，Invoice Number 为必填。" });
+      setFormAlert({ variant: "error", message: "Invoice Number is required when Create New Invoice is turned off." });
       return;
     }
     if (serviceCatalogLoading || !serviceCatalogReady) {
-      setFormAlert({ variant: "error", message: "服务目录仍在加载，请稍后再保存。" });
+      setFormAlert({ variant: "error", message: "The service catalog is still loading. Please save again later." });
       return;
     }
 
@@ -728,8 +728,8 @@ export function NewJobPage() {
       if (missingRootCatalogIds.length) {
         const missingLabels = missingRootCatalogIds
           .map((serviceType) => serviceLabelMap[serviceType] || serviceType)
-          .join("、");
-        throw new Error(`服务目录映射尚未准备好：${missingLabels}。请刷新后重试。`);
+          .join(", ");
+        throw new Error(`Service catalog mapping is not ready for: ${missingLabels}. Please refresh and try again.`);
       }
 
       const rootServiceCatalogItemIds = selectedServices
@@ -835,7 +835,7 @@ export function NewJobPage() {
 
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error(data?.error || "工单保存失败，请稍后重试");
+        throw new Error(data?.error || "Failed to save the job. Please try again later.");
       }
 
       console.info("[new-job-performance]", {
@@ -858,7 +858,7 @@ export function NewJobPage() {
       const createdId = data?.jobId ? String(data.jobId) : "";
 
       if (invoiceCreated || invoiceLinked) {
-        const successMessage = invoiceLinked ? "工单已创建，并已关联现有 Invoice！" : "工单和 Invoice 已创建成功！";
+        const successMessage = invoiceLinked ? "Job created and linked to the existing Invoice." : "Job and Invoice created successfully.";
         setFormAlert({ variant: "success", message: successMessage });
         toast.success(successMessage);
         if (createdId) {
@@ -869,8 +869,8 @@ export function NewJobPage() {
       } else if (invoiceQueued) {
         const successMessage =
           invoiceMode === "attach_existing"
-            ? "工单已创建，现有 Invoice 正在后台关联。"
-            : "工单已创建，Invoice 正在后台生成。";
+            ? "Job created. The existing Invoice is being linked in the background."
+            : "Job created. The Invoice is being generated in the background.";
         setFormAlert({ variant: "success", message: successMessage });
         toast.success(successMessage);
         if (createdId) {
@@ -880,17 +880,17 @@ export function NewJobPage() {
         }
       } else {
         const message = invoiceError
-          ? `工单已创建（Job ID: ${createdId || "未知"}），但 Invoice 创建失败：${invoiceError}`
-          : `工单已创建（Job ID: ${createdId || "未知"}），但 Invoice 没有创建成功。`;
+          ? `Job created (Job ID: ${createdId || "unknown"}), but Invoice creation failed: ${invoiceError}`
+          : `Job created (Job ID: ${createdId || "unknown"}), but the Invoice was not created successfully.`;
         setFormAlert({ variant: "warning", message });
         toast.error(message);
         console.log("======error======", message);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "工单保存失败，请稍后重试");
+      toast.error(err instanceof Error ? err.message : "Failed to save the job. Please try again later.");
       setFormAlert({
         variant: "error",
-        message: err instanceof Error ? err.message : "工单保存失败，请稍后重试",
+        message: err instanceof Error ? err.message : "Failed to save the job. Please try again later.",
       });
     } finally {
       setSaving(false);
