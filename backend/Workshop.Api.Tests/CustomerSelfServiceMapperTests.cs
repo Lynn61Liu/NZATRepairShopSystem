@@ -7,7 +7,7 @@ namespace Workshop.Api.Tests;
 public class CustomerSelfServiceMapperTests
 {
     [Fact]
-    public void MapToNewJobRequest_WithWof_UsesWofServiceAndAppendsAddressToNotes()
+    public void MapToNewJobRequest_WithWof_UsesWofServiceAndKeepsAddressOutOfNotes()
     {
         var req = new CustomerSelfServiceJobRequest
         {
@@ -15,6 +15,7 @@ public class CustomerSelfServiceMapperTests
             HasWof = true,
             Name = "Jane Smith",
             Phone = "021 123 4567",
+            Email = " jane@example.com ",
             Notes = "Please call first.",
             Street = "42 Queen Street",
             Suburb = "Auckland Central",
@@ -31,8 +32,9 @@ public class CustomerSelfServiceMapperTests
         mapped.Customer.Type.Should().Be("Personal");
         mapped.Customer.Name.Should().Be("Jane Smith");
         mapped.Customer.Phone.Should().Be("021 123 4567");
+        mapped.Customer.Email.Should().Be("jane@example.com");
         mapped.Customer.Address.Should().Be("42 Queen Street, Auckland Central, Auckland");
-        mapped.Notes.Should().Be("Customer-self job\nPlease call first.\nAddress: 42 Queen Street, Auckland Central, Auckland");
+        mapped.Notes.Should().Be("Customer-self job\nPlease call first.");
     }
 
     [Fact]
@@ -50,7 +52,7 @@ public class CustomerSelfServiceMapperTests
         var mapped = CustomerSelfServiceJobMapper.MapToNewJobRequest(req, rootServiceCatalogItemId: 10);
 
         mapped.Customer.Address.Should().Be("42 Queen Street, Auckland Central, Auckland 1010");
-        mapped.Notes.Should().Be("Customer-self job\nAddress: 42 Queen Street, Auckland Central, Auckland 1010");
+        mapped.Notes.Should().Be("Customer-self job");
     }
 
     [Fact]
@@ -70,6 +72,42 @@ public class CustomerSelfServiceMapperTests
         mapped.RootServiceCatalogItemIds.Should().BeEquivalentTo([20]);
         mapped.Notes.Should().Be("Customer-self job");
         mapped.Customer.Address.Should().BeNull();
+    }
+
+    [Fact]
+    public void MapToNewJobRequest_WithMatchedCustomerAndNoEdit_ReusesExistingCustomer()
+    {
+        var req = new CustomerSelfServiceJobRequest
+        {
+            Plate = "abc123",
+            HasWof = false,
+            Name = "Jane Smith",
+            Phone = "021 123 4567",
+            ExistingCustomerId = 42,
+            CustomerEdited = false,
+        };
+
+        var mapped = CustomerSelfServiceJobMapper.MapToNewJobRequest(req, rootServiceCatalogItemId: 20);
+
+        mapped.Customer.ExistingCustomerId.Should().Be(42);
+    }
+
+    [Fact]
+    public void MapToNewJobRequest_WithMatchedCustomerAndEdit_CreatesNewCustomer()
+    {
+        var req = new CustomerSelfServiceJobRequest
+        {
+            Plate = "abc123",
+            HasWof = false,
+            Name = "Jane Smith",
+            Phone = "021 123 4567",
+            ExistingCustomerId = 42,
+            CustomerEdited = true,
+        };
+
+        var mapped = CustomerSelfServiceJobMapper.MapToNewJobRequest(req, rootServiceCatalogItemId: 20);
+
+        mapped.Customer.ExistingCustomerId.Should().BeNull();
     }
 
     [Fact]

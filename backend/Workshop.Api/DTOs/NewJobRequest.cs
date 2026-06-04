@@ -30,6 +30,7 @@ public sealed class NewJobRequest
 
     public sealed class CustomerInput
     {
+        public long? ExistingCustomerId { get; set; }
         public string Type { get; set; } = "";
         public string Name { get; set; } = "";
         public string? Phone { get; set; }

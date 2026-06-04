@@ -6,6 +6,9 @@ public sealed class CustomerSelfServiceJobRequest
     public bool HasWof { get; set; }
     public string Name { get; set; } = "";
     public string Phone { get; set; } = "";
+    public string? Email { get; set; }
+    public long? ExistingCustomerId { get; set; }
+    public bool CustomerEdited { get; set; }
     public string? Notes { get; set; }
     public string? Address { get; set; }
     public string? Street { get; set; }

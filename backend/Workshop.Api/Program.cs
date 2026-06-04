@@ -60,7 +60,8 @@ var fallbackCorsOrigins = new[]
 {
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://nzat-jan2026-1.onrender.com"
+    "http://192.168.68.77:5173",
+       "https://nzat-jan2026-1.onrender.com"
 };
 
 builder.Services.AddCors(options =>
@@ -160,6 +161,7 @@ builder.Services.AddScoped<VehicleRepository>();
 // 3) Register browser + import service
 builder.Services.AddScoped<CarjamBrowser>();
 builder.Services.AddScoped<CarjamImportService>();
+builder.Services.AddSingleton<CarjamAsyncImportService>();
 
 // (Optional) If you still use your own scraper in Workshop.Api
 builder.Services.AddScoped<CarjamScraper>();

@@ -256,52 +256,75 @@ const buildChecklistSections = (): PrintSection[] => [
   },
 ];
 
-export const buildWofHtml = (data: WofPrintData) => {
-  const pageTitle = "WOF Print";
+const buildPrintColumns = (data: WofPrintData) => {
   const summarySections = buildSummarySections(data);
   const checklistSections = buildChecklistSections();
-  const summarySectionsHtml = summarySections
-    .map((section) => renderSection(section))
-    .join("\n");
-  const checklistSectionsHtml = checklistSections
-    .map((section) => renderSection(section))
+
+  return [
+    {
+      className: "column column-left",
+      sections: [summarySections[0], checklistSections[0], checklistSections[1], checklistSections[4]],
+    },
+    {
+      className: "column column-middle",
+      sections: [summarySections[1], checklistSections[2], checklistSections[3], checklistSections[5]],
+    },
+    {
+      className: "column column-right",
+      sections: [summarySections[2], summarySections[3], summarySections[4], summarySections[5], checklistSections[6]],
+    },
+  ];
+};
+
+export const buildWofHtml = (data: WofPrintData) => {
+  const columns = buildPrintColumns(data);
+  const columnsHtml = columns
+    .map(
+      (column) => `
+        <div class="${column.className}">
+          ${column.sections.map((section) => renderSection(section)).join("\n")}
+        </div>`
+    )
     .join("\n");
 
   return `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>${escapeHtml(pageTitle)}</title>
+  <title>WOF Print</title>
   <style>
-    @page { size: 8.5in 14in; margin: 10mm; }
+    @page { size: legal portrait; margin: 0; }
     html, body {
       margin: 0;
       padding: 0;
       font-family: Arial, sans-serif;
-      background: #f3f4f6;
+      background: #fff;
       color: #111827;
     }
     body.debug {
-      background: #e5e7eb;
+      background: #f3f4f6;
     }
     .page {
-      max-width: 8.5in;
+      width: 8.5in;
+      height: 14in;
       margin: 0 auto;
-      padding: 16px;
+      padding: 0;
       box-sizing: border-box;
+      overflow: hidden;
     }
     .sheet {
       position: relative;
-      background: #fff;
-      border: 1px solid #d1d5db;
-      border-radius: 14px;
-      padding: 18px;
-      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      width: 100%;
+      height: 100%;
+      padding: 10px 12px 12px;
+      box-sizing: border-box;
+      background: transparent;
+      overflow: hidden;
     }
     .reference-layer {
       display: none;
       position: absolute;
-      inset: 18px;
+      inset: 10px 12px 12px;
       pointer-events: none;
       z-index: 0;
     }
@@ -348,94 +371,103 @@ export const buildWofHtml = (data: WofPrintData) => {
       border-bottom-width: 1.5px;
       border-right-width: 1.5px;
     }
-    .header {
+    .content {
       position: relative;
       z-index: 1;
+      width: calc(100% / 0.85);
+      height: calc(100% / 0.85);
+      transform-origin: top left;
+      transform: scale(0.85);
+      display: grid;
+      grid-template-columns: 1.03fr 0.99fr 0.84fr;
+      grid-template-rows: auto 1fr;
+      gap: 8px;
+      align-content: start;
+    }
+    .topline {
+      grid-column: 1 / -1;
       display: flex;
       justify-content: space-between;
-      gap: 16px;
       align-items: flex-start;
-      margin-bottom: 16px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid #e5e7eb;
+      gap: 12px;
+      padding: 0 2px 4px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.45);
     }
-    .title {
-      margin: 0;
-      font-size: 24px;
-      line-height: 1.1;
-      letter-spacing: 0.02em;
-    }
-    .subtitle {
-      margin-top: 4px;
-      color: #6b7280;
+    .topline-title {
       font-size: 13px;
+      line-height: 1.1;
+      font-weight: 700;
+      color: #6b7280;
+      letter-spacing: 0.01em;
     }
     .meta {
       text-align: right;
-      font-size: 12px;
-      line-height: 1.5;
-      color: #4b5563;
+      font-size: 11px;
+      line-height: 1.35;
+      color: #6b7280;
       white-space: nowrap;
     }
-    .summary-grid {
-      position: relative;
-      z-index: 1;
+    .columns {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
-      margin-bottom: 16px;
+      grid-column: 1 / -1;
+      grid-template-columns: 1.03fr 0.99fr 0.84fr;
+      gap: 8px;
+      align-items: start;
+    }
+    .column {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 0;
+    }
+    .column-right {
+      gap: 6px;
     }
     .section {
       border: 1px solid #dbe1e8;
-      border-radius: 12px;
+      border-radius: 0;
       overflow: hidden;
-      background: #fff;
+      background: rgba(255, 255, 255, 0.16);
       break-inside: avoid;
       page-break-inside: avoid;
     }
     .section-header {
-      background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
-      padding: 10px 12px;
-      font-size: 12px;
+      background: rgba(229, 234, 179, 0.68);
+      padding: 6px 8px;
+      font-size: 10px;
       font-weight: 700;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.04em;
       text-transform: uppercase;
       color: #374151;
       border-bottom: 1px solid #dbe1e8;
     }
     .section-body {
-      padding: 8px 12px 10px;
+      padding: 5px 6px 6px;
+      background: transparent;
     }
     .row {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 74px;
-      gap: 12px;
+      grid-template-columns: minmax(0, 1fr) 56px;
+      gap: 6px;
       align-items: start;
-      padding: 7px 0;
-      border-bottom: 1px dotted #e5e7eb;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.18);
     }
     .row:last-child {
       border-bottom: none;
       padding-bottom: 0;
     }
     .label {
-      font-size: 12px;
-      line-height: 1.35;
+      font-size: 9px;
+      line-height: 1.2;
       color: #111827;
     }
     .value {
-      font-size: 12px;
-      line-height: 1.35;
+      font-size: 9px;
+      line-height: 1.2;
       color: #111827;
       text-align: right;
       font-weight: 700;
-    }
-    .checklist {
-      position: relative;
-      z-index: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
     }
     .noprint {
       position: fixed;
@@ -456,21 +488,14 @@ export const buildWofHtml = (data: WofPrintData) => {
       box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
     }
     .debug .sheet {
-      outline: 2px dashed rgba(185, 28, 28, 0.65);
-      box-shadow: none;
+      outline: 2px dashed rgba(185, 28, 28, 0.45);
     }
     .debug .reference-layer {
       display: block;
     }
-    .debug .section {
-      outline: 1px dashed rgba(185, 28, 28, 0.35);
-    }
     @media print {
       html, body {
         background: #fff;
-      }
-      .page {
-        padding: 0;
       }
       .sheet {
         border: none;
@@ -483,9 +508,6 @@ export const buildWofHtml = (data: WofPrintData) => {
       }
       .debug .reference-layer {
         display: block;
-      }
-      .summary-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
       .section,
       .row {
@@ -506,21 +528,17 @@ export const buildWofHtml = (data: WofPrintData) => {
         <div class="reference-grid"></div>
         ${buildCornerMarks()}
       </div>
-      <div class="header">
-        <div>
-          <h1 class="title">Warrant of fitness checksheet</h1>
-          <div class="subtitle">Customer copy</div>
+      <div class="content">
+        <div class="topline">
+          <div class="topline-title">Please ensure the IO name appears or checksheet is invalid</div>
+          <div class="meta">
+            <div>${escapeHtml(data.recordStateLabel || "WOF")}</div>
+            <div>${escapeHtml(data.rego || "")}</div>
+          </div>
         </div>
-        <div class="meta">
-          <div>${escapeHtml(data.recordStateLabel || "WOF")}</div>
-          <div>${escapeHtml(data.rego || "")}</div>
+        <div class="columns">
+          ${columnsHtml}
         </div>
-      </div>
-      <div class="summary-grid">
-        ${summarySectionsHtml}
-      </div>
-      <div class="checklist">
-        ${checklistSectionsHtml}
       </div>
     </div>
   </div>

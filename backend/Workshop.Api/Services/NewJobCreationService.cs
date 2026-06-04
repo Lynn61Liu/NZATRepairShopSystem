@@ -80,9 +80,27 @@ public sealed class NewJobCreationService
 
         Customer? customer = null;
         if (!isBusiness)
-            customer = BuildCustomer(req.Customer);
+        {
+            if (req.Customer.ExistingCustomerId.HasValue)
+            {
+                var existingCustomer = await _db.Customers.FirstOrDefaultAsync(x => x.Id == req.Customer.ExistingCustomerId.Value, ct);
+                if (existingCustomer is null)
+                    throw new InvalidOperationException("Selected customer was not found.");
+                if (!string.Equals(existingCustomer.Type, "Personal", StringComparison.Ordinal))
+                    throw new InvalidOperationException("Selected customer is not a personal customer.");
 
-        long? jobCustomerId = customer?.Id;
+                if (!string.IsNullOrWhiteSpace(customerNotes))
+                    existingCustomer.Notes = customerNotes;
+
+                customer = null;
+            }
+            else
+            {
+                customer = BuildCustomer(req.Customer);
+            }
+        }
+
+        long? jobCustomerId = req.Customer.ExistingCustomerId ?? customer?.Id;
         if (isBusiness)
         {
             if (string.IsNullOrWhiteSpace(req.BusinessId) || !long.TryParse(req.BusinessId, out var businessCustomerId))
@@ -107,6 +125,7 @@ public sealed class NewJobCreationService
             {
                 Plate = plate,
                 Customer = customer,
+                CustomerId = customer is null ? jobCustomerId : null,
                 UpdatedAt = now,
             };
         }
