@@ -102,8 +102,15 @@ public class AppDbContext : DbContext
             .HasForeignKey(x => x.CustomerId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        // ✅ raw_json jsonb
-        e.Property(x => x.RawJson).HasColumnName("raw_json").HasColumnType("jsonb");
+        if (Database.ProviderName?.Contains("InMemory", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            e.Ignore(x => x.RawJson);
+        }
+        else
+        {
+            // ✅ raw_json jsonb
+            e.Property(x => x.RawJson).HasColumnName("raw_json").HasColumnType("jsonb");
+        }
 
         e.Property(x => x.UpdatedAt)
             .HasColumnName("updated_at")
@@ -413,6 +420,8 @@ public class AppDbContext : DbContext
         jp.Property(x => x.JobId).HasColumnName("job_id").IsRequired();
         jp.Property(x => x.CorrelationId).HasColumnName("correlation_id").IsRequired();
         jp.Property(x => x.CounterpartyEmail).HasColumnName("counterparty_email");
+        jp.Property(x => x.GmailDraftId).HasColumnName("gmail_draft_id");
+        jp.Property(x => x.GmailDraftUpdatedAt).HasColumnName("gmail_draft_updated_at");
         jp.Property(x => x.Status).HasColumnName("status").HasConversion<string>().IsRequired();
         jp.Property(x => x.RequiresAdminAttention).HasColumnName("requires_admin_attention").HasDefaultValue(false);
         jp.Property(x => x.AdminAttentionReason).HasColumnName("admin_attention_reason");

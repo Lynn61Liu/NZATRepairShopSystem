@@ -16,7 +16,10 @@
       "launchUrl": "swagger",
       "applicationUrl": "http://localhost:5227",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Gmail__ClientId": "128878252141-qk2p5e97nvrfld0f0tnidcg127eklgi9.apps.googleusercontent.com",
+        "Gmail__ClientSecret": "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",
+        "Gmail__RedirectUri": "http://localhost:5227/api/gmail/oauth/callback"
       }
     },
     "https": {
@@ -26,7 +29,10 @@
       "launchUrl": "swagger",
       "applicationUrl": "https://localhost:7113;http://localhost:5227",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Gmail__ClientId": "YOUR_LOCAL_GMAIL_CLIENT_ID",
+        "Gmail__ClientSecret": "YOUR_LOCAL_GMAIL_CLIENT_SECRET",
+        "Gmail__RedirectUri": "http://localhost:5227/api/gmail/oauth/callback"
       }
     },
     "IIS Express": {
@@ -34,7 +40,10 @@
       "launchBrowser": true,
       "launchUrl": "swagger",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Gmail__ClientId": "YOUR_LOCAL_GMAIL_CLIENT_ID",
+        "Gmail__ClientSecret": "YOUR_LOCAL_GMAIL_CLIENT_SECRET",
+        "Gmail__RedirectUri": "http://localhost:5227/api/gmail/oauth/callback"
       }
     }
   }

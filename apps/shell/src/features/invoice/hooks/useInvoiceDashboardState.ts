@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/components/ui";
 import { requestJson } from "@/utils/api";
+import { usePoEmailDraftActions } from "@/features/invoice/hooks/usePoEmailDraftActions";
 import { notifyPoDashboardRefresh } from "@/utils/refreshSignals";
 import { pullJobXeroDraftInvoice, syncJobXeroDraftInvoice, updateJobInvoiceXeroState, updateJobPoSelection } from "@/features/jobDetail/api/jobDetailApi";
 import type {
@@ -188,27 +189,7 @@ function getLegacyPoFromReference(reference: string) {
 }
 
 const EMAIL_STATE_ORDER: EmailState[] = ["Draft", "Email Sent", "Get Reply", "Reminder Scheduled", "Get PO"];
-const PO_REQUEST_SEND_LOCK_WINDOW_MS = 5 * 60 * 1000;
 const PO_THREAD_POLL_INTERVAL_MS = 5 * 60 * 1000;
-const PO_REQUEST_SEND_LOCK_PREFIX = "po-request-send-lock:";
-
-function getPoRequestSendLockKey(correlationId: string) {
-  return `${PO_REQUEST_SEND_LOCK_PREFIX}${correlationId.trim()}`;
-}
-
-function setPoRequestSendLock(correlationId: string, sentAtIso: string) {
-  if (typeof window === "undefined") return;
-  const normalizedCorrelationId = correlationId.trim();
-  if (!normalizedCorrelationId) return;
-
-  window.localStorage.setItem(
-    getPoRequestSendLockKey(normalizedCorrelationId),
-    JSON.stringify({
-      sentAt: sentAtIso,
-      expiresAt: new Date(new Date(sentAtIso).getTime() + PO_REQUEST_SEND_LOCK_WINDOW_MS).toISOString(),
-    })
-  );
-}
 
 const initialInvoiceState: InvoiceDashboardState = {
   contact: "",
@@ -394,6 +375,49 @@ function parsePersistedItems(invoice?: JobInvoiceData | null): InvoiceItem[] {
   }
 }
 
+function extractMerchantEmails(customerEmail?: string | null, invoice?: JobInvoiceData | null): string[] {
+  const emails: string[] = [];
+  const seen = new Set<string>();
+
+  const push = (value?: string | null) => {
+    const normalized = value?.trim();
+    if (!normalized) return;
+
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    emails.push(normalized);
+  };
+
+  push(customerEmail);
+
+  const responseRaw = invoice?.responsePayloadJson?.trim();
+  if (!responseRaw) return emails;
+
+  try {
+    const parsed = JSON.parse(responseRaw) as {
+      Invoices?: Array<{
+        Contact?: {
+          EmailAddress?: string;
+          ContactPersons?: Array<{
+            EmailAddress?: string;
+          }>;
+        };
+      }>;
+    };
+
+    const contact = Array.isArray(parsed.Invoices) ? parsed.Invoices[0]?.Contact : null;
+    push(contact?.EmailAddress);
+    for (const person of contact?.ContactPersons ?? []) {
+      push(person?.EmailAddress);
+    }
+  } catch {
+    // Ignore malformed Xero payloads and fall back to customer data only.
+  }
+
+  return emails;
+}
+
 function buildCorrelationId(jobId?: string, vehicle?: VehicleInfo | null) {
   const normalizedJobId = (jobId ?? "").trim();
   if (normalizedJobId) {
@@ -478,10 +502,6 @@ export function useInvoiceDashboardState({
   );
   const poLocked = isSystemLocked(invoice.xeroStatus);
   const poLockReason = poLocked ? "Invoice is no longer in Draft. System changes are locked; only Pull From Xero is allowed." : "";
-  const draftSendBlockedReason =
-    !poLocked && hasExternalDraftSend
-      ? "Detected external send from Gmail. System draft send is disabled for this PO thread."
-      : "";
 
   useEffect(() => {
     timelineRef.current = timeline;
@@ -527,7 +547,7 @@ export function useInvoiceDashboardState({
       attachmentMimeType: matchedDetection.attachmentMimeType,
       body: matchedDetection.previewType === "text" ? latestReplyBody || matchedDetection.evidencePreview : undefined,
     };
-  }, [detections, savedPoNumber, timeline]);
+  }, [detections, invoice.reference, savedPoNumber, timeline]);
 
   const buildDraftPayload = () => ({
     lineAmountTypes: mapAmountsAreToLineAmountTypes(invoice.amountsAre),
@@ -605,75 +625,13 @@ export function useInvoiceDashboardState({
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
-  const sendPoRequest = async ({ to, subject, body }: { to: string; subject: string; body: string }) => {
-    if (poLocked) {
-      throw new Error(poLockReason);
-    }
-    if (hasExternalDraftSend && !timeline.some((event) => ["sent", "reminder", "reply"].includes(event.type))) {
-      throw new Error("Detected external send from Gmail. System draft send is disabled for this PO thread.");
-    }
-
-    const latestThreadEvent = timeline.find((event) => ["sent", "reminder", "reply"].includes(event.type));
-    const result = await requestJson<{
-      id: string;
-      threadId: string;
-      message: string;
-      rfcMessageId: string;
-      referencesHeader: string;
-    }>("/api/gmail/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        to,
-        subject,
-        body,
-        isHtmlBody: true,
-        correlationId: invoice.correlationId,
-        threadId: latestThreadEvent?.threadId || null,
-        replyToRfcMessageId: latestThreadEvent?.rfcMessageId || null,
-        referencesHeader: latestThreadEvent?.referencesHeader || null,
-      }),
-    });
-
-    if (!result.ok) {
-      if (result.status === 409 && invoice.correlationId.trim()) {
-        setPoRequestSendLock(invoice.correlationId, new Date().toISOString());
-      }
-      throw new Error(result.error || "Failed to send PO request email");
-    }
-
-    if (invoice.correlationId.trim()) {
-      setPoRequestSendLock(invoice.correlationId, new Date().toISOString());
-    }
-
-    const now = new Date().toLocaleString("zh-CN", { hour12: false }).replace(/\//g, "-");
-    setInvoice((prev) => ({
-      ...prev,
-      selectedMerchantEmail: to,
-      emailStates: mergeEmailStates(prev.emailStates, ["Email Sent"], ["Draft"]),
-      currentWorkflowStep: Math.max(prev.currentWorkflowStep, 3),
-      lastEmailSent: now,
-      nextReminderIn: "23h 59m",
-    }));
-    setTimeline((prev) => [
-      {
-        id: `evt-send-${Date.now()}`,
-        type: "sent",
-        timestamp: now,
-        description: `PO request email sent to ${to}${result.data?.threadId ? ` (thread ${result.data.threadId})` : ""}`,
-        to,
-        subject,
-        body,
-        threadId: result.data?.threadId || latestThreadEvent?.threadId,
-        rfcMessageId: result.data?.rfcMessageId || "",
-        referencesHeader: result.data?.referencesHeader || "",
-        attachments: [],
-        isSystemInitiated: true,
-      },
-      ...prev,
-    ]);
-    toast.success("PO request email sent");
-  };
+  const {
+    draftState: poDraftState,
+    createPoDraft,
+    recreatePoDraft,
+    viewPoDraft,
+    openSentMailbox,
+  } = usePoEmailDraftActions({ invoice, timeline, poLocked, poLockReason });
 
   const sendReminderNow = () => {
     const now = new Date().toLocaleString("zh-CN", { hour12: false }).replace(/\//g, "-");
@@ -733,7 +691,7 @@ export function useInvoiceDashboardState({
       return false;
     }
 
-    let syncedInvoice: any = null;
+    let syncedInvoice: JobInvoiceData | null = null;
     let xeroSyncFailed = false;
     if (jobId && (invoice.xeroInvoiceId || persistedInvoice?.externalInvoiceId)) {
       const syncRes = await syncJobXeroDraftInvoice(jobId, {
@@ -865,7 +823,7 @@ export function useInvoiceDashboardState({
     setPoPanelInitialized(false);
     setPoPanelRefreshing(false);
     setMerchantRecipientsLoading(true);
-  }, [persistedInvoice, persistedInvoiceReference, persistedPoNumber, resolvedCorrelationId]);
+  }, [persistedInvoice, persistedInvoiceReference, persistedPoNumber, resolvedCorrelationId, savedPoNumber]);
 
   useEffect(() => {
     setSavedPoNumber(persistedPoNumber?.trim() || "");
@@ -1046,6 +1004,8 @@ export function useInvoiceDashboardState({
     const loadMerchantRecipients = async () => {
       setMerchantRecipientsLoading(true);
       const customerId = customer?.id?.trim();
+      const fallbackMerchantEmails = extractMerchantEmails(customer?.email, persistedInvoice);
+      const fallbackMerchantEmail = fallbackMerchantEmails[0] || "";
       const setMerchantInvoiceState = (
         resolveNext: (prev: InvoiceDashboardState) => Pick<
           InvoiceDashboardState,
@@ -1066,9 +1026,9 @@ export function useInvoiceDashboardState({
         setMerchantInvoiceState((prev) => ({
           contact: persistedInvoice?.contactName?.trim() || customer?.name?.trim() || prev.contact,
           merchantUserName: "team",
-          merchantEmails: [],
+          merchantEmails: fallbackMerchantEmails,
           merchantEmailRecipients: [],
-          selectedMerchantEmail: "",
+          selectedMerchantEmail: fallbackMerchantEmail,
         }));
         if (!cancelled) setMerchantRecipientsLoading(false);
         return;
@@ -1078,11 +1038,11 @@ export function useInvoiceDashboardState({
         setMerchantInvoiceState(() => ({
           contact: persistedInvoice?.contactName?.trim() || customer.name.trim(),
           merchantUserName: "team",
-          merchantEmails: customer.email?.trim() ? [customer.email.trim()] : [],
-          merchantEmailRecipients: customer.email?.trim()
-            ? [{ email: customer.email.trim(), kind: "business", name: "Team", title: "" }]
+          merchantEmails: fallbackMerchantEmails,
+          merchantEmailRecipients: fallbackMerchantEmail
+            ? [{ email: fallbackMerchantEmail, kind: "business", name: "Team", title: "" }]
             : [],
-          selectedMerchantEmail: customer.email?.trim() || "",
+          selectedMerchantEmail: fallbackMerchantEmail,
         }));
         if (!cancelled) setMerchantRecipientsLoading(false);
         return;
@@ -1101,11 +1061,11 @@ export function useInvoiceDashboardState({
         setMerchantInvoiceState(() => ({
           contact: persistedInvoice?.contactName?.trim() || customer.name.trim(),
           merchantUserName: "team",
-          merchantEmails: customer.email?.trim() ? [customer.email.trim()] : [],
-          merchantEmailRecipients: customer.email?.trim()
-            ? [{ email: customer.email.trim(), kind: "business", name: "Team", title: "" }]
+          merchantEmails: fallbackMerchantEmails,
+          merchantEmailRecipients: fallbackMerchantEmail
+            ? [{ email: fallbackMerchantEmail, kind: "business", name: "Team", title: "" }]
             : [],
-          selectedMerchantEmail: customer.email?.trim() || "",
+          selectedMerchantEmail: fallbackMerchantEmail,
         }));
         if (!cancelled) setMerchantRecipientsLoading(false);
         return;
@@ -1148,12 +1108,14 @@ export function useInvoiceDashboardState({
         merchantUserName:
           recipients.find((item) => item.kind === "staff")?.name ||
           (recipients[0]?.kind === "business" ? "team" : prev.merchantUserName),
-        merchantEmails: recipients.map((item) => item.email),
+        merchantEmails: Array.from(
+          new Set([...recipients.map((item) => item.email), ...fallbackMerchantEmails].filter(Boolean))
+        ),
         merchantEmailRecipients: recipients,
         selectedMerchantEmail:
           recipients.some((item) => item.email === prev.selectedMerchantEmail)
             ? prev.selectedMerchantEmail
-            : (recipients[0]?.email ?? ""),
+            : (fallbackMerchantEmail || recipients[0]?.email || ""),
       }));
       setMerchantRecipientsLoading(false);
     };
@@ -1248,18 +1210,21 @@ export function useInvoiceDashboardState({
     timeline,
     detections,
     selectedDetectionId,
+    poDraftState,
     poPanelLoading,
     poPanelRefreshing,
     poLocked,
     poLockReason,
     hasExternalDraftSend,
-    draftSendBlockedReason,
     unreadReplyCount,
     totalAmount,
     manualPoNumber,
     setSelectedDetectionId,
     setManualPoNumber,
-    sendPoRequest,
+    createPoDraft,
+    recreatePoDraft,
+    viewPoDraft,
+    openSentMailbox,
     sendReminderNow,
     configureReminders,
     confirmPo,
@@ -1284,7 +1249,6 @@ export function useInvoiceDashboardState({
     poLocked,
     poLockReason,
     hasExternalDraftSend,
-    draftSendBlockedReason,
     unreadReplyCount,
     subtotal,
     taxTotal,
@@ -1296,7 +1260,10 @@ export function useInvoiceDashboardState({
     resolveXeroStateOption,
     refreshFromXero,
     openInXero,
-    sendPoRequest,
+    createPoDraft,
+    recreatePoDraft,
+    viewPoDraft,
+    openSentMailbox,
     sendReminderNow,
     configureReminders,
     confirmPo,

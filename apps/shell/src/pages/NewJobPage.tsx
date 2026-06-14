@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import { AlertCircle, ArrowLeft, Boxes, FileText, Loader2, Plus, ReceiptText, X } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Alert, Button, Input, SectionCard, Textarea, useToast } from "@/components/ui";
+import { useJobSheetPrinter } from "@/features/printing/useJobSheetPrinter";
 import {
   type ChildServiceOption,
   CustomerSection,
@@ -18,6 +19,7 @@ import {
   type ServiceType,
   type VehicleInfo,
 } from "@/features/newJob";
+import { printSavedJobSheets } from "@/features/newJob/newJob.printing";
 import {
   getCachedBusinessCustomers,
   getCachedCustomerProfile,
@@ -63,6 +65,9 @@ export function NewJobPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const toast = useToast();
+  const { print } = useJobSheetPrinter({
+    onPopupBlocked: () => toast.error("静默打印失败，请检查打印服务"),
+  });
   const [rego, setRego] = useState("");
   const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null);
   const [importState, setImportState] = useState<ImportState>("idle");
@@ -191,6 +196,12 @@ export function NewJobPage() {
     customerType === "business"
       ? selectedBusiness?.label?.trim() || "未填写"
       : personalName.trim() || "未填写";
+  const printVehicleModel = [vehicleInfo?.model, vehicleInfo?.year].filter(Boolean).join(" ");
+  const printCustomerCode = customerType === "business" ? selectedBusiness?.businessCode ?? selectedBusiness?.id ?? "" : "";
+  const printCustomerName =
+    customerType === "business"
+      ? selectedBusiness?.label?.trim() || ""
+      : personalName.trim() || regoYearModelLabel || rego.trim();
   const missingRequiredFields = useMemo(() => {
     const missing: string[] = [];
     if (!rego.trim()) missing.push("车牌号码");
@@ -474,6 +485,36 @@ export function NewJobPage() {
     setCustomerMatchHint(null);
   };
 
+  const buildSaveAndPrintRow = (createdAt: string) => ({
+    plate: rego.trim(),
+    vehicleModel: printVehicleModel,
+    customerCode: printCustomerCode,
+    customerName: printCustomerName,
+    createdAt,
+    panels: showPaintPanels ? Number(paintPanels) || 1 : null,
+    nzFirstRegistration: vehicleInfo?.nzFirstRegistration ?? "",
+    vin: vehicleInfo?.vin ?? "",
+  });
+
+  const printSavedJobSheetsAfterSave = (notesText: string, createdAt: string) => {
+    const row = {
+      ...buildSaveAndPrintRow(createdAt),
+    };
+
+    return printSavedJobSheets({
+      selectedServices,
+      row,
+      notes: notesText,
+      print,
+    });
+  };
+
+  const showPrintFailureNotice = (printResult: { failed: boolean } | null) => {
+    if (printResult?.failed) {
+      toast.info("工单已保存，但打印未完成，可稍后从 Job Detail 重新打印。");
+    }
+  };
+
   const fetchVehicleFromDb = async (plate: string) => {
     const res = await fetch(withApiBase(`/api/vehicles/by-plate?plate=${encodeURIComponent(plate)}`));
     const data = await res.json().catch(() => null);
@@ -638,7 +679,7 @@ export function NewJobPage() {
     setSelectedServices((prev) => (prev.includes("wof") ? prev : [...prev, "wof"]));
   }, [searchParams]);
 
-  const handleSave = async () => {
+  const handleSave = async (printAfterSave = false) => {
     if (saving) return;
     setFormAlert(null);
     if (!rego) {
@@ -837,6 +878,12 @@ export function NewJobPage() {
       if (!res.ok) {
         throw new Error(data?.error || "工单保存失败，请稍后重试");
       }
+      const savedCreatedAt =
+        typeof data?.createdAt === "string"
+          ? data.createdAt
+          : typeof data?.job?.createdAt === "string"
+            ? data.job.createdAt
+            : new Date().toISOString();
 
       console.info("[new-job-performance]", {
         xResponseTime: res.headers.get("X-Response-Time"),
@@ -856,11 +903,16 @@ export function NewJobPage() {
       const invoiceMode = typeof data?.invoiceMode === "string" ? data.invoiceMode : "";
       const invoiceError = typeof data?.invoiceError === "string" ? data.invoiceError : "";
       const createdId = data?.jobId ? String(data.jobId) : "";
+      const printResult = printAfterSave ? printSavedJobSheetsAfterSave(notesPayload, savedCreatedAt) : null;
 
       if (invoiceCreated || invoiceLinked) {
         const successMessage = invoiceLinked ? "工单已创建，并已关联现有 Invoice！" : "工单和 Invoice 已创建成功！";
         setFormAlert({ variant: "success", message: successMessage });
         toast.success(successMessage);
+        showPrintFailureNotice(printResult);
+        if (printAfterSave && !printResult?.printedAny && !printResult?.failed) {
+          toast.info("已保存，当前未选择可打印的机修/喷漆模板。");
+        }
         if (createdId) {
           navigate(`/jobs/${createdId}`);
         } else {
@@ -873,6 +925,10 @@ export function NewJobPage() {
             : "工单已创建，Invoice 正在后台生成。";
         setFormAlert({ variant: "success", message: successMessage });
         toast.success(successMessage);
+        showPrintFailureNotice(printResult);
+        if (printAfterSave && !printResult?.printedAny && !printResult?.failed) {
+          toast.info("已保存，当前未选择可打印的机修/喷漆模板。");
+        }
         if (createdId) {
           navigate(`/jobs/${createdId}`);
         } else {
@@ -884,6 +940,10 @@ export function NewJobPage() {
           : `工单已创建（Job ID: ${createdId || "未知"}），但 Invoice 没有创建成功。`;
         setFormAlert({ variant: "warning", message });
         toast.error(message);
+        showPrintFailureNotice(printResult);
+        if (printAfterSave && !printResult?.printedAny && !printResult?.failed) {
+          toast.info("已保存，当前未选择可打印的机修/喷漆模板。");
+        }
         console.log("======error======", message);
       }
     } catch (err) {
@@ -1187,12 +1247,23 @@ export function NewJobPage() {
             <Button
               variant="primary"
               className="w-full justify-center gap-2 text-center disabled:cursor-not-allowed disabled:bg-[rgba(0,0,0,0.18)] disabled:text-white/80"
-              onClick={handleSave}
+              onClick={() => void handleSave(false)}
               disabled={saving || serviceCatalogLoading || !serviceCatalogReady}
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {saving ? "保存中" : serviceCatalogLoading || !serviceCatalogReady ? "加载服务配置中..." : "保存"}
             </Button>
+            {false ? (
+              <Button
+                variant="ghost"
+                className="mt-2 w-full justify-center gap-2 text-center border-[var(--ds-primary)] text-[var(--ds-primary)] hover:bg-[rgba(220,38,38,0.06)] disabled:cursor-not-allowed disabled:border-[rgba(0,0,0,0.12)] disabled:text-[rgba(0,0,0,0.35)]"
+                onClick={() => void handleSave(true)}
+                disabled={saving || serviceCatalogLoading || !serviceCatalogReady}
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {saving ? "保存中" : "保存并打印工单"}
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>

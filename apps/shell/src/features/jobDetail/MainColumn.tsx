@@ -290,6 +290,7 @@ export function MainColumn({
           vin={jobData.vehicle.vin}
           nzFirstRegistration={jobData.vehicle.nzFirstRegistration}
           hasPaintService={Boolean(paintService?.id)}
+          hasWofService={jobData.hasWofService}
           onArchive={onArchiveJob}
           isArchiving={isArchivingJob}
           onDelete={onDeleteJob}

@@ -6,6 +6,8 @@ public class JobPoState
     public long JobId { get; set; }
     public string CorrelationId { get; set; } = "";
     public string? CounterpartyEmail { get; set; }
+    public string? GmailDraftId { get; set; }
+    public DateTime? GmailDraftUpdatedAt { get; set; }
     public JobPoStateStatus Status { get; set; } = JobPoStateStatus.Draft;
     public bool RequiresAdminAttention { get; set; }
     public string? AdminAttentionReason { get; set; }

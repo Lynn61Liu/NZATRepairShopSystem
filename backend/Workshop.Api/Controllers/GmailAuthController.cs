@@ -34,6 +34,7 @@ public class GmailAuthController : ControllerBase
     private readonly GmailOptions _options;
     private readonly GmailAccountService _gmailAccountService;
     private readonly GmailMessageSenderService _gmailMessageSenderService;
+    private readonly GmailDraftService _gmailDraftService;
     private readonly GmailTokenService _gmailTokenService;
     private readonly GmailThreadSyncService _gmailThreadSyncService;
     private readonly AppleVisionImageOcrService _imageOcrService;
@@ -47,6 +48,7 @@ public class GmailAuthController : ControllerBase
         IOptions<GmailOptions> options,
         GmailAccountService gmailAccountService,
         GmailMessageSenderService gmailMessageSenderService,
+        GmailDraftService gmailDraftService,
         GmailTokenService gmailTokenService,
         GmailThreadSyncService gmailThreadSyncService,
         AppleVisionImageOcrService imageOcrService,
@@ -59,6 +61,7 @@ public class GmailAuthController : ControllerBase
         _options = options.Value;
         _gmailAccountService = gmailAccountService;
         _gmailMessageSenderService = gmailMessageSenderService;
+        _gmailDraftService = gmailDraftService;
         _gmailTokenService = gmailTokenService;
         _gmailThreadSyncService = gmailThreadSyncService;
         _imageOcrService = imageOcrService;
@@ -306,6 +309,62 @@ public class GmailAuthController : ControllerBase
             gmailAccountEmail = sendResult.GmailAccountEmail,
             scope = sendResult.Scope,
             accessTokenExpiresIn = sendResult.AccessTokenExpiresIn,
+        });
+    }
+
+    [HttpPost("drafts/po-request")]
+    public async Task<IActionResult> UpsertPoRequestDraft([FromBody] GmailPoDraftRequest req, CancellationToken ct)
+    {
+        var draftResult = await _gmailDraftService.UpsertPoRequestDraftAsync(req, ct);
+        if (!draftResult.Ok)
+        {
+            return StatusCode(draftResult.StatusCode, new
+            {
+                error = draftResult.Error,
+                grantedScopes = draftResult.GrantedScopes,
+                configuredScopes = draftResult.ConfiguredScopes,
+            });
+        }
+
+        return Ok(new
+        {
+            message = "Gmail draft prepared.",
+            draftId = draftResult.DraftId,
+            draftMessageId = draftResult.DraftMessageId,
+            composeUrl = draftResult.ComposeUrl,
+            draftStatus = draftResult.DraftStatus,
+            gmailAccountId = draftResult.GmailAccountId,
+            gmailAccountEmail = draftResult.GmailAccountEmail,
+            scope = draftResult.Scope,
+            accessTokenExpiresIn = draftResult.AccessTokenExpiresIn,
+        });
+    }
+
+    [HttpGet("drafts/po-request/status")]
+    public async Task<IActionResult> GetPoRequestDraftStatus([FromQuery] string? correlationId, [FromQuery] long? gmailAccountId, CancellationToken ct)
+    {
+        var draftStatusResult = await _gmailDraftService.GetPoRequestDraftStatusAsync(correlationId, gmailAccountId, ct);
+        if (!draftStatusResult.Ok)
+        {
+            return StatusCode(draftStatusResult.StatusCode, new
+            {
+                error = draftStatusResult.Error,
+                grantedScopes = draftStatusResult.GrantedScopes,
+                configuredScopes = draftStatusResult.ConfiguredScopes,
+            });
+        }
+
+        return Ok(new
+        {
+            draftState = draftStatusResult.DraftState,
+            draftId = draftStatusResult.DraftId,
+            composeUrl = draftStatusResult.ComposeUrl,
+            sentMailboxUrl = draftStatusResult.SentMailboxUrl,
+            gmailAccountId = draftStatusResult.GmailAccountId,
+            gmailAccountEmail = draftStatusResult.GmailAccountEmail,
+            message = draftStatusResult.Message,
+            scope = draftStatusResult.Scope,
+            accessTokenExpiresIn = draftStatusResult.AccessTokenExpiresIn,
         });
     }
 
@@ -1215,11 +1274,11 @@ public class GmailAuthController : ControllerBase
     private string? ValidateConfiguration()
     {
         if (string.IsNullOrWhiteSpace(_options.ClientId))
-            return "Missing Gmail:ClientId.";
+            return "Missing Gmail:ClientId. Set Gmail__ClientId (or GMAIL_CLIENT_ID in deploy/.env).";
         if (string.IsNullOrWhiteSpace(_options.ClientSecret))
-            return "Missing Gmail:ClientSecret.";
+            return "Missing Gmail:ClientSecret. Set Gmail__ClientSecret (or GMAIL_CLIENT_SECRET in deploy/.env).";
         if (string.IsNullOrWhiteSpace(_options.RedirectUri))
-            return "Missing Gmail:RedirectUri.";
+            return "Missing Gmail:RedirectUri. Set Gmail__RedirectUri (or GMAIL_REDIRECT_URI in deploy/.env).";
         return null;
     }
 

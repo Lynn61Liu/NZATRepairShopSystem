@@ -88,14 +88,15 @@ public sealed class GmailMessageSenderService
         if (!tokenResult.Ok)
             return GmailMessageSendResult.Fail(tokenResult.StatusCode, tokenResult.Error ?? "Failed to refresh Gmail access token.");
 
-        var rawMessage = BuildRawMessage(
+        var rawMessage = GmailMimeMessageBuilder.BuildRawMessage(
             string.Join(", ", recipients),
             normalizedSubject,
             request.Body ?? "",
             request.IsHtmlBody,
             request.HtmlBodyOverride,
             request.ReplyToRfcMessageId,
-            request.ReferencesHeader);
+            request.ReferencesHeader,
+            request.Attachments);
 
         var client = _httpClientFactory.CreateClient();
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "https://gmail.googleapis.com/gmail/v1/users/me/messages/send");
@@ -496,7 +497,8 @@ public sealed record GmailMessageSendRequest(
     long? GmailAccountId,
     bool IsHtmlBody = false,
     string? HtmlBodyOverride = null,
-    bool BypassDuplicateProtection = false);
+    bool BypassDuplicateProtection = false,
+    IReadOnlyList<GmailMessageAttachment>? Attachments = null);
 
 public sealed record GmailMessageSendResult(
     bool Ok,

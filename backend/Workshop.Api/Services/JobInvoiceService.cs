@@ -14,6 +14,7 @@ public sealed class JobInvoiceService
 
     private readonly AppDbContext _db;
     private readonly ReferenceDataCacheService _referenceDataCache;
+    private readonly ServiceCatalogService _serviceCatalogService;
     private readonly XeroInvoiceService _xeroInvoiceService;
     private readonly XeroPaymentService _xeroPaymentService;
     private readonly XeroPaymentOptions _xeroPaymentOptions;
@@ -22,6 +23,7 @@ public sealed class JobInvoiceService
     public JobInvoiceService(
         AppDbContext db,
         ReferenceDataCacheService referenceDataCache,
+        ServiceCatalogService serviceCatalogService,
         XeroInvoiceService xeroInvoiceService,
         XeroPaymentService xeroPaymentService,
         Microsoft.Extensions.Options.IOptions<XeroPaymentOptions> xeroPaymentOptions,
@@ -29,6 +31,7 @@ public sealed class JobInvoiceService
     {
         _db = db;
         _referenceDataCache = referenceDataCache;
+        _serviceCatalogService = serviceCatalogService;
         _xeroInvoiceService = xeroInvoiceService;
         _xeroPaymentService = xeroPaymentService;
         _xeroPaymentOptions = xeroPaymentOptions.Value;
@@ -469,6 +472,7 @@ public sealed class JobInvoiceService
 
         var wofLineItems = await BuildCatalogMappedServiceLineItemsAsync(
             row.Customer,
+            jobId,
             wofSelections,
             paintService: null,
             ct);
@@ -579,7 +583,7 @@ public sealed class JobInvoiceService
             })
             .ToList();
 
-        var removalLineItems = await BuildCatalogMappedServiceLineItemsAsync(customer, transientSelections, paintService: null, ct);
+        var removalLineItems = await BuildCatalogMappedServiceLineItemsAsync(customer, jobId, transientSelections, paintService: null, ct);
         if (removalLineItems.Count == 0)
             return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true);
 
@@ -1041,6 +1045,8 @@ public sealed class JobInvoiceService
         JobPaintService? paintService,
         CancellationToken ct)
     {
+        await EnsureServiceCatalogSeededAsync(ct);
+
         var reference = BuildReference(job, customer, vehicle);
         var contactName = BuildContactName(customer, vehicle);
         if (string.IsNullOrWhiteSpace(contactName))
@@ -1054,6 +1060,7 @@ public sealed class JobInvoiceService
         var inventoryByCode = await LoadInventoryByCodesAsync(requestedCodes, ct);
         var lineItems = BuildCatalogMappedServiceLineItems(
             customer,
+            job.Id,
             serviceSelections,
             paintService,
             serviceContext.CatalogItemsById,
@@ -1094,14 +1101,18 @@ public sealed class JobInvoiceService
 
     private async Task<List<XeroInvoiceLineItemInput>> BuildCatalogMappedServiceLineItemsAsync(
         Customer customer,
+        long jobId,
         IReadOnlyList<JobServiceSelection> serviceSelections,
         JobPaintService? paintService,
         CancellationToken ct)
     {
+        await EnsureServiceCatalogSeededAsync(ct);
+
         var serviceContext = await LoadCatalogMappedServiceContextAsync(customer, serviceSelections, ct);
         var inventoryByCode = await LoadInventoryByCodesAsync(serviceContext.RequestedCodes, ct);
         return BuildCatalogMappedServiceLineItems(
             customer,
+            jobId,
             serviceSelections,
             paintService,
             serviceContext.CatalogItemsById,
@@ -1181,7 +1192,7 @@ public sealed class JobInvoiceService
                     Quantity = item.Quantity,
                     UnitAmount = item.UnitAmount,
                     LineAmount = item.LineAmount,
-                    ItemCode = inventoryItem?.ItemCode,
+                    ItemCode = inventoryItem?.ItemCode ?? item.ItemCode?.Trim(),
                     AccountCode = item.AccountCode,
                     TaxType = item.TaxType,
                     TaxAmount = item.TaxAmount,
@@ -1246,8 +1257,9 @@ public sealed class JobInvoiceService
         return await _referenceDataCache.GetInventoryByCodesAsync(normalizedCodes, ct);
     }
 
-    private static List<XeroInvoiceLineItemInput> BuildCatalogMappedServiceLineItems(
+    private List<XeroInvoiceLineItemInput> BuildCatalogMappedServiceLineItems(
         Customer customer,
+        long jobId,
         IReadOnlyList<JobServiceSelection> serviceSelections,
         JobPaintService? paintService,
         IReadOnlyDictionary<long, ServiceCatalogItem> catalogItemsById,
@@ -1260,14 +1272,31 @@ public sealed class JobInvoiceService
             if (!catalogItemsById.TryGetValue(selection.ServiceCatalogItemId, out var catalogItem))
                 continue;
 
-            var itemCode = ResolveCatalogItemCode(customer, catalogItem, overrideByServiceId);
+            overrideByServiceId.TryGetValue(catalogItem.Id, out var overrideCode);
+            var trace = ResolveCatalogItemCodeTrace(customer, catalogItem, overrideCode);
             var description = ResolveSelectionDescription(selection, catalogItem, paintService);
-            inventoryByCode.TryGetValue(itemCode ?? "", out var inventoryItem);
-            lineItems.Add(BuildConfiguredLineItem(itemCode, description, inventoryItem, fallbackUnitAmount: 0m, useInventoryPrice: true));
+            inventoryByCode.TryGetValue(trace.ResolvedCode ?? "", out var inventoryItem);
+
+            _logger.LogInformation(
+                "Job invoice code trace for job {JobId}: customer {CustomerId} ({CustomerType}), service {ServiceCatalogItemId} {ServiceType}/{Category}, source {Source}, sourceCode {SourceCode}, resolvedCode {ResolvedCode}, inventoryMatched {InventoryMatched}",
+                jobId,
+                customer.Id,
+                customer.Type,
+                catalogItem.Id,
+                catalogItem.ServiceType,
+                catalogItem.Category,
+                trace.Source,
+                trace.SourceCode ?? "<null>",
+                trace.ResolvedCode ?? "<null>",
+                inventoryItem is not null);
+
+            lineItems.Add(BuildConfiguredLineItem(trace.ResolvedCode, description, inventoryItem, fallbackUnitAmount: 0m, useInventoryPrice: true));
         }
 
         return lineItems;
     }
+
+    private sealed record CatalogItemCodeTrace(string? ResolvedCode, string Source, string? SourceCode);
 
     private sealed record CatalogMappedServiceContext(
         Dictionary<long, ServiceCatalogItem> CatalogItemsById,
@@ -1280,8 +1309,64 @@ public sealed class JobInvoiceService
         IReadOnlyDictionary<long, string> overrideByServiceId)
     {
         overrideByServiceId.TryGetValue(catalogItem.Id, out var overrideCode);
-        return JobInvoiceItemCodeResolver.Resolve(customer, catalogItem, overrideCode);
+        return ResolveCatalogItemCodeTrace(customer, catalogItem, overrideCode).ResolvedCode;
     }
+
+    private static CatalogItemCodeTrace ResolveCatalogItemCodeTrace(
+        Customer customer,
+        ServiceCatalogItem catalogItem,
+        string? overrideCode)
+    {
+        var normalizedOverrideCode = overrideCode?.Trim();
+        if (!string.IsNullOrWhiteSpace(normalizedOverrideCode))
+        {
+            return new CatalogItemCodeTrace(
+                normalizedOverrideCode,
+                "customer_service_price.override",
+                normalizedOverrideCode);
+        }
+
+        var isPersonal = string.Equals(customer.Type, "Personal", StringComparison.OrdinalIgnoreCase);
+        var defaultCode = isPersonal ? catalogItem.PersonalLinkCode : catalogItem.DealershipLinkCode;
+        var normalizedDefaultCode = defaultCode?.Trim();
+        if (!string.IsNullOrWhiteSpace(normalizedDefaultCode))
+        {
+            return new CatalogItemCodeTrace(
+                normalizedDefaultCode,
+                isPersonal ? "catalog.personal_link_code" : "catalog.dealership_link_code",
+                normalizedDefaultCode);
+        }
+
+        var fallbackCode = ResolveRootFallbackCode(customer, catalogItem);
+        if (!string.IsNullOrWhiteSpace(fallbackCode))
+        {
+            var source = string.Equals(customer.Type, "Personal", StringComparison.OrdinalIgnoreCase)
+                ? "catalog.root_personal_fallback_code"
+                : "catalog.root_fallback_code";
+            return new CatalogItemCodeTrace(fallbackCode, source, fallbackCode);
+        }
+
+        return new CatalogItemCodeTrace(null, "catalog.none", null);
+    }
+
+    private static string? ResolveRootFallbackCode(Customer customer, ServiceCatalogItem catalogItem)
+    {
+        if (!string.Equals(catalogItem.Category, "root", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var isPersonal = string.Equals(customer.Type, "Personal", StringComparison.OrdinalIgnoreCase);
+
+        return catalogItem.ServiceType.Trim().ToLowerInvariant() switch
+        {
+            "wof" => isPersonal ? "208-WOF" : "WOF-DEALERSHIP",
+            "mech" => isPersonal ? "666WORSHOP Labour Fee" : "203-Services",
+            "paint" => "206-PNP-L",
+            _ => null,
+        };
+    }
+
+    private Task EnsureServiceCatalogSeededAsync(CancellationToken ct)
+        => _serviceCatalogService.EnsureSeededAsync(ct);
 
     private static string ResolveSelectionDescription(
         JobServiceSelection selection,

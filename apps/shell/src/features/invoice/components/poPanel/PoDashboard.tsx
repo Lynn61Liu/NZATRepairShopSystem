@@ -23,14 +23,17 @@ export function PoDashboard({ model }: PoDashboardProps) {
           timelineEvents={model.timeline}
           detections={model.detections}
           selectedDetectionId={model.selectedDetectionId}
+          draftState={model.poDraftState}
           manualPoNumber={model.manualPoNumber}
           currentInvoiceReference={model.invoice.reference}
           hasConfirmedPo={model.invoice.status === "PO Received"}
           readOnly={model.poLocked}
           readOnlyReason={model.poLockReason}
           externalSendDetected={model.hasExternalDraftSend}
-          draftSendBlockedReason={model.draftSendBlockedReason}
-          onSendRequest={model.sendPoRequest}
+          onCreateDraft={model.createPoDraft}
+          onRecreateDraft={model.recreatePoDraft}
+          onViewDraft={model.viewPoDraft}
+          onOpenSentMailbox={model.openSentMailbox}
           onSelectDetection={model.setSelectedDetectionId}
           onConfirmDetection={model.confirmPo}
           onManualPoNumberChange={model.setManualPoNumber}

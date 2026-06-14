@@ -98,7 +98,11 @@ public sealed class CustomerSelfServiceJobsController : ControllerBase
             }
 
             var serviceType = req.HasWof ? "wof" : "mech";
-            var rootServiceCatalogItemId = await _newJobCreationService.ResolveActiveRootServiceIdAsync(serviceType, ct);
+            var preferredRootCode = req.HasWof ? "208-WOF" : "666WORSHOP Labour Fee";
+            var rootServiceCatalogItemId = await _serviceCatalogService.ResolveActiveRootServiceIdAsync(
+                serviceType,
+                preferredRootCode,
+                ct);
             var newJobRequest = CustomerSelfServiceJobMapper.MapToNewJobRequest(req, rootServiceCatalogItemId);
             var result = await _newJobCreationService.CreateAsync(newJobRequest, ct);
 

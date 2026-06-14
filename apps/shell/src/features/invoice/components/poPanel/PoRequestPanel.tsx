@@ -1,48 +1,16 @@
 import { useEffect, useMemo, useState, useRef, type ClipboardEvent, type DragEvent, type MouseEvent, type ReactNode } from "react";
-import { ChevronDown, Clock3, FileSearch, MailCheck, MessageSquareText, Paperclip, Send, Settings2, X } from "lucide-react";
+import { ChevronDown, Clock3, FileSearch, Mail, MailCheck, MessageSquareText, Paperclip, Send, Settings2, X } from "lucide-react";
 import { Button, Card, Input, Select, Textarea } from "@/components/ui";
 import { buildSharedEmailSignatureHtml } from "@/features/email/emailSignature";
 import { withApiBase } from "@/utils/api";
+import type { PoDraftState } from "@/features/invoice/hooks/usePoEmailDraftActions";
 import { PoDetectionPanel } from "./PoDetectionPanel";
 import { StatusBadge } from "./StatusBadge";
 import type { EmailState, EmailTimelineEvent, InvoiceItem, MerchantEmailRecipient, PoDetection } from "../../types";
 
-const PO_REQUEST_SEND_LOCK_PREFIX = "po-request-send-lock:";
 const DEFAULT_DRAFT_IMAGE_WIDTH = 360;
 const MIN_DRAFT_IMAGE_WIDTH = 120;
 const MAX_DRAFT_IMAGE_WIDTH = 720;
-
-function getPoRequestSendLockExpiration(correlationId: string) {
-  if (typeof window === "undefined") return null;
-  const normalizedCorrelationId = correlationId.trim();
-  if (!normalizedCorrelationId) return null;
-
-  try {
-    const raw = window.localStorage.getItem(getPoRequestSendLockKey(normalizedCorrelationId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { expiresAt?: string };
-    const expiresAtMs = parsed.expiresAt ? Date.parse(parsed.expiresAt) : Number.NaN;
-    if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
-      window.localStorage.removeItem(getPoRequestSendLockKey(normalizedCorrelationId));
-      return null;
-    }
-    return expiresAtMs;
-  } catch {
-    window.localStorage.removeItem(getPoRequestSendLockKey(normalizedCorrelationId));
-    return null;
-  }
-}
-
-function getPoRequestSendLockKey(correlationId: string) {
-  return `${PO_REQUEST_SEND_LOCK_PREFIX}${correlationId.trim()}`;
-}
-
-function formatSendLockRemaining(expiresAtMs: number | null) {
-  if (!expiresAtMs) return "";
-  const remainingMs = Math.max(0, expiresAtMs - Date.now());
-  const totalMinutes = Math.ceil(remainingMs / 60000);
-  return totalMinutes <= 1 ? "1 minute" : `${totalMinutes} minutes`;
-}
 
 function escapeHtmlAttribute(value: string) {
   return value
@@ -104,8 +72,11 @@ type Props = {
   readOnly: boolean;
   readOnlyReason?: string;
   externalSendDetected?: boolean;
-  draftSendBlockedReason?: string;
-  onSendRequest: (payload: { to: string; subject: string; body: string }) => Promise<void>;
+  draftState: PoDraftState;
+  onCreateDraft: (payload: { to: string; subject: string; body: string }) => Promise<boolean>;
+  onRecreateDraft: (payload: { to: string; subject: string; body: string }) => Promise<boolean>;
+  onViewDraft: () => Promise<boolean>;
+  onOpenSentMailbox: () => boolean | Promise<boolean>;
   onSelectDetection: (id: string) => void;
   onConfirmDetection: (id: string) => void;
   onManualPoNumberChange: (value: string) => void;
@@ -131,8 +102,11 @@ export function PoRequestPanel({
   readOnly,
   readOnlyReason,
   externalSendDetected,
-  draftSendBlockedReason,
-  onSendRequest,
+  draftState,
+  onCreateDraft,
+  onRecreateDraft,
+  onViewDraft,
+  onOpenSentMailbox,
   onSelectDetection,
   onConfirmDetection,
   onManualPoNumberChange,
@@ -234,12 +208,10 @@ export function PoRequestPanel({
   const [subject, setSubject] = useState(defaultSubject);
   const [body, setBody] = useState(defaultBody);
   const [quickAddRecipient, setQuickAddRecipient] = useState("");
-  const [lastSentPayload, setLastSentPayload] = useState<{ to: string; subject: string; body: string } | null>(null);
   const [activeTab, setActiveTab] = useState<"compose" | "thread" | "detection">("compose");
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
+  const [draftActionBusy, setDraftActionBusy] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<{ fileName: string; mimeType: string; url: string } | null>(null);
-  const [sendLockExpiresAt, setSendLockExpiresAt] = useState<number | null>(() => getPoRequestSendLockExpiration(correlationId));
   const [selectedDraftImageActive, setSelectedDraftImageActive] = useState(false);
   const [selectedDraftImageWidth, setSelectedDraftImageWidth] = useState(DEFAULT_DRAFT_IMAGE_WIDTH);
 
@@ -250,6 +222,11 @@ export function PoRequestPanel({
     () => timelineEvents.filter((event) => ["sent", "reminder", "reply"].includes(event.type)),
     [timelineEvents]
   );
+  const isDraftAvailable = draftState.mode === "available";
+  const isDraftMissing = draftState.mode === "missing";
+  const isDraftLoading = draftState.mode === "loading";
+  const createDisabled = readOnly || draftActionBusy || isDraftLoading || !correlationId.trim() || !normalizedToValue.trim() || !subject.trim();
+  const canEditDraft = !readOnly && !isDraftAvailable;
   
   const stateRounds = useMemo(() => {
     type FlowStep = { key: string; label: string };
@@ -377,51 +354,40 @@ export function PoRequestPanel({
     }
   }, [body]);
 
-  useEffect(() => {
-    setSendLockExpiresAt(getPoRequestSendLockExpiration(correlationId));
-
-    if (typeof window === "undefined") return;
-
-    const syncLock = (event?: StorageEvent) => {
-      if (event?.key && event.key !== getPoRequestSendLockKey(correlationId)) return;
-      setSendLockExpiresAt(getPoRequestSendLockExpiration(correlationId));
-    };
-
-    window.addEventListener("storage", syncLock);
-    const intervalId = window.setInterval(() => {
-      setSendLockExpiresAt(getPoRequestSendLockExpiration(correlationId));
-    }, 30000);
-
-    return () => {
-      window.removeEventListener("storage", syncLock);
-      window.clearInterval(intervalId);
-    };
-  }, [correlationId]);
-
   const isModified = to !== selectedMerchantEmail || subject !== defaultSubject || body !== defaultBody;
-  const isCurrentPayloadSent =
-    lastSentPayload?.to === to && lastSentPayload?.subject === subject && lastSentPayload?.body === body;
-  const draftSendLocked = isDraftRound && sendLockExpiresAt !== null;
-  const sendLockHint = formatSendLockRemaining(sendLockExpiresAt);
-  const draftSendBlocked = isDraftRound && !readOnly && Boolean(draftSendBlockedReason);
-
-  const sendDisabled = readOnly || sending || draftSendLocked || draftSendBlocked || Boolean(isCurrentPayloadSent && !isModified);
-
-  const handleSend = async () => {
+  const handleCreateDraft = async () => {
     const payload = { to: normalizedToValue, subject, body };
-    setSending(true);
+    setDraftActionBusy(true);
     try {
-      await onSendRequest(payload);
-      setSendLockExpiresAt(getPoRequestSendLockExpiration(correlationId));
-      setLastSentPayload(payload);
+      await onCreateDraft(payload);
       setTo(normalizedToValue);
-      setBody("");
-    } catch (error) {
-      setSendLockExpiresAt(getPoRequestSendLockExpiration(correlationId));
-      throw error;
     } finally {
-      setSending(false);
+      setDraftActionBusy(false);
     }
+  };
+
+  const handleRecreateDraft = async () => {
+    const payload = { to: normalizedToValue, subject, body };
+    setDraftActionBusy(true);
+    try {
+      await onRecreateDraft(payload);
+      setTo(normalizedToValue);
+    } finally {
+      setDraftActionBusy(false);
+    }
+  };
+
+  const handleViewDraft = async () => {
+    setDraftActionBusy(true);
+    try {
+      await onViewDraft();
+    } finally {
+      setDraftActionBusy(false);
+    }
+  };
+
+  const handleOpenSentMailbox = async () => {
+    await onOpenSentMailbox();
   };
 
   const handleCancel = () => {
@@ -585,7 +551,7 @@ export function PoRequestPanel({
       ) : null}
       {!readOnly && externalSendDetected ? (
         <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Detected external send from Gmail. System draft send is disabled for this PO thread.
+          A sent Gmail message already exists for this PO thread. Generating a draft will refresh the active Gmail draft session if needed.
         </div>
       ) : null}
 
@@ -664,7 +630,7 @@ export function PoRequestPanel({
                   value={to}
                   onChange={(event) => setTo(event.target.value)}
                   placeholder="输入一个或多个邮箱，使用逗号分隔"
-                  disabled={readOnly}
+                  disabled={readOnly || isDraftAvailable}
                 />
                 <div className="mt-2 flex flex-wrap gap-2">
                   {selectedEmails.map((email) => (
@@ -672,7 +638,7 @@ export function PoRequestPanel({
                       key={email}
                       type="button"
                       onClick={() => removeRecipient(email)}
-                      disabled={readOnly}
+                      disabled={readOnly || isDraftAvailable}
                       className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:border-slate-300"
                     >
                       <span>{email}</span>
@@ -684,14 +650,14 @@ export function PoRequestPanel({
                   <Select
                     value={quickAddRecipient}
                     onChange={(event) => {
-                      if (readOnly) return;
+                      if (readOnly || isDraftAvailable) return;
                       const nextValue = event.target.value;
                       if (nextValue) {
                         appendRecipient(nextValue);
                       }
                       setQuickAddRecipient("");
                     }}
-                    disabled={readOnly}
+                    disabled={readOnly || isDraftAvailable}
                   >
                     <option value="">快速添加商户 / staff 邮箱</option>
                     {recipientOptions.map((recipient) => (
@@ -708,20 +674,20 @@ export function PoRequestPanel({
                 <Input
                   value={subject}
                   onChange={(event) => setSubject(event.target.value)}
-                  disabled={readOnly || !isDraftRound}
+                  disabled={readOnly || !isDraftRound || isDraftAvailable}
                 />
               </div>
               <div>
                 <div className="mb-1 font-semibold text-slate-900">正文</div>
                 <div
                   ref={editorRef}
-                  contentEditable={!readOnly}
-                  className={`min-h-[280px] w-full overflow-auto rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-md [&_table]:max-w-full ${readOnly ? "cursor-not-allowed opacity-50" : ""}`}
+                  contentEditable={!readOnly && canEditDraft}
+                  className={`min-h-[280px] w-full overflow-auto rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-md [&_table]:max-w-full ${readOnly || !canEditDraft ? "cursor-not-allowed opacity-50" : ""}`}
                   onInput={syncBodyFromEditor}
                   onPaste={handleEditorPaste}
                   onDrop={handleEditorDrop}
                   onDragOver={(event) => {
-                    if (!readOnly) {
+                    if (!readOnly && canEditDraft) {
                       event.preventDefault();
                     }
                   }}
@@ -753,32 +719,54 @@ export function PoRequestPanel({
                   支持直接复制/拖入截图或图片；点击正文里的图片后可调整大小。
                 </div>
               </div>
-              <div className="flex items-center justify-end gap-2 mt-4">
-                {isModified && !readOnly ? (
+              {isDraftMissing ? (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
+                  <div className="font-semibold">草稿创建过，但当前找不到。</div>
+                  <div className="mt-1">
+                    {draftState.message || "草稿可能已经发送或被删除。你可以重新创建，或者查看发件箱确认最新邮件。"}
+                  </div>
+                </div>
+              ) : null}
+              <div className="flex flex-wrap items-center justify-end gap-2 mt-4">
+                {isModified && !readOnly && !isDraftAvailable ? (
                   <Button className="h-10 px-4" leftIcon={<X className="h-4 w-4" />} onClick={handleCancel}>
                     Cancel
                   </Button>
                 ) : null}
-                <Button
-                  variant={sendDisabled ? "ghost" : "primary"}
-                  className={[
-                    "h-10 px-4",
-                    sendDisabled ? "border-slate-200 bg-slate-200 text-slate-500 hover:bg-slate-200" : "",
-                  ].join(" ")}
-                  leftIcon={<Send className="h-4 w-4" />}
-                  onClick={handleSend}
-                  disabled={sendDisabled}
-                >
-                  {sending
-                    ? "Sending..."
-	                    : draftSendBlocked
-	                      ? "External Send Detected"
-	                    : draftSendLocked
-	                      ? `PO Request Locked${sendLockHint ? ` (${sendLockHint})` : ""}`
-	                      : sendDisabled
-                        ? "PO Request Sent"
-                        : "Send PO Request"}
-                </Button>
+                {isDraftMissing ? (
+                  <>
+                    <Button
+                      variant="primary"
+                      className="h-10 px-4"
+                      leftIcon={<Mail className="h-4 w-4" />}
+                      onClick={handleRecreateDraft}
+                      disabled={createDisabled}
+                    >
+                      {draftActionBusy ? "重新创建中..." : "重新创建"}
+                    </Button>
+                    <Button className="h-10 px-4" leftIcon={<Send className="h-4 w-4" />} onClick={handleOpenSentMailbox}>
+                      查看发件箱
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    variant="primary"
+                    className="h-10 px-4"
+                    leftIcon={isDraftAvailable ? <MailCheck className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
+                    onClick={isDraftAvailable ? handleViewDraft : handleCreateDraft}
+                    disabled={isDraftAvailable ? readOnly || draftActionBusy || isDraftLoading : createDisabled}
+                  >
+                    {isDraftLoading
+                      ? "加载草稿状态..."
+                      : draftActionBusy
+                        ? isDraftAvailable
+                          ? "打开中..."
+                          : "创建中..."
+                        : isDraftAvailable
+                          ? "查看草稿"
+                          : "创建草稿"}
+                  </Button>
+                )}
               </div>
             </div>
           ) : null}

@@ -34,7 +34,7 @@ public class CustomerSelfServiceMapperTests
         mapped.Customer.Phone.Should().Be("021 123 4567");
         mapped.Customer.Email.Should().Be("jane@example.com");
         mapped.Customer.Address.Should().Be("42 Queen Street, Auckland Central, Auckland");
-        mapped.Notes.Should().Be("Customer-self job\nPlease call first.");
+        mapped.Notes.Should().Be("Customer-self job\nWOF\n需改2\nPlease call first.");
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public class CustomerSelfServiceMapperTests
         var mapped = CustomerSelfServiceJobMapper.MapToNewJobRequest(req, rootServiceCatalogItemId: 10);
 
         mapped.Customer.Address.Should().Be("42 Queen Street, Auckland Central, Auckland 1010");
-        mapped.Notes.Should().Be("Customer-self job");
+        mapped.Notes.Should().Be("Customer-self job\nWOF\n需改2");
     }
 
     [Fact]

@@ -1,11 +1,16 @@
 import { buildJobSheetHtml, type JobSheetRow, type JobSheetType } from "./jobSheetPrint";
 import { buildWofHtml, type WofPrintData } from "./wofPrint";
+import type { SilentPrintRouteKey } from "./silentPrint.routes";
 
 export type PrintTemplateType = JobSheetType | "wof";
 
 export type PrintTemplatePayload =
   | { type: JobSheetType; data: { row: JobSheetRow; notes: string } }
   | { type: "wof"; data: WofPrintData };
+
+export type RoutedPrintTemplatePayload = PrintTemplatePayload & {
+  routeKey?: SilentPrintRouteKey;
+};
 
 export const buildTemplateHtml = (payload: PrintTemplatePayload) => {
   switch (payload.type) {

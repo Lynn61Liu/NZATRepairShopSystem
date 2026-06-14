@@ -5,7 +5,7 @@ export type ApiResult<T> = {
   error?: string;
 };
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+const API_BASE = typeof import.meta !== "undefined" && import.meta.env ? import.meta.env.VITE_API_BASE_URL ?? "" : "";
 
 function isLoopbackHost(hostname: string) {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";

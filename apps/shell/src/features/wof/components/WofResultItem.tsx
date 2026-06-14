@@ -176,7 +176,7 @@ export function WofResultItem({
   const [failReasonQuery, setFailReasonQuery] = useState("");
   const [selectedFailReason, setSelectedFailReason] = useState("");
   const { printTemplate } = useTemplatePrinter({
-    onPopupBlocked: () => toast.error("无法打开打印窗口，请允许弹窗"),
+    onPopupBlocked: () => toast.error("静默打印失败，请检查打印服务"),
   });
 
   useEffect(() => {

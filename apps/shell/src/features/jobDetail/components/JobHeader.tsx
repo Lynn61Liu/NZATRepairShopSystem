@@ -7,6 +7,7 @@ import type { TagOption } from "@/components/MultiTagSelect";
 import { MultiTagSelect } from "@/components/MultiTagSelect";
 import { formatJobDisplayId } from "@/utils/jobId";
 import { useJobSheetPrinter } from "@/features/printing/useJobSheetPrinter";
+import { resolveJobSheetRouteKey } from "@/features/printing/silentPrint.routes";
 
 interface JobHeaderProps {
   jobId: string;
@@ -26,6 +27,7 @@ interface JobHeaderProps {
   nzFirstRegistration?: string | null;
   paintPanels?: number | null;
   hasPaintService?: boolean;
+  hasWofService?: boolean;
   onCreateXeroInvoice?: () => Promise<{ success: boolean; message?: string }>;
   isCreatingXeroInvoice?: boolean;
   onArchive?: () => Promise<{ success: boolean; message?: string }> | void;
@@ -54,6 +56,7 @@ export function JobHeader({
   nzFirstRegistration,
   paintPanels,
   hasPaintService,
+  hasWofService,
   onArchive,
   isArchiving,
   onDelete,
@@ -155,7 +158,8 @@ export function JobHeader({
       nzFirstRegistration: nzFirstRegistration ?? "",
       vin: vin ?? "",
     };
-    print(type, row, noteDraft || notes);
+    const routeKey = type === "paint" ? "job-pnp" : resolveJobSheetRouteKey("mech", Boolean(hasWofService));
+    print(type, row, noteDraft || notes, routeKey);
   };
 
   const handlePaintClick = async () => {

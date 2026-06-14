@@ -35,7 +35,7 @@ public static class CustomerSelfServiceJobMapper
     public static NewJobRequest MapToNewJobRequest(CustomerSelfServiceJobRequest req, long rootServiceCatalogItemId)
     {
         var address = BuildAddress(req);
-        var notes = BuildNotes(req.Notes);
+        var notes = BuildNotes(req.Notes, req.HasWof);
         var serviceType = req.HasWof ? "wof" : "mech";
 
         return new NewJobRequest
@@ -71,9 +71,14 @@ public static class CustomerSelfServiceJobMapper
                 .Where(x => !string.IsNullOrWhiteSpace(x)));
     }
 
-    private static string BuildNotes(string? customerNotes)
+    private static string BuildNotes(string? customerNotes, bool hasWof)
     {
         var lines = new List<string> { SourceNote };
+        if (hasWof)
+        {
+            lines.Add("WOF");
+            lines.Add("需改2");
+        }
         var trimmedNotes = customerNotes?.Trim();
         if (!string.IsNullOrWhiteSpace(trimmedNotes))
             lines.Add(trimmedNotes);

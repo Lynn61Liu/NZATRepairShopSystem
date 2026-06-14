@@ -433,6 +433,10 @@ export function SummaryCard({
                 <Mail className="w-3.5 h-3.5" />
                 <span>{customer.email}</span>
               </div>
+               <div className="flex items-center gap-2 text-sm text-[var(--ds-muted)]">
+                <Building2 className="w-3.5 h-3.5" />
+                <span>{customer.address}</span>
+              </div>
             </div>
           </div>
         </div>

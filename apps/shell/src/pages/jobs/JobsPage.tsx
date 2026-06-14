@@ -30,6 +30,7 @@ import {
 } from "@/features/jobDetail/api/jobDetailApi";
 import { fetchPaintService, updatePaintStage } from "@/features/paint/api/paintApi";
 import { parseTimestamp } from "@/utils/date";
+import type { SilentPrintRouteKey } from "@/features/printing/silentPrint.routes";
 
 type JobsListResponse = {
   items?: any[];
@@ -392,19 +393,24 @@ export function JobsPage() {
         vin: job?.vehicle?.vin ?? "",
       };
 
-      return { row, notes };
+      return {
+        row,
+        notes,
+        routeKey: job?.hasWofService ? "job-wof" : "job-mech",
+      } satisfies { row: any; notes: string; routeKey: SilentPrintRouteKey };
     },
     [fetchJob]
   );
 
   const { printById } = useJobSheetPrinter({
-    onPopupBlocked: () => toast.error("无法打开打印窗口，请允许弹窗"),
+    onPopupBlocked: () => toast.error("静默打印失败，请检查打印服务"),
     resolveById: resolveJobSheetData,
   });
 
   const handlePrintTemplate = useCallback(
     async (id: string, type: "mech" | "paint") => {
-      await printById(id, type);
+      const routeKey = type === "paint" ? "job-pnp" : undefined;
+      await printById(id, type, routeKey);
     },
     [printById]
   );

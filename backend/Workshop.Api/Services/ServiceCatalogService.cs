@@ -6,6 +6,20 @@ namespace Workshop.Api.Services;
 
 public class ServiceCatalogService
 {
+    private sealed record RootSeed(
+        string ServiceType,
+        string Name,
+        string? PersonalLinkCode,
+        string? DealershipLinkCode,
+        int SortOrder);
+
+    private static readonly RootSeed[] DefaultRootSeeds =
+    [
+        new("wof", "WOF", "208-WOF", "WOF-DEALERSHIP", 0),
+        new("mech", "机修", "666WORSHOP Labour Fee", "666WORSHOP Labour Fee", 1),
+        new("paint", "喷漆", "206-PNP-L", "206-PNP-L", 2),
+    ];
+
     private readonly AppDbContext _db;
     private readonly ReferenceDataCacheService _referenceDataCache;
 
@@ -17,107 +31,131 @@ public class ServiceCatalogService
 
     public async Task EnsureSeededAsync(CancellationToken ct)
     {
-        var existing = await _db.ServiceCatalogItems.AsNoTracking().AnyAsync(ct);
-        if (existing)
-            return;
-
         var now = DateTime.UtcNow;
-        _db.ServiceCatalogItems.AddRange(
-            new ServiceCatalogItem
-            {
-                ServiceType = "wof",
-                Category = "root",
-                Name = "WOF",
-                PersonalLinkCode = "WOF",
-                DealershipLinkCode = "WOF-DEALERSHIP",
-                IsActive = true,
-                SortOrder = 0,
-                CreatedAt = now,
-                UpdatedAt = now,
-            },
-            new ServiceCatalogItem
-            {
-                ServiceType = "mech",
-                Category = "root",
-                Name = "机修",
-                IsActive = true,
-                SortOrder = 1,
-                CreatedAt = now,
-                UpdatedAt = now,
-            },
-            new ServiceCatalogItem
-            {
-                ServiceType = "paint",
-                Category = "root",
-                Name = "喷漆",
-                IsActive = true,
-                SortOrder = 2,
-                CreatedAt = now,
-                UpdatedAt = now,
-            },
-            new ServiceCatalogItem
-            {
-                ServiceType = "mech",
-                Category = "child",
-                Name = "补胎",
-                IsActive = true,
-                SortOrder = 0,
-                CreatedAt = now,
-                UpdatedAt = now,
-            },
-            new ServiceCatalogItem
-            {
-                ServiceType = "mech",
-                Category = "child",
-                Name = "换机油",
-                IsActive = true,
-                SortOrder = 1,
-                CreatedAt = now,
-                UpdatedAt = now,
-            },
-            new ServiceCatalogItem
-            {
-                ServiceType = "mech",
-                Category = "child",
-                Name = "换刹车片",
-                IsActive = true,
-                SortOrder = 2,
-                CreatedAt = now,
-                UpdatedAt = now,
-            },
-            new ServiceCatalogItem
-            {
-                ServiceType = "mech",
-                Category = "child",
-                Name = "换电池",
-                IsActive = true,
-                SortOrder = 3,
-                CreatedAt = now,
-                UpdatedAt = now,
-            },
-            new ServiceCatalogItem
-            {
-                ServiceType = "mech",
-                Category = "child",
-                Name = "换滤芯",
-                IsActive = true,
-                SortOrder = 4,
-                CreatedAt = now,
-                UpdatedAt = now,
-            },
-            new ServiceCatalogItem
-            {
-                ServiceType = "mech",
-                Category = "child",
-                Name = "其他机修",
-                IsActive = true,
-                SortOrder = 5,
-                CreatedAt = now,
-                UpdatedAt = now,
-            }
-        );
+        var changed = false;
 
-        await _db.SaveChangesAsync(ct);
-        await _referenceDataCache.InvalidateServiceCatalogAsync(ct);
+        foreach (var seed in DefaultRootSeeds)
+        {
+            var existingRoots = await _db.ServiceCatalogItems
+                .Where(x => x.Category == "root" && x.ServiceType == seed.ServiceType)
+                .OrderBy(x => x.SortOrder)
+                .ThenBy(x => x.Id)
+                .ToListAsync(ct);
+
+            if (existingRoots.Count == 0)
+            {
+                _db.ServiceCatalogItems.Add(new ServiceCatalogItem
+                {
+                    ServiceType = seed.ServiceType,
+                    Category = "root",
+                    Name = seed.Name,
+                    PersonalLinkCode = seed.PersonalLinkCode,
+                    DealershipLinkCode = seed.DealershipLinkCode,
+                    IsActive = true,
+                    SortOrder = seed.SortOrder,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                });
+                changed = true;
+                continue;
+            }
+
+            foreach (var row in existingRoots)
+            {
+                var rowChanged = false;
+
+                if (!string.Equals(row.ServiceType, seed.ServiceType, StringComparison.OrdinalIgnoreCase))
+                {
+                    row.ServiceType = seed.ServiceType;
+                    rowChanged = true;
+                }
+
+                if (!string.Equals(row.Category, "root", StringComparison.OrdinalIgnoreCase))
+                {
+                    row.Category = "root";
+                    rowChanged = true;
+                }
+
+                if (!string.Equals(row.Name, seed.Name, StringComparison.Ordinal))
+                {
+                    row.Name = seed.Name;
+                    rowChanged = true;
+                }
+
+                if (!string.Equals(row.PersonalLinkCode, seed.PersonalLinkCode, StringComparison.Ordinal))
+                {
+                    row.PersonalLinkCode = seed.PersonalLinkCode;
+                    rowChanged = true;
+                }
+
+                if (!string.Equals(row.DealershipLinkCode, seed.DealershipLinkCode, StringComparison.Ordinal))
+                {
+                    row.DealershipLinkCode = seed.DealershipLinkCode;
+                    rowChanged = true;
+                }
+
+                if (!row.IsActive)
+                {
+                    row.IsActive = true;
+                    rowChanged = true;
+                }
+
+                if (row.SortOrder != seed.SortOrder)
+                {
+                    row.SortOrder = seed.SortOrder;
+                    rowChanged = true;
+                }
+
+                if (rowChanged)
+                {
+                    row.UpdatedAt = now;
+                    changed = true;
+                }
+            }
+        }
+
+        if (changed)
+        {
+            await _db.SaveChangesAsync(ct);
+            await _referenceDataCache.InvalidateServiceCatalogAsync(ct);
+        }
+    }
+
+    public async Task<long> ResolveActiveRootServiceIdAsync(
+        string serviceType,
+        string? preferredPersonalLinkCode,
+        CancellationToken ct)
+    {
+        var rows = await _referenceDataCache.GetServiceCatalogItemsAsync(ct);
+        var activeRoots = rows
+            .Where(x =>
+                x.IsActive &&
+                string.Equals(x.Category, "root", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(x.ServiceType, serviceType, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Id)
+            .ToList();
+
+        if (!string.IsNullOrWhiteSpace(preferredPersonalLinkCode))
+        {
+            var preferred = activeRoots.FirstOrDefault(x =>
+                string.Equals(
+                    x.PersonalLinkCode?.Trim(),
+                    preferredPersonalLinkCode.Trim(),
+                    StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(
+                    x.DealershipLinkCode?.Trim(),
+                    preferredPersonalLinkCode.Trim(),
+                    StringComparison.OrdinalIgnoreCase));
+
+            if (preferred is not null)
+                return preferred.Id;
+        }
+
+        var item = activeRoots.FirstOrDefault();
+        if (item is null)
+            throw new InvalidOperationException($"Active root service '{serviceType}' was not found.");
+
+        return item.Id;
     }
 }
