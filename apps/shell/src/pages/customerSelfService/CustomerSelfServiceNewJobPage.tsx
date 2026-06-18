@@ -80,6 +80,12 @@ const initialForm: FormState = {
   address: "",
 };
 
+// CHANGED: image paths used by the landing page, WOF path, and Repair path.
+// Files under apps/shell/public/images should be referenced from the browser as /images/filename.
+const NZAT_LOGO_SRC = "/images/nzat-logo.jpg";
+const WOF_LOGO_SRC = "/images/nzta-logo.png";
+const REPAIR_CARD_IMAGE_SRC = "/images/car-repair-log.jpeg";
+
 function normalizePlate(value: string) {
   return value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 7);
 }
@@ -307,8 +313,18 @@ export function CustomerSelfServiceNewJobPage() {
     setCreatedJobId("");
   };
 
-  const serviceLabel = selectedPath === "wof" ? "WOF" : "机修/喷漆";
-
+  const serviceLabel = selectedPath === "wof" ? "WOF" : "Repair";
+  // CHANGED: homepage + Repair use nzat.jpg; WOF keeps the old logo.
+  const headerLogoSrc = selectedPath === "wof" ? WOF_LOGO_SRC : NZAT_LOGO_SRC;
+  // CHANGED: keep the white header only for the transparent WOF logo.
+  // CHANGED: the NZ Auto Tech logo background was sampled as #000000, so homepage + Repair use exact black.
+  const useDarkHeader = selectedPath !== "wof";
+  const headerShellClassName = [
+    "mb-6 flex items-center justify-center rounded-3xl border shadow-2xl shadow-black/30 backdrop-blur-md",
+    useDarkHeader
+      ? "border-black bg-black px-6 py-5"
+      : "border-white/15 bg-white/90 px-6 py-5",
+  ].join(" ");
   return (
     <main
       className="min-h-screen w-screen bg-slate-950 bg-cover bg-center bg-no-repeat text-slate-900"
@@ -317,10 +333,10 @@ export function CustomerSelfServiceNewJobPage() {
       <div className="min-h-screen w-full bg-slate-950/55 backdrop-blur-[2px]">
         <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-4 py-5 sm:px-8 sm:py-8">
           {step !== "success" ? (
-            <header className="mb-6 flex items-center justify-center rounded-3xl border border-white/15 bg-white/90 px-6 py-5 shadow-2xl shadow-black/30 backdrop-blur-md">
+            <header className={headerShellClassName}>
               <img
-                src="/images/nzta-logo.png"
-                alt="NZ Transport Agency Waka Kotahi"
+                src={headerLogoSrc}
+                alt={selectedPath === "wof" ? "NZTA Waka Kotahi" : "NZ Auto Tech"}
                 className="h-16 w-auto max-w-full object-contain sm:h-20"
               />
             </header>
@@ -419,8 +435,9 @@ function PathSelection({ onSelect }: { onSelect: (path: ServicePath) => void }) 
           onClick={() => onSelect("wof")}
         />
         <PathCard
-          title="机修/喷漆"
+          title="Repair"
           icon={<Paintbrush size={26} />}
+          imageUrl={REPAIR_CARD_IMAGE_SRC}
           onClick={() => onSelect("mechPaint")}
         />
       </div>
