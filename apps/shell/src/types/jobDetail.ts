@@ -31,6 +31,27 @@ export type JobInvoiceData = {
   } | null;
 };
 
+export type CourtesyCarAgreementSummary = {
+  id: number;
+  jobId: number;
+  vehicleId: number;
+  status: string;
+  currentStep: string;
+  vehiclePlate?: string | null;
+  vehicleMake?: string | null;
+  vehicleModel?: string | null;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  contactEmail?: string | null;
+  pdfUrl?: string | null;
+  pdfGeneratedAt?: string | null;
+  emailSentAt?: string | null;
+  emailTo?: string | null;
+  submittedAt?: string | null;
+  closedAt?: string | null;
+  updatedAt?: string | null;
+};
+
 export type VehicleInfo = {
   plate: string;
   make?: string;
@@ -212,6 +233,7 @@ export type JobDetailData = {
   wofStatus?: "Todo" | "Checked" | "Recorded" | null;
   vehicle: VehicleInfo;
   customer: CustomerInfo;
+  courtesyCarAgreement?: CourtesyCarAgreementSummary | null;
   invoice?: JobInvoiceData | null;
   invoiceProcessing?: {
     id: string;

@@ -112,6 +112,7 @@ type JobDetailContentProps = {
   isArchivingJob?: boolean;
   onDeleteJob?: () => void;
   isDeletingJob?: boolean;
+  onOpenCourtesyCarAssign?: () => void;
   tagOptions?: TagOption[];
   onSaveTags?: (tagIds: string[]) => Promise<{ success: boolean; message?: string; tags?: string[] }>;
   onSaveNotes?: (notes: string) => Promise<{ success: boolean; message?: string }>;
@@ -168,6 +169,7 @@ export function JobDetailContent({
   isArchivingJob,
   onDeleteJob,
   isDeletingJob,
+  onOpenCourtesyCarAssign,
   tagOptions,
   onSaveTags,
   onSaveNotes,
@@ -235,8 +237,10 @@ export function JobDetailContent({
         <RightSidebar
           vehicle={jobData.vehicle}
           customer={jobData.customer}
+          courtesyCarAgreement={jobData.courtesyCarAgreement}
           isOpen={isSidebarOpen}
           onToggle={onToggleSidebar}
+          onOpenCourtesyCarAssign={onOpenCourtesyCarAssign}
         />
       }
     />

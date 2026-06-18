@@ -769,6 +769,32 @@ public class JobsController : ControllerBase
             .Distinct()
             .ToListAsync(ct);
         var effectiveInvoiceProcessing = row.Invoice is null ? row.InvoiceProcessing : null;
+        var latestCourtesyCarAgreement = await _db.CourtesyCarAgreements.AsNoTracking()
+            .Where(x => x.JobId == id)
+            .OrderByDescending(x => x.UpdatedAt)
+            .ThenByDescending(x => x.Id)
+            .Select(x => new
+            {
+                id = x.Id,
+                jobId = x.JobId,
+                vehicleId = x.VehicleId,
+                status = x.Status,
+                currentStep = x.CurrentStep,
+                vehiclePlate = x.VehiclePlate,
+                vehicleMake = x.VehicleMake,
+                vehicleModel = x.VehicleModel,
+                contactName = x.ContactName,
+                contactPhone = x.ContactPhone,
+                contactEmail = x.ContactEmail,
+                pdfUrl = string.IsNullOrWhiteSpace(x.PdfFilePath) ? null : $"/api/courtesy-cars/drafts/{x.Id}/pdf",
+                pdfGeneratedAt = x.PdfGeneratedAt.HasValue ? FormatDateTime(x.PdfGeneratedAt.Value) : null,
+                emailSentAt = x.EmailSentAt.HasValue ? FormatDateTime(x.EmailSentAt.Value) : null,
+                emailTo = x.EmailTo,
+                submittedAt = x.SubmittedAt.HasValue ? FormatDateTime(x.SubmittedAt.Value) : null,
+                closedAt = x.ClosedAt.HasValue ? FormatDateTime(x.ClosedAt.Value) : null,
+                updatedAt = FormatDateTime(x.UpdatedAt),
+            })
+            .FirstOrDefaultAsync(ct);
 
         var job = new
         {
@@ -832,6 +858,7 @@ public class JobsController : ControllerBase
             },
             invoice = row.Invoice,
             invoiceProcessing = effectiveInvoiceProcessing,
+            courtesyCarAgreement = latestCourtesyCarAgreement,
         };
 
         return JsonSerializer.Serialize(new { job, hasWofRecord = row.WofSnapshot.HasWofRecord });

@@ -40,6 +40,9 @@ public class AppDbContext : DbContext
     public DbSet<JobServiceSelection> JobServiceSelections => Set<JobServiceSelection>();
     public DbSet<Staff> Staff => Set<Staff>();
     public DbSet<WorklogEntry> WorklogEntries => Set<WorklogEntry>();
+    public DbSet<CourtesyCarVehicle> CourtesyCarVehicles => Set<CourtesyCarVehicle>();
+    public DbSet<CourtesyCarAgreement> CourtesyCarAgreements => Set<CourtesyCarAgreement>();
+    public DbSet<CourtesyCarAgreementEvent> CourtesyCarAgreementEvents => Set<CourtesyCarAgreementEvent>();
     
 
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
@@ -619,6 +622,108 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(x => x.ServiceCatalogItemId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        var ccv = modelBuilder.Entity<CourtesyCarVehicle>();
+        ccv.ToTable("courtesy_cars");
+        ccv.HasKey(x => x.Id);
+        ccv.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        ccv.Property(x => x.Plate).HasColumnName("plate").IsRequired();
+        ccv.HasIndex(x => x.Plate).IsUnique().HasDatabaseName("ux_courtesy_cars_plate");
+        ccv.Property(x => x.Make).HasColumnName("make");
+        ccv.Property(x => x.Model).HasColumnName("model");
+        ccv.Property(x => x.Color).HasColumnName("color");
+        ccv.Property(x => x.Year).HasColumnName("year");
+        ccv.Property(x => x.Mileage).HasColumnName("mileage");
+        ccv.Property(x => x.FuelLevel).HasColumnName("fuel_level");
+        ccv.Property(x => x.AgreedVehicleValue).HasColumnName("agreed_vehicle_value").HasColumnType("numeric").HasDefaultValue(0m);
+        ccv.Property(x => x.Status).HasColumnName("status").HasDefaultValue("available");
+        ccv.Property(x => x.Note).HasColumnName("note");
+        ccv.Property(x => x.WofExpiry).HasColumnName("wof_expiry");
+        ccv.Property(x => x.RegoExpiry).HasColumnName("rego_expiry");
+        ccv.Property(x => x.LoanedAt).HasColumnName("loaned_at");
+        ccv.Property(x => x.BorrowerName).HasColumnName("borrower_name");
+        ccv.Property(x => x.BorrowerPhone).HasColumnName("borrower_phone");
+        ccv.Property(x => x.AttachmentsJson).HasColumnName("attachments_json").HasColumnType("jsonb");
+        ccv.Property(x => x.ReturnedAt).HasColumnName("returned_at");
+        ccv.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        ccv.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+
+        var cca = modelBuilder.Entity<CourtesyCarAgreement>();
+        cca.ToTable("courtesy_car_agreements");
+        cca.HasKey(x => x.Id);
+        cca.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        cca.Property(x => x.JobId).HasColumnName("job_id").IsRequired();
+        cca.Property(x => x.VehicleId).HasColumnName("vehicle_id").IsRequired();
+        cca.Property(x => x.CustomerId).HasColumnName("customer_id");
+        cca.Property(x => x.Status).HasColumnName("status").HasDefaultValue("draft");
+        cca.Property(x => x.CurrentStep).HasColumnName("current_step").HasDefaultValue("contact");
+        cca.Property(x => x.JobVehiclePlate).HasColumnName("job_vehicle_plate");
+        cca.Property(x => x.JobCustomerName).HasColumnName("job_customer_name");
+        cca.Property(x => x.JobCustomerPhone).HasColumnName("job_customer_phone");
+        cca.Property(x => x.JobCustomerEmail).HasColumnName("job_customer_email");
+        cca.Property(x => x.JobCustomerAddress).HasColumnName("job_customer_address");
+        cca.Property(x => x.ContactName).HasColumnName("contact_name");
+        cca.Property(x => x.ContactPhone).HasColumnName("contact_phone");
+        cca.Property(x => x.ContactEmail).HasColumnName("contact_email");
+        cca.Property(x => x.ContactAddress).HasColumnName("contact_address");
+        cca.Property(x => x.DriverLicenseNumber).HasColumnName("driver_license_number");
+        cca.Property(x => x.DriverLicenseExpiry).HasColumnName("driver_license_expiry");
+        cca.Property(x => x.EmergencyContactName).HasColumnName("emergency_contact_name");
+        cca.Property(x => x.EmergencyContactPhone).HasColumnName("emergency_contact_phone");
+        cca.Property(x => x.TermsConfirmed).HasColumnName("terms_confirmed").HasDefaultValue(false);
+        cca.Property(x => x.SignatureName).HasColumnName("signature_name");
+        cca.Property(x => x.VehiclePlate).HasColumnName("vehicle_plate");
+        cca.Property(x => x.VehicleMake).HasColumnName("vehicle_make");
+        cca.Property(x => x.VehicleModel).HasColumnName("vehicle_model");
+        cca.Property(x => x.VehicleColor).HasColumnName("vehicle_color");
+        cca.Property(x => x.VehicleYear).HasColumnName("vehicle_year");
+        cca.Property(x => x.VehicleMileage).HasColumnName("vehicle_mileage");
+        cca.Property(x => x.VehicleFuelLevel).HasColumnName("vehicle_fuel_level");
+        cca.Property(x => x.AgreedVehicleValue).HasColumnName("agreed_vehicle_value").HasColumnType("numeric").HasDefaultValue(0m);
+        cca.Property(x => x.VehicleWofExpiry).HasColumnName("vehicle_wof_expiry");
+        cca.Property(x => x.VehicleRegoExpiry).HasColumnName("vehicle_rego_expiry");
+        cca.Property(x => x.AttachmentsJson).HasColumnName("attachments_json").HasColumnType("jsonb");
+        cca.Property(x => x.PdfFilePath).HasColumnName("pdf_file_path");
+        cca.Property(x => x.PdfGeneratedAt).HasColumnName("pdf_generated_at");
+        cca.Property(x => x.EmailSentAt).HasColumnName("email_sent_at");
+        cca.Property(x => x.EmailTo).HasColumnName("email_to");
+        cca.Property(x => x.EmailMessageId).HasColumnName("email_message_id");
+        cca.Property(x => x.SubmittedAt).HasColumnName("submitted_at");
+        cca.Property(x => x.ClosedAt).HasColumnName("closed_at");
+        cca.Property(x => x.CancelledAt).HasColumnName("cancelled_at");
+        cca.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        cca.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        cca.HasOne(x => x.Job)
+            .WithMany()
+            .HasForeignKey(x => x.JobId)
+            .OnDelete(DeleteBehavior.Cascade);
+        cca.HasOne(x => x.Vehicle)
+            .WithMany()
+            .HasForeignKey(x => x.VehicleId)
+            .OnDelete(DeleteBehavior.Restrict);
+        cca.HasOne(x => x.Customer)
+            .WithMany()
+            .HasForeignKey(x => x.CustomerId)
+            .OnDelete(DeleteBehavior.SetNull);
+        cca.HasIndex(x => x.JobId).HasDatabaseName("ix_courtesy_car_agreements_job_id");
+        cca.HasIndex(x => x.VehicleId).HasDatabaseName("ix_courtesy_car_agreements_vehicle_id");
+        cca.HasIndex(x => x.Status).HasDatabaseName("ix_courtesy_car_agreements_status");
+
+        var ccae = modelBuilder.Entity<CourtesyCarAgreementEvent>();
+        ccae.ToTable("courtesy_car_agreement_events");
+        ccae.HasKey(x => x.Id);
+        ccae.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        ccae.Property(x => x.CourtesyCarAgreementId).HasColumnName("courtesy_car_agreement_id").IsRequired();
+        ccae.Property(x => x.EventType).HasColumnName("event_type").IsRequired();
+        ccae.Property(x => x.ActorType).HasColumnName("actor_type");
+        ccae.Property(x => x.ActorName).HasColumnName("actor_name");
+        ccae.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+        ccae.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        ccae.HasIndex(x => x.CourtesyCarAgreementId).HasDatabaseName("ix_courtesy_car_agreement_events_agreement_id");
+        ccae.HasOne(x => x.CourtesyCarAgreement)
+            .WithMany(x => x.Events)
+            .HasForeignKey(x => x.CourtesyCarAgreementId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 
     private void NormalizeDateTimes()

@@ -8,6 +8,7 @@ import {
   resolveDeleteJobDialogSteps,
 } from "@/components/common/DeleteJobDialogState";
 import { Alert, EmptyState } from "@/components/ui";
+import { CourtesyCarAssignDialog } from "@/features/courtesyCarAgreements/components/CourtesyCarAssignDialog";
 import { JobDetailContent } from "@/features/jobDetail/components/JobDetailContent";
 import { useJobDetailData } from "@/features/jobDetail/hooks/useJobDetailData";
 import type { JobDetailTabKey } from "@/types";
@@ -21,6 +22,7 @@ export function JobDetailPage() {
   const [deleteSteps, setDeleteSteps] = useState(() => createInitialDeleteJobSteps());
   const [deleteModalError, setDeleteModalError] = useState<string | null>(null);
   const [deleteSucceeded, setDeleteSucceeded] = useState(false);
+  const [courtesyCarAssignOpen, setCourtesyCarAssignOpen] = useState(false);
   const tabParam = searchParams.get("tab");
   const initialTab: JobDetailTabKey = isJobDetailTab(tabParam) ? tabParam : "WOF";
   const { activeTab, setActiveTab, isSidebarOpen, setIsSidebarOpen } = useJobDetailState({ initialTab });
@@ -175,6 +177,7 @@ export function JobDetailPage() {
         isArchivingJob={archivingJob}
         onDeleteJob={openDeleteModal}
         isDeletingJob={deletingJob}
+        onOpenCourtesyCarAssign={() => setCourtesyCarAssignOpen(true)}
         tagOptions={tagOptions}
         onSaveTags={saveTags}
         onSaveNotes={saveJobNotes}
@@ -184,6 +187,11 @@ export function JobDetailPage() {
         onSaveCustomer={saveCustomerInfo}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen((v) => !v)}
+      />
+      <CourtesyCarAssignDialog
+        open={courtesyCarAssignOpen}
+        jobId={id ?? ""}
+        onClose={() => setCourtesyCarAssignOpen(false)}
       />
       <DeleteJobDialog
         open={deleteModalOpen}

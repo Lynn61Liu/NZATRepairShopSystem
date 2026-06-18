@@ -252,6 +252,7 @@ type UseInvoiceDashboardStateArgs = {
   persistedInvoiceReference?: string | null;
   persistedInvoice?: JobInvoiceData | null;
   enabled?: boolean;
+  needsPo?: boolean;
 };
 
 function mapExternalStatus(status?: string | null): InvoiceDashboardState["status"] {
@@ -464,6 +465,7 @@ export function useInvoiceDashboardState({
   persistedInvoiceReference,
   persistedInvoice,
   enabled = true,
+  needsPo = false,
 }: UseInvoiceDashboardStateArgs = {}) {
   const toast = useToast();
   const [invoice, setInvoice] = useState(initialInvoiceState);
@@ -631,7 +633,7 @@ export function useInvoiceDashboardState({
     recreatePoDraft,
     viewPoDraft,
     openSentMailbox,
-  } = usePoEmailDraftActions({ invoice, timeline, poLocked, poLockReason });
+  } = usePoEmailDraftActions({ invoice, timeline, poLocked, poLockReason, enabled: enabled && needsPo });
 
   const sendReminderNow = () => {
     const now = new Date().toLocaleString("zh-CN", { hour12: false }).replace(/\//g, "-");

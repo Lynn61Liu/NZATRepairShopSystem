@@ -1,43 +1,88 @@
 import { useEffect, useState } from "react";
-import { NavLink } from "react-router-dom";
-import { fetchPaintBoard } from "@/features/paint/api/paintApi";
-import { countOverdue, type PaintBoardJob } from "@/features/paint/paintBoard.utils";
+import { NavLink, useLocation } from "react-router-dom";
 import { subscribeWorklogCostAlert } from "@/utils/refreshSignals";
 import { usePoUnreadSummary } from "@/features/jobs";
 import { requestJson } from "@/utils/api";
-import { Plus } from "lucide-react";
+import {
+  ArrowLeftRight,
+    CalendarClock,
+    CarFront,
+    ChevronDown,
+    CircleDollarSign,
+    Clock3,
+  Eye,
+  FileSignature,
+  FileText,
+  Hash,
+  PackageOpen,
+  Plus,
+  Settings2,
+  ShieldCheck,
+  ShoppingBag,
+  Tags,
+  TriangleAlert,
+  type LucideIcon,
+  Users,
+  Wrench,
+} from "lucide-react";
 
 const linkBase =
-  "block  px-3 py-2 transition border border-transparent";
+  "flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 transition border border-transparent";
 const linkActive =
-  "bg-[var(--ds-primary)]  rounded border-[var(--ds-border)] text-white";
+  "bg-[var(--ds-primary)] border-[var(--ds-border)] text-white shadow-sm";
 const linkIdle =
   "text-[var(--ds-muted)] hover:text-[var(--ds-text)] hover:bg-[rgba(255,255,255,0.04)]";
 
+type SidebarItem = {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  badge?: number;
+};
+
+const settingsPathRoots = ["/customers", "/tags", "/wof-fails", "/service-settings", "/xero-item-codes", "/integrations"];
+
+function isPathActive(pathname: string, to: string) {
+  return pathname === to || pathname.startsWith(`${to}/`);
+}
+
 export function Sidebar() {
-  const [paintOverdueCount, setPaintOverdueCount] = useState(0);
-  const [worklogAlertCount, setWorklogAlertCount] = useState(0);
-  const [wofTodoCount, setWofTodoCount] = useState(0);
-  const poUnreadSummary = usePoUnreadSummary();
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      const res = await fetchPaintBoard();
-      if (!res.ok) return;
-      const list = Array.isArray(res.data?.jobs) ? (res.data.jobs as PaintBoardJob[]) : [];
-      if (!cancelled) setPaintOverdueCount(countOverdue(list));
-    };
-    const timer = window.setTimeout(() => void load(), 300);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, []);
-
-  useEffect(() => {
+  const [worklogAlertCount, setWorklogAlertCount] = useState(() => {
     const stored = localStorage.getItem("worklog:cost-alert");
-    if (stored) setWorklogAlertCount(Number(stored) || 0);
+    return stored ? Number(stored) || 0 : 0;
+  });
+  const [wofTodoCount, setWofTodoCount] = useState(0);
+  const [settingsCollapsed, setSettingsCollapsed] = useState(true);
+  const poUnreadSummary = usePoUnreadSummary();
+  const location = useLocation();
+
+  const mainItems: SidebarItem[] = [
+    { to: "/jobs", label: "工单", icon: FileText },
+    { to: "/worklog", label: "工时记录", icon: Clock3, badge: worklogAlertCount },
+    { to: "/parts-flow", label: "配件流转", icon: PackageOpen },
+    { to: "/invoice", label: "发票收款", icon: CircleDollarSign },
+    { to: "/wof-schedule", label: "WOF 排班表", icon: CalendarClock, badge: wofTodoCount },
+    { to: "/courtesy-cars", label: "代步车管理", icon: CarFront },
+    { to: "/courtesy-car-drafts", label: "借车协议", icon: FileSignature },
+    { to: "/agreement-history", label: "协议历史", icon: Clock3 },
+    { to: "/po-dashboard-preview", label: "采购预览", icon: Eye, badge: poUnreadSummary.totalUnreadReplies },
+    { to: "/shop", label: "内部商城", icon: ShoppingBag },
+    { to: "/procurement-admin", label: "采购后台", icon: ShieldCheck },
+  ];
+
+  const settingsItems: SidebarItem[] = [
+    { to: "/customers", label: "客户", icon: Users },
+    { to: "/tags", label: "标签", icon: Tags },
+    { to: "/wof-fails", label: "WOF 失败原因", icon: TriangleAlert },
+    { to: "/service-settings", label: "服务目录", icon: Wrench },
+    { to: "/xero-item-codes", label: "Xero 项目编码", icon: Hash },
+    { to: "/integrations", label: "账号切换", icon: ArrowLeftRight },
+  ];
+
+  const settingsRouteActive = settingsPathRoots.some((path) => isPathActive(location.pathname, path));
+  const settingsOpen = settingsRouteActive || !settingsCollapsed;
+
+  useEffect(() => {
     return subscribeWorklogCostAlert((count) => setWorklogAlertCount(count));
   }, []);
 
@@ -49,7 +94,11 @@ export function Sidebar() {
       const res = await requestJson<{ jobs?: Array<unknown> }>("/api/jobs/wof-schedule");
       if (!res.ok || cancelled) return;
       const count = Array.isArray(res.data?.jobs)
-        ? res.data.jobs.filter((job: any) => job?.wofStatus === "Todo" || job?.wofStatus === "Checked").length
+        ? res.data.jobs.filter((job) => {
+            if (typeof job !== "object" || job === null) return false;
+            const status = (job as { wofStatus?: unknown }).wofStatus;
+            return status === "Todo" || status === "Checked";
+          }).length
         : 0;
       setWofTodoCount(count);
     };
@@ -83,186 +132,50 @@ export function Sidebar() {
 
       <nav className="flex flex-1 flex-col justify-between gap-6 min-h-0">
         <div className="flex flex-col gap-2">
-          <NavLink
-            to="/"
-            end
-            className={({ isActive }) =>
-              `${linkBase} ${isActive ? linkActive : linkIdle}`
-            }
-          >
-            Dashboard
-          </NavLink>
-
-          <NavLink
-            to="/jobs"
-            className={({ isActive }) =>
-              `${linkBase} ${isActive ? linkActive : linkIdle}`
-            }
-          >
-            Jobs
-          </NavLink>
-
-          <NavLink
-            to="/paint-board"
-            className={({ isActive }) =>
-              `${linkBase} ${isActive ? linkActive : linkIdle}`
-            }
-          >
-            <span className="flex items-center justify-between gap-2">
-              <span>PNP Board</span>
-              {paintOverdueCount > 0 ? (
+          {mainItems.map(({ to, label, icon: Icon, badge }) => (
+            <NavLink key={to} to={to} className={({ isActive }) => `${linkBase} ${isActive ? linkActive : linkIdle}`}>
+              <span className="flex min-w-0 items-center gap-3">
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="truncate">{label}</span>
+              </span>
+              {badge && badge > 0 ? (
                 <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-600">
-                  {paintOverdueCount}
+                  {badge}
                 </span>
               ) : null}
-            </span>
-          </NavLink>
-
-          <NavLink
-            to="/worklog"
-            className={({ isActive }) =>
-              `${linkBase} ${isActive ? linkActive : linkIdle}`
-            }
-          >
-            <span className="flex items-center justify-between gap-2">
-              <span>Worklog</span>
-              {worklogAlertCount > 0 ? (
-                <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-600">
-                  {worklogAlertCount}
-                </span>
-              ) : null}
-            </span>
-          </NavLink>
-
-          <NavLink
-            to="/parts-flow"
-            className={({ isActive }) =>
-              `${linkBase} ${isActive ? linkActive : linkIdle}`
-            }
-          >
-            Part Flow
-          </NavLink>
-
-          <NavLink
-            to="/invoice"
-            className={({ isActive }) =>
-              `${linkBase} ${isActive ? linkActive : linkIdle}`
-            }
-          >
-            Invoice Payment
-          </NavLink>
-
-          <NavLink
-            to="/wof-schedule"
-            className={({ isActive }) =>
-              `${linkBase} ${isActive ? linkActive : linkIdle}`
-            }
-          >
-            <span className="flex items-center justify-between gap-2">
-              <span>WOF 排班表</span>
-              {wofTodoCount > 0 ? (
-                <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-600">
-                  {wofTodoCount}
-                </span>
-              ) : null}
-            </span>
-          </NavLink>
-
-          <NavLink
-            to="/po-dashboard-preview"
-            className={({ isActive }) =>
-              `${linkBase} ${isActive ? linkActive : linkIdle}`
-            }
-          >
-            <span className="flex items-center justify-between gap-2">
-              <span>PO Ops Preview</span>
-              {poUnreadSummary.totalUnreadReplies > 0 ? (
-                <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-600">
-                  {poUnreadSummary.totalUnreadReplies}
-                </span>
-              ) : null}
-            </span>
-          </NavLink>
-
-          {/* --- [从 eric 版融合] 内部采购商城前台 --- */}
-          <NavLink
-            to="/shop"
-            className={({ isActive }) =>
-              `${linkBase} ${isActive ? linkActive : linkIdle}`
-            }
-          >
-            Internal Shop
-          </NavLink>
-
-          {/* --- [从 eric 版融合] 老板专属采购审核看板 --- */}
-          <NavLink
-            to="/procurement-admin"
-            className={({ isActive }) =>
-              `${linkBase} ${isActive ? linkActive : linkIdle}`
-            }
-          >
-            Procurement Admin
-          </NavLink>
+            </NavLink>
+          ))}
         </div>
 
         <div>
-          <div className="px-3 text-[11px] uppercase tracking-[0.08em] text-[var(--ds-muted)] font-bold border-b border-[var(--ds-border)] pt-2">
-            Settings
-          </div>
-          <div className="mt-2 flex flex-col gap-2">
-            <NavLink
-              to="/customers"
-              className={({ isActive }) =>
-                `${linkBase} ${isActive ? linkActive : linkIdle}`
-              }
-            >
-              Customer
-            </NavLink>
-            <NavLink
-              to="/tags"
-              className={({ isActive }) =>
-                `${linkBase} ${isActive ? linkActive : linkIdle}`
-              }
-            >
-              Tag
-            </NavLink>
-            <NavLink
-              to="/wof-fails"
-              className={({ isActive }) =>
-                `${linkBase} ${isActive ? linkActive : linkIdle}`
-              }
-            >
-              WOF Fails
-            </NavLink>
-            <NavLink
-              to="/service-settings"
-              className={({ isActive }) =>
-                `${linkBase} ${isActive ? linkActive : linkIdle}`
-              }
-            >
-              Service Settings
-            </NavLink>
-            <NavLink
-              to="/xero-item-codes"
-              className={({ isActive }) =>
-                `${linkBase} ${isActive ? linkActive : linkIdle}`
-              }
-            >
-              Xero Item Code
-            </NavLink>
-            <NavLink
-              to="/integrations"
-              className={({ isActive }) =>
-                `${linkBase} ${isActive ? linkActive : linkIdle}`
-              }
-            >
-              Account Switch
-            </NavLink>
-          </div>
+          <button
+            type="button"
+            aria-expanded={settingsOpen}
+            className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-xs font-semibold tracking-[0.04em] text-[var(--ds-muted)] transition hover:bg-[rgba(255,255,255,0.04)] hover:text-[var(--ds-text)]"
+            onClick={() => setSettingsCollapsed((open) => !open)}
+          >
+            <span className="flex items-center gap-2">
+              <Settings2 className="h-4 w-4" />
+              <span>设置</span>
+            </span>
+            <ChevronDown className={`h-4 w-4 transition-transform ${settingsOpen ? "rotate-180" : ""}`} />
+          </button>
+
+          {settingsOpen ? (
+            <div className="mt-2 flex flex-col gap-2">
+              {settingsItems.map(({ to, label, icon: Icon }) => (
+                <NavLink key={to} to={to} className={({ isActive }) => `${linkBase} ${isActive ? linkActive : linkIdle}`}>
+                  <span className="flex min-w-0 items-center gap-3">
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{label}</span>
+                  </span>
+                </NavLink>
+              ))}
+            </div>
+          ) : null}
         </div>
       </nav>
 
-      <div className="mt-auto text-xs text-[var(--ds-muted)]">v0.1 • 2026</div>
     </div>
   );
 }

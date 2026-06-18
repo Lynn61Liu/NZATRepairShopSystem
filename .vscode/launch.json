@@ -2,6 +2,24 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Debug Workshop.Api",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/Workshop.Api/bin/Debug/net8.0/Workshop.Api.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/backend/Workshop.Api",
+      "stopAtEntry": false,
+      "preLaunchTask": "build Workshop.Api",
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://localhost:5227;https://localhost:7113"
+      },
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
+      }
+    },
+    {
       "name": "Debug Vite (Chrome)",
       "type": "pwa-chrome",
       "request": "launch",

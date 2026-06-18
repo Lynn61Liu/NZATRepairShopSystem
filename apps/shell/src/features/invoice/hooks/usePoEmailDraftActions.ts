@@ -12,6 +12,7 @@ type UsePoEmailDraftActionsArgs = {
   timeline: EmailTimelineEvent[];
   poLocked: boolean;
   poLockReason: string;
+  enabled?: boolean;
 };
 
 type DraftComposePayload = {
@@ -63,7 +64,13 @@ function mapDraftStateResponse(response: GmailPoDraftStateResponse): PoDraftStat
   };
 }
 
-export function usePoEmailDraftActions({ invoice, timeline, poLocked, poLockReason }: UsePoEmailDraftActionsArgs) {
+export function usePoEmailDraftActions({
+  invoice,
+  timeline,
+  poLocked,
+  poLockReason,
+  enabled = true,
+}: UsePoEmailDraftActionsArgs) {
   const toast = useToast();
   const refreshRequestSeq = useRef(0);
   const [draftState, setDraftState] = useState<PoDraftState>({ mode: "loading" });
@@ -73,6 +80,11 @@ export function usePoEmailDraftActions({ invoice, timeline, poLocked, poLockReas
   const latestReferencesHeader = latestThreadEvent?.referencesHeader || null;
 
   const refreshDraftState = useCallback(async () => {
+    if (!enabled) {
+      setDraftState({ mode: "none" });
+      return null;
+    }
+
     const correlationId = invoice.correlationId.trim();
     if (!correlationId) {
       setDraftState({ mode: "none" });
@@ -97,11 +109,16 @@ export function usePoEmailDraftActions({ invoice, timeline, poLocked, poLockReas
     const nextState = mapDraftStateResponse(result.data);
     setDraftState(nextState);
     return nextState;
-  }, [invoice.correlationId, toast]);
+  }, [enabled, invoice.correlationId, toast]);
 
   useEffect(() => {
+    if (!enabled) {
+      setDraftState({ mode: "none" });
+      return;
+    }
+
     void refreshDraftState();
-  }, [refreshDraftState]);
+  }, [enabled, refreshDraftState]);
 
   const buildDraftPayload = useCallback(
     (payload: DraftComposePayload, forceCreate = false) => ({
@@ -121,6 +138,10 @@ export function usePoEmailDraftActions({ invoice, timeline, poLocked, poLockReas
     async (payload: DraftComposePayload, forceCreate: boolean) => {
       if (poLocked) {
         toast.error(poLockReason);
+        return false;
+      }
+      if (!enabled) {
+        toast.error("PO draft status is not available for this job.");
         return false;
       }
 
@@ -166,7 +187,7 @@ export function usePoEmailDraftActions({ invoice, timeline, poLocked, poLockReas
         return false;
       }
     },
-    [buildDraftPayload, poLockReason, poLocked, refreshDraftState, toast]
+    [buildDraftPayload, enabled, poLockReason, poLocked, refreshDraftState, toast]
   );
 
   const createPoDraft = useCallback(
@@ -180,6 +201,11 @@ export function usePoEmailDraftActions({ invoice, timeline, poLocked, poLockReas
   );
 
   const viewPoDraft = useCallback(async () => {
+    if (!enabled) {
+      toast.error("PO draft status is not available for this job.");
+      return false;
+    }
+
     const draftWindow = openDraftWindow();
 
     try {
@@ -228,13 +254,18 @@ export function usePoEmailDraftActions({ invoice, timeline, poLocked, poLockReas
       toast.error(message);
       return false;
     }
-  }, [draftState, refreshDraftState, toast]);
+  }, [draftState, enabled, refreshDraftState, toast]);
 
   const openSentMailbox = useCallback(() => {
+    if (!enabled) {
+      toast.error("PO draft status is not available for this job.");
+      return false;
+    }
+
     const targetUrl = draftState.sentMailboxUrl || buildSentMailboxUrl(draftState.gmailAccountEmail);
     openTargetUrl(targetUrl, null);
     return true;
-  }, [draftState.gmailAccountEmail, draftState.sentMailboxUrl]);
+  }, [draftState.gmailAccountEmail, draftState.sentMailboxUrl, enabled, toast]);
 
   return {
     draftState,

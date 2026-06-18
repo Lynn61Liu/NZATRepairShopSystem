@@ -1,6 +1,6 @@
 import type React from "react";
 
-type TagVariant = "primary" | "danger" | "neutral";
+type TagVariant = "primary" | "danger" | "neutral" | "success" | "warning";
 
 type TagPillProps = {
   label: string;
@@ -13,6 +13,8 @@ const variantClasses: Record<TagVariant, string> = {
   primary: "bg-[rgba(78,90,255,0.12)] text-[rgba(78,90,255,0.9)] border border-[rgba(78,90,255,0.2)]",
   danger: "bg-red-100 text-red-800 border border-red-200",
   neutral: "bg-gray-100 text-gray-800 border border-gray-200",
+  success: "bg-emerald-100 text-emerald-800 border border-emerald-200",
+  warning: "bg-amber-100 text-amber-800 border border-amber-200",
 };
 
 export function TagPill({ label, variant = "neutral", className = "" }: TagPillProps) {

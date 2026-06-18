@@ -129,7 +129,9 @@ public class VehiclesController : ControllerBase
                 vehicle.FuelType,
                 vehicle.BodyStyle,
                 vehicle.NzFirstRegistration,
+                vehicle.Colour,
                 vehicle.WofExpiry,
+                vehicle.RegoExpiry,
                 vehicle.Odometer,
                 vehicle.UpdatedAt
             },

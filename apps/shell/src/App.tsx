@@ -20,6 +20,11 @@ import { PoDashboardPreviewPage } from "./pages/PoDashboardPreviewPage";
 import { WofSchedulePage } from "./pages/WofSchedulePage"; // 保留原有的 WofSchedule
 import { ToastProvider } from "@/components/ui";
 import { CustomerSelfServiceNewJobPage } from "./pages/customerSelfService/CustomerSelfServiceNewJobPage";
+import { CourtesyCarsPage } from "./features/courtesyCars/CourtesyCarsPage";
+import { CourtesyCarAgreementsPage } from "./pages/courtesyCarAgreements/CourtesyCarAgreementsPage";
+import { CourtesyCarAgreementPage } from "./pages/courtesyCarAgreements/CourtesyCarAgreementPage";
+import { CourtesyCarAgreementMessagePage } from "./pages/courtesyCarAgreements/CourtesyCarAgreementMessagePage";
+import { AgreementHistoryPage } from "./pages/agreementHistory/AgreementHistoryPage";
 
 // --- [从 Eric 版引入] 采购相关组件 ---
 import Shopfront from "./components/Shopfront";
@@ -39,6 +44,11 @@ const router = createBrowserRouter([
       { path: "jobs", element: <JobsPage /> },
       { path: "paint-board", element: <PaintBoardPage /> },
       { path: "wof-schedule", element: <WofSchedulePage /> }, 
+      { path: "courtesy-cars", element: <CourtesyCarsPage /> },
+      { path: "courtesy-car-drafts", element: <CourtesyCarAgreementsPage /> },
+      { path: "courtesy-car-drafts/:agreementId", element: <CourtesyCarAgreementPage /> },
+      { path: "courtesy-car-drafts/:agreementId/message", element: <CourtesyCarAgreementMessagePage /> },
+      { path: "agreement-history", element: <AgreementHistoryPage /> },
       { path: "po-dashboard-preview", element: <PoDashboardPreviewPage /> },
       { path: "worklog", element: <WorklogPage /> },
       { path: "parts-flow", element: <PartFlowPage /> },

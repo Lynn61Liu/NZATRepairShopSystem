@@ -18,16 +18,22 @@ export function extractVehicleInfo(payload: unknown): VehicleInfo {
       model?: unknown;
       year?: unknown;
       bodyStyle?: unknown;
+      colour?: unknown;
+      color?: unknown;
       type?: unknown;
       vin?: unknown;
       fuelType?: unknown;
       nzFirstRegistration?: unknown;
       wofExpiry?: unknown;
+      regoExpiry?: unknown;
+      registrationExpiry?: unknown;
+      licenceExpiry?: unknown;
     };
   } | null;
   const make = data?.vehicle?.make ? String(data.vehicle.make) : "";
   const model = data?.vehicle?.model ? String(data.vehicle.model) : "";
   const year = data?.vehicle?.year ? String(data.vehicle.year) : "";
+  const color = data?.vehicle?.colour ? String(data.vehicle.colour) : data?.vehicle?.color ? String(data.vehicle.color) : "";
   const type = data?.vehicle?.bodyStyle
     ? String(data.vehicle.bodyStyle)
     : data?.vehicle?.type
@@ -39,14 +45,23 @@ export function extractVehicleInfo(payload: unknown): VehicleInfo {
     ? String(data.vehicle.nzFirstRegistration)
     : "";
   const wofExpiry = data?.vehicle?.wofExpiry ? String(data.vehicle.wofExpiry) : "";
+  const regoExpiry = data?.vehicle?.regoExpiry
+    ? String(data.vehicle.regoExpiry)
+    : data?.vehicle?.registrationExpiry
+      ? String(data.vehicle.registrationExpiry)
+      : data?.vehicle?.licenceExpiry
+        ? String(data.vehicle.licenceExpiry)
+        : "";
 
   return {
     model: [make, model].filter(Boolean).join(" "),
     year,
+    color: color || undefined,
     type: type || undefined,
     vin: vin || undefined,
     fuelType: fuelType || undefined,
     nzFirstRegistration: nzFirstRegistration || undefined,
     wofExpiry: wofExpiry || undefined,
+    regoExpiry: regoExpiry || undefined,
   };
 }

@@ -20,7 +20,9 @@ export function VehicleInfoBanner({ info }: VehicleInfoBannerProps) {
           <div>
              <span className="text-[rgba(0,0,0,0.55)] ml-2 ">年份：</span>
             {info.year}
-             <span className="text-[rgba(0,0,0,0.55)] ml-4 ">燃油类型：</span>
+             <span className="text-[rgba(0,0,0,0.55)] ml-4 ">颜色：</span>
+            {info.color || "—"}
+            <span className="text-[rgba(0,0,0,0.55)] ml-4 ">燃油类型：</span>
             {info.fuelType || "—"}
           </div>
           <div>
@@ -33,6 +35,10 @@ export function VehicleInfoBanner({ info }: VehicleInfoBannerProps) {
             {info.vin || "—"}
             <span className="text-[rgba(0,0,0,0.55)] ml-4 ">WOF Expiry Day：</span>
             {info.wofExpiry || "—"}
+          </div>
+          <div>
+            <span className="text-[rgba(0,0,0,0.55)] ml-2 ">Rego Expiry Day：</span>
+            {info.regoExpiry || "—"}
           </div>
           
         </div>

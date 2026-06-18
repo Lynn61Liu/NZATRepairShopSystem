@@ -1,17 +1,28 @@
 import { useState } from "react";
-import { ChevronDown, ChevronUp, Car, User, Calendar } from "lucide-react";
-import type { CustomerInfo, VehicleInfo } from "@/types";
+import { Link } from "react-router-dom";
+import { ChevronDown, ChevronUp, Car, User, Calendar, FileText, Mail, Clock3 } from "lucide-react";
+import type { CustomerInfo, VehicleInfo, CourtesyCarAgreementSummary } from "@/types";
 import { JOB_DETAIL_TEXT } from "@/features/jobDetail/jobDetail.constants";
 import { formatNzDateTime } from "@/utils/date";
+import { TagPill } from "@/components/ui";
 
 type RightSidebarProps = {
   vehicle: VehicleInfo;
   customer: CustomerInfo;
+  courtesyCarAgreement?: CourtesyCarAgreementSummary | null;
   isOpen: boolean;
   onToggle: () => void;
+  onOpenCourtesyCarAssign?: () => void;
 };
 
-export function RightSidebar({ vehicle, customer, isOpen, onToggle }: RightSidebarProps) {
+export function RightSidebar({
+  vehicle,
+  customer,
+  courtesyCarAgreement,
+  isOpen,
+  onToggle,
+  onOpenCourtesyCarAssign,
+}: RightSidebarProps) {
   const [vehicleExpanded, setVehicleExpanded] = useState(false);
   const [customerExpanded, setCustomerExpanded] = useState(false);
   const formatValue = (value: unknown, asJson = false) => {
@@ -48,6 +59,15 @@ export function RightSidebar({ vehicle, customer, isOpen, onToggle }: RightSideb
     </div>
   );
 
+  const agreementStatusVariant = (status?: string | null): "primary" | "danger" | "neutral" | "success" | "warning" => {
+    if (status === "submitted") return "success";
+    if (status === "active" || status === "in_progress") return "warning";
+    if (status === "closed") return "neutral";
+    if (status === "cancelled") return "danger";
+    return "primary";
+  };
+  const courtesyCarLabel = [courtesyCarAgreement?.vehicleMake, courtesyCarAgreement?.vehicleModel].filter(Boolean).join(" ") || "—";
+
   return (
     <aside
       className={[
@@ -66,6 +86,84 @@ export function RightSidebar({ vehicle, customer, isOpen, onToggle }: RightSideb
       {isOpen ? (
         <div className="space-y-4 p-4">
           <div>
+            <div className="mb-4 rounded-[12px] border border-[rgba(37,99,235,0.16)] bg-[rgba(37,99,235,0.06)] p-4">
+              <div className="text-sm font-semibold text-[var(--ds-text)]">代步车</div>
+              <div className="mt-1 text-xs text-[var(--ds-muted)]">
+                所有 Job 都可以在这里关联可用代步车，系统会立即创建草稿协议。
+              </div>
+              <button
+                type="button"
+                onClick={onOpenCourtesyCarAssign}
+                className="mt-3 inline-flex h-9 items-center justify-center rounded-[8px] bg-[var(--ds-primary)] px-3 text-sm font-medium text-white transition hover:opacity-95"
+              >
+                关联代步车
+              </button>
+            </div>
+
+            {courtesyCarAgreement ? (
+              <div className="mb-4 rounded-[16px] border border-[rgba(16,185,129,0.18)] bg-[linear-gradient(180deg,rgba(236,253,245,0.95),rgba(240,253,250,0.82))] p-4 shadow-[0_10px_28px_rgba(15,23,42,0.06)]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-[var(--ds-text)]">Courtesy Car Agreement</div>
+                      <div className="mt-1 text-xs text-[var(--ds-muted)]">
+                        Job {vehicle.plate} is linked to this agreement.
+                    </div>
+                  </div>
+                  <TagPill label={courtesyCarAgreement.status} variant={agreementStatusVariant(courtesyCarAgreement.status)} />
+                </div>
+
+                <div className="mt-4 grid gap-2 text-sm">
+                  <div className="flex items-start gap-2 text-[var(--ds-muted)]">
+                    <FileText className="mt-0.5 h-4 w-4 shrink-0 text-[var(--ds-primary)]" />
+                    <div className="min-w-0">
+                      <div className="font-medium text-[var(--ds-text)]">
+                        {courtesyCarAgreement.vehiclePlate || "—"} {courtesyCarLabel !== "—" ? "·" : ""} {courtesyCarLabel}
+                      </div>
+                      <div className="text-xs text-[var(--ds-muted)]">Current step: {courtesyCarAgreement.currentStep}</div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-[var(--ds-muted)]">
+                    <User className="h-4 w-4 shrink-0 text-[var(--ds-primary)]" />
+                    <span className="min-w-0 break-words">{courtesyCarAgreement.contactName || customer.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[var(--ds-muted)]">
+                    <Mail className="h-4 w-4 shrink-0 text-[var(--ds-primary)]" />
+                    <span className="min-w-0 break-words">{courtesyCarAgreement.contactEmail || customer.email || "—"}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[var(--ds-muted)]">
+                    <Clock3 className="h-4 w-4 shrink-0 text-[var(--ds-primary)]" />
+                    <span className="min-w-0 break-words">
+                      {courtesyCarAgreement.emailSentAt
+                        ? `Emailed ${formatNzDateTime(courtesyCarAgreement.emailSentAt)}`
+                        : courtesyCarAgreement.pdfGeneratedAt
+                          ? `PDF generated ${formatNzDateTime(courtesyCarAgreement.pdfGeneratedAt)}`
+                          : "Waiting for PDF generation"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Link
+                    to={`/courtesy-car-drafts/${courtesyCarAgreement.id}`}
+                    className="inline-flex h-9 items-center justify-center rounded-[8px] bg-[var(--ds-primary)] px-3 text-sm font-medium text-white transition hover:opacity-95"
+                  >
+                    Open agreement
+                  </Link>
+                  {courtesyCarAgreement.pdfUrl ? (
+                    <a
+                      href={courtesyCarAgreement.pdfUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex h-9 items-center justify-center rounded-[8px] border border-[var(--ds-border)] bg-white px-3 text-sm font-medium text-[var(--ds-text)] transition hover:bg-[rgba(0,0,0,0.03)]"
+                    >
+                      Open PDF
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
             <div className="text-sm font-semibold">{JOB_DETAIL_TEXT.labels.infoTitle}</div>
             <div className="text-xs text-[var(--ds-muted)]">{JOB_DETAIL_TEXT.labels.infoSubtitle}</div>
           </div>
