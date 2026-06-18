@@ -7,7 +7,7 @@ public class CourtesyCarAgreement
     public long Id { get; set; }
     public long JobId { get; set; }
     public Job? Job { get; set; }
-    public long VehicleId { get; set; }
+    public long? VehicleId { get; set; }
     public CourtesyCarVehicle? Vehicle { get; set; }
     public long? CustomerId { get; set; }
     public Customer? Customer { get; set; }

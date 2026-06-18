@@ -48,7 +48,7 @@ public sealed record CourtesyCarAgreementListItemDto(
     string? JobCustomerPhone,
     string? JobCustomerEmail,
     string? JobCustomerAddress,
-    long VehicleId,
+    long? VehicleId,
     string? VehiclePlate,
     string? VehicleMake,
     string? VehicleModel,
@@ -64,7 +64,7 @@ public sealed record CourtesyCarAgreementListItemDto(
 public sealed record CourtesyCarAgreementDetailDto(
     long Id,
     long JobId,
-    long VehicleId,
+    long? VehicleId,
     long? CustomerId,
     string Status,
     string CurrentStep,

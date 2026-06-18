@@ -71,7 +71,7 @@ public sealed class CourtesyCarSchemaInitializerService : IHostedService
         CREATE TABLE IF NOT EXISTS courtesy_car_agreements (
           id BIGSERIAL PRIMARY KEY,
           job_id BIGINT NOT NULL,
-          vehicle_id BIGINT NOT NULL,
+          vehicle_id BIGINT,
           customer_id BIGINT,
           status TEXT NOT NULL DEFAULT 'draft',
           current_step TEXT NOT NULL DEFAULT 'contact',
@@ -142,7 +142,7 @@ public sealed class CourtesyCarSchemaInitializerService : IHostedService
             SELECT 1 FROM pg_constraint WHERE conname = 'fk_courtesy_car_agreements_vehicle'
           ) THEN
             ALTER TABLE courtesy_car_agreements
-              ADD CONSTRAINT fk_courtesy_car_agreements_vehicle FOREIGN KEY (vehicle_id) REFERENCES courtesy_cars(id) ON DELETE RESTRICT;
+              ADD CONSTRAINT fk_courtesy_car_agreements_vehicle FOREIGN KEY (vehicle_id) REFERENCES courtesy_cars(id) ON DELETE SET NULL;
           END IF;
 
           IF NOT EXISTS (
@@ -179,5 +179,19 @@ public sealed class CourtesyCarSchemaInitializerService : IHostedService
             submitted_at = COALESCE(submitted_at, email_sent_at, updated_at),
             closed_at = NULL
         WHERE status = 'closed' AND closed_at IS NULL;
+
+        ALTER TABLE courtesy_car_agreements
+          ALTER COLUMN vehicle_id DROP NOT NULL;
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'fk_courtesy_car_agreements_vehicle'
+          ) THEN
+            ALTER TABLE courtesy_car_agreements DROP CONSTRAINT fk_courtesy_car_agreements_vehicle;
+          END IF;
+
+          ALTER TABLE courtesy_car_agreements
+            ADD CONSTRAINT fk_courtesy_car_agreements_vehicle FOREIGN KEY (vehicle_id) REFERENCES courtesy_cars(id) ON DELETE SET NULL;
+        END $$;
         """;
 }

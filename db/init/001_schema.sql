@@ -72,7 +72,7 @@ CREATE UNIQUE INDEX ux_courtesy_cars_plate ON courtesy_cars (plate);
 CREATE TABLE courtesy_car_agreements (
   id BIGSERIAL PRIMARY KEY,
   job_id BIGINT NOT NULL,
-  vehicle_id BIGINT NOT NULL,
+  vehicle_id BIGINT,
   customer_id BIGINT,
   status TEXT NOT NULL DEFAULT 'draft',
   current_step TEXT NOT NULL DEFAULT 'contact',
@@ -120,7 +120,7 @@ CREATE INDEX ix_courtesy_car_agreements_status ON courtesy_car_agreements (statu
 ALTER TABLE courtesy_car_agreements
   ADD CONSTRAINT fk_courtesy_car_agreements_job FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE;
 ALTER TABLE courtesy_car_agreements
-  ADD CONSTRAINT fk_courtesy_car_agreements_vehicle FOREIGN KEY (vehicle_id) REFERENCES courtesy_cars(id) ON DELETE RESTRICT;
+  ADD CONSTRAINT fk_courtesy_car_agreements_vehicle FOREIGN KEY (vehicle_id) REFERENCES courtesy_cars(id) ON DELETE SET NULL;
 ALTER TABLE courtesy_car_agreements
   ADD CONSTRAINT fk_courtesy_car_agreements_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL;
 

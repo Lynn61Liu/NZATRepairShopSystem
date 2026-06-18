@@ -189,8 +189,8 @@ public sealed class CourtesyCarVehiclesController : ControllerBase
         if (vehicle is null)
             return NotFound(new { error = "Vehicle not found." });
 
-        var hasAgreements = await _db.CourtesyCarAgreements.AnyAsync(x => x.VehicleId == vehicleId, ct);
-        if (hasAgreements)
+        var currentAgreement = await LoadCurrentAgreementSummaryAsync(vehicleId, ct);
+        if (currentAgreement is not null)
             return Conflict(new { error = "Vehicle is linked to a courtesy car agreement." });
 
         _db.CourtesyCarVehicles.Remove(vehicle);
@@ -231,7 +231,7 @@ public sealed class CourtesyCarVehiclesController : ControllerBase
             return new Dictionary<long, CourtesyCarVehicleAgreementSummaryDto>();
 
         var summaries = await _db.CourtesyCarAgreements.AsNoTracking()
-            .Where(x => vehicleIds.Contains(x.VehicleId))
+            .Where(x => x.VehicleId.HasValue && vehicleIds.Contains(x.VehicleId.Value))
             .Where(x => x.Status != "cancelled" && x.Status != "closed")
             .OrderByDescending(x => x.UpdatedAt)
             .ThenByDescending(x => x.Id)
@@ -252,7 +252,7 @@ public sealed class CourtesyCarVehiclesController : ControllerBase
             .ToListAsync(ct);
 
         return summaries
-            .GroupBy(x => x.VehicleId)
+            .GroupBy(x => x.VehicleId!.Value)
             .ToDictionary(x => x.Key, x => x.First().Summary);
     }
 

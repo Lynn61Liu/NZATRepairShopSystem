@@ -64,7 +64,7 @@ export type CourtesyCarAgreementListItem = {
   jobCustomerPhone?: string | null;
   jobCustomerEmail?: string | null;
   jobCustomerAddress?: string | null;
-  vehicleId: number;
+  vehicleId: number | null;
   vehiclePlate?: string | null;
   vehicleMake?: string | null;
   vehicleModel?: string | null;

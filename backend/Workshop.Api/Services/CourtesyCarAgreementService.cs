@@ -72,7 +72,9 @@ public sealed class CourtesyCarAgreementService
         _storage.DeleteAgreementDirectory(agreementId);
 
         var now = DateTime.UtcNow;
-        var vehicle = await _db.CourtesyCarVehicles.FirstOrDefaultAsync(x => x.Id == agreement.VehicleId, ct);
+        var vehicle = agreement.VehicleId.HasValue
+            ? await _db.CourtesyCarVehicles.FirstOrDefaultAsync(x => x.Id == agreement.VehicleId.Value, ct)
+            : null;
         if (vehicle is not null)
         {
             vehicle.Status = "available";
@@ -108,7 +110,10 @@ public sealed class CourtesyCarAgreementService
             return CourtesyCarAgreementMutationResult<CourtesyCarAgreementDetailDto>.Fail(409, "Only active or submitted agreements can be returned.");
         }
 
-        var vehicle = await _db.CourtesyCarVehicles.FirstOrDefaultAsync(x => x.Id == agreement.VehicleId, ct);
+        if (!agreement.VehicleId.HasValue)
+            return CourtesyCarAgreementMutationResult<CourtesyCarAgreementDetailDto>.Fail(404, "Courtesy car not found.");
+
+        var vehicle = await _db.CourtesyCarVehicles.FirstOrDefaultAsync(x => x.Id == agreement.VehicleId.Value, ct);
         if (vehicle is null)
             return CourtesyCarAgreementMutationResult<CourtesyCarAgreementDetailDto>.Fail(404, "Courtesy car not found.");
 
@@ -238,15 +243,18 @@ public sealed class CourtesyCarAgreementService
             if (string.Equals(normalizedStatus, "cancelled", StringComparison.OrdinalIgnoreCase))
             {
                 agreement.CancelledAt ??= now;
-                var vehicle = await _db.CourtesyCarVehicles.FirstOrDefaultAsync(x => x.Id == agreement.VehicleId, ct);
-                if (vehicle is not null)
+                if (agreement.VehicleId.HasValue)
                 {
-                    vehicle.Status = "available";
-                    vehicle.ReturnedAt = now;
-                    vehicle.LoanedAt = null;
-                    vehicle.BorrowerName = null;
-                    vehicle.BorrowerPhone = null;
-                    vehicle.UpdatedAt = now;
+                    var vehicle = await _db.CourtesyCarVehicles.FirstOrDefaultAsync(x => x.Id == agreement.VehicleId.Value, ct);
+                    if (vehicle is not null)
+                    {
+                        vehicle.Status = "available";
+                        vehicle.ReturnedAt = now;
+                        vehicle.LoanedAt = null;
+                        vehicle.BorrowerName = null;
+                        vehicle.BorrowerPhone = null;
+                        vehicle.UpdatedAt = now;
+                    }
                 }
             }
             else if (string.Equals(normalizedStatus, "inprogress", StringComparison.OrdinalIgnoreCase) &&

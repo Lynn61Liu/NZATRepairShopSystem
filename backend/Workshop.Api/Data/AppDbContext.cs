@@ -653,7 +653,7 @@ public class AppDbContext : DbContext
         cca.HasKey(x => x.Id);
         cca.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
         cca.Property(x => x.JobId).HasColumnName("job_id").IsRequired();
-        cca.Property(x => x.VehicleId).HasColumnName("vehicle_id").IsRequired();
+        cca.Property(x => x.VehicleId).HasColumnName("vehicle_id").IsRequired(false);
         cca.Property(x => x.CustomerId).HasColumnName("customer_id");
         cca.Property(x => x.Status).HasColumnName("status").HasDefaultValue("draft");
         cca.Property(x => x.CurrentStep).HasColumnName("current_step").HasDefaultValue("contact");
@@ -700,7 +700,7 @@ public class AppDbContext : DbContext
         cca.HasOne(x => x.Vehicle)
             .WithMany()
             .HasForeignKey(x => x.VehicleId)
-            .OnDelete(DeleteBehavior.Restrict);
+            .OnDelete(DeleteBehavior.SetNull);
         cca.HasOne(x => x.Customer)
             .WithMany()
             .HasForeignKey(x => x.CustomerId)
