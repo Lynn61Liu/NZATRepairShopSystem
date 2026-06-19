@@ -13,6 +13,7 @@ import {
 } from "@/features/courtesyCarAgreements/api";
 import { getSubmitErrorMessage } from "@/features/courtesyCarAgreements/submitErrorMessage";
 import type {
+  CourtesyCarAgreementAttachment,
   CourtesyCarAgreementDetail,
   CourtesyCarAgreementStep,
 } from "@/features/courtesyCarAgreements/types";
@@ -144,6 +145,20 @@ function attachmentKindList(agreement: CourtesyCarAgreementDetail | null, kind: 
   return (agreement?.attachments ?? []).filter((attachment) => attachment.kind === kind);
 }
 
+function revokeObjectUrl(url?: string) {
+  if (!url?.startsWith("blob:") || typeof URL === "undefined") return;
+  URL.revokeObjectURL(url);
+}
+
+function revokeObjectUrlAfterPaint(url?: string) {
+  if (!url) return;
+  if (typeof window === "undefined") {
+    revokeObjectUrl(url);
+    return;
+  }
+  window.setTimeout(() => revokeObjectUrl(url), 0);
+}
+
 function agreementStatusLabel(status: CourtesyCarAgreementDetail["status"]) {
   if (status === "in_progress" || status === "inprogress") return "In progress";
   if (status === "submitted") return "Submitted";
@@ -162,8 +177,18 @@ function agreementStatusVariant(status: CourtesyCarAgreementDetail["status"]) {
   return "neutral";
 }
 
-export function CourtesyCarAgreementPage() {
-  const { agreementId } = useParams();
+type CourtesyCarAgreementPageProps = {
+  agreementIdOverride?: string;
+  embedded?: boolean;
+  onClose?: () => void;
+};
+
+export function CourtesyCarAgreementPage({
+  agreementIdOverride,
+  embedded = false,
+  onClose,
+}: CourtesyCarAgreementPageProps = {}) {
+  const { agreementId: routeAgreementId } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -186,6 +211,9 @@ export function CourtesyCarAgreementPage() {
   const [signatureName, setSignatureName] = useState("");
   const [signatureDataUrl, setSignatureDataUrl] = useState("");
   const [pendingPhotoPreviews, setPendingPhotoPreviews] = useState<Partial<Record<PhotoCaptureKind, string>>>({});
+  const pendingPhotoPreviewsRef = useRef(pendingPhotoPreviews);
+  const [uploadingPhotoKinds, setUploadingPhotoKinds] = useState<Partial<Record<PhotoCaptureKind, boolean>>>({});
+  const agreementId = agreementIdOverride ?? routeAgreementId;
 
   const activeStep = agreement?.currentStep ?? "contact";
   const activeStepIndex = stepIndex(activeStep);
@@ -193,12 +221,14 @@ export function CourtesyCarAgreementPage() {
   const previewModalOpen = agreement?.currentStep === "review" && agreement?.status !== "submitted";
 
   useEffect(() => {
-    return () => {
-      Object.values(pendingPhotoPreviews).forEach((url) => {
-        if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
-      });
-    };
+    pendingPhotoPreviewsRef.current = pendingPhotoPreviews;
   }, [pendingPhotoPreviews]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(pendingPhotoPreviewsRef.current).forEach(revokeObjectUrl);
+    };
+  }, []);
 
   useEffect(() => {
     const previousTitle = document.title;
@@ -296,15 +326,74 @@ export function CourtesyCarAgreementPage() {
     setAgreement(res.data?.agreement ?? null);
   };
 
+  const mergeUploadedAttachment = (attachment: CourtesyCarAgreementAttachment) => {
+    setAgreement((prev) => {
+      if (!prev) return prev;
+      const attachments = [...(prev.attachments ?? []).filter((item) => item.id !== attachment.id), attachment];
+      return { ...prev, attachments, updatedAt: attachment.createdAt || prev.updatedAt };
+    });
+  };
+
   const uploadAttachment = async (kind: string, file: File) => {
-    if (!agreementId) return;
+    if (!agreementId) return false;
     setActionError(null);
-    const res = await uploadCourtesyCarAttachment(agreementId, kind, file);
-    if (!res.ok) {
-      setActionError(res.error || "Attachment upload failed.");
+    try {
+      const res = await uploadCourtesyCarAttachment(agreementId, kind, file);
+      if (!res.ok) {
+        setActionError(res.error || "Attachment upload failed.");
+        return false;
+      }
+      if (res.data?.attachment) {
+        mergeUploadedAttachment(res.data.attachment);
+        return true;
+      }
+      return refreshAgreement();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Attachment upload failed.");
       return false;
     }
-    return refreshAgreement();
+  };
+
+  const setPendingPhotoPreview = (kind: PhotoCaptureKind, url: string) => {
+    setPendingPhotoPreviews((prev) => {
+      const previous = prev[kind];
+      if (previous && previous !== url) revokeObjectUrlAfterPaint(previous);
+      return { ...prev, [kind]: url };
+    });
+  };
+
+  const clearPendingPhotoPreview = (kind: PhotoCaptureKind) => {
+    setPendingPhotoPreviews((prev) => {
+      const previous = prev[kind];
+      if (!previous) return prev;
+      const next = { ...prev };
+      delete next[kind];
+      revokeObjectUrlAfterPaint(previous);
+      return next;
+    });
+  };
+
+  const setPhotoUploading = (kind: PhotoCaptureKind, isUploading: boolean) => {
+    setUploadingPhotoKinds((prev) => {
+      const next = { ...prev };
+      if (isUploading) {
+        next[kind] = true;
+      } else {
+        delete next[kind];
+      }
+      return next;
+    });
+  };
+
+  const handleLicensePhotoPick = async (kind: PhotoCaptureKind, file: File) => {
+    const objectUrl = URL.createObjectURL(file);
+    setPendingPhotoPreview(kind, objectUrl);
+    setPhotoUploading(kind, true);
+    const success = await uploadAttachment(kind, file);
+    setPhotoUploading(kind, false);
+    if (success) {
+      clearPendingPhotoPreview(kind);
+    }
   };
 
   const handleSubmit = async () => {
@@ -375,7 +464,11 @@ export function CourtesyCarAgreementPage() {
 
   return (
     <div
-      className="min-h-[calc(100vh-3rem)] -mx-6 -my-6 bg-[linear-gradient(180deg,#f8fafc_0%,#f3f5f9_56%,#eef2f7_100%)] px-4 py-5 sm:px-6 lg:px-8"
+      className={
+        embedded
+          ? "min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#f3f5f9_56%,#eef2f7_100%)] px-4 py-5 sm:px-6 lg:px-8"
+          : "min-h-[calc(100vh-3rem)] -mx-6 -my-6 bg-[linear-gradient(180deg,#f8fafc_0%,#f3f5f9_56%,#eef2f7_100%)] px-4 py-5 sm:px-6 lg:px-8"
+      }
       style={pageThemeStyle}
     >
       <div className="mx-auto flex w-full max-w-[1140px] flex-col gap-5">
@@ -410,10 +503,17 @@ export function CourtesyCarAgreementPage() {
 
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <Link to="/courtesy-car-drafts" className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--ds-primary)]">
-              <ArrowLeft className="h-4 w-4" />
-              Back to draft list
-            </Link>
+            {embedded && onClose ? (
+              <Button onClick={onClose} className="!h-9 rounded-[999px] px-4 text-sm font-semibold">
+                <ArrowLeft className="h-4 w-4" />
+                返回首页
+              </Button>
+            ) : (
+              <Link to="/courtesy-car-drafts" className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--ds-primary)]">
+                <ArrowLeft className="h-4 w-4" />
+                Back to draft list
+              </Link>
+            )}
             <div className="mt-3 text-3xl font-bold tracking-[-0.04em] text-slate-900 md:text-4xl">
               {agreement.jobVehiclePlate || "Courtesy Car Agreement"}
             </div>
@@ -476,50 +576,18 @@ export function CourtesyCarAgreementPage() {
                   <UploadBox
                     title="执照正面 / Licence Front"
                     previewUrl={licenseFrontPreview}
-                    isUploading={Boolean(pendingPhotoPreviews.license_front)}
+                    isUploading={Boolean(uploadingPhotoKinds.license_front)}
+                    isPendingPreview={Boolean(pendingPhotoPreviews.license_front)}
                     count={licenseFrontFiles.length}
-                    onPick={async (file) => {
-                      const objectUrl = URL.createObjectURL(file);
-                      setPendingPhotoPreviews((prev) => {
-                        const previous = prev.license_front;
-                        if (previous?.startsWith("blob:")) URL.revokeObjectURL(previous);
-                        return { ...prev, license_front: objectUrl };
-                      });
-                      const success = await uploadAttachment("license_front", file);
-                      if (success) {
-                        setPendingPhotoPreviews((prev) => {
-                          const next = { ...prev };
-                          const previous = next.license_front;
-                          if (previous?.startsWith("blob:")) URL.revokeObjectURL(previous);
-                          delete next.license_front;
-                          return next;
-                        });
-                      }
-                    }}
+                    onPick={(file) => handleLicensePhotoPick("license_front", file)}
                   />
                   <UploadBox
                     title="执照背面 / Licence Back"
                     previewUrl={licenseBackPreview}
-                    isUploading={Boolean(pendingPhotoPreviews.license_back)}
+                    isUploading={Boolean(uploadingPhotoKinds.license_back)}
+                    isPendingPreview={Boolean(pendingPhotoPreviews.license_back)}
                     count={licenseBackFiles.length}
-                    onPick={async (file) => {
-                      const objectUrl = URL.createObjectURL(file);
-                      setPendingPhotoPreviews((prev) => {
-                        const previous = prev.license_back;
-                        if (previous?.startsWith("blob:")) URL.revokeObjectURL(previous);
-                        return { ...prev, license_back: objectUrl };
-                      });
-                      const success = await uploadAttachment("license_back", file);
-                      if (success) {
-                        setPendingPhotoPreviews((prev) => {
-                          const next = { ...prev };
-                          const previous = next.license_back;
-                          if (previous?.startsWith("blob:")) URL.revokeObjectURL(previous);
-                          delete next.license_back;
-                          return next;
-                        });
-                      }
-                    }}
+                    onPick={(file) => handleLicensePhotoPick("license_back", file)}
                   />
                 </div>
               </div>
@@ -849,8 +917,8 @@ export function CourtesyCarAgreementPage() {
                             <div className="mt-2 text-sm text-slate-500">English version only</div>
                           </div>
 
-                          <div className="mt-8 border-y border-slate-200 py-6">
-                            <div className="grid gap-x-8 gap-y-4 md:grid-cols-2">
+                          <PreviewDocumentSection title="Agreement Information">
+                            <div className="grid gap-x-8 gap-y-5 md:grid-cols-2">
                               <PreviewFact label="Agreement Date" value={reviewCreatedAt} />
                               <PreviewFact label="Courtesy Vehicle" value={`${reviewVehicleLabel} · ${reviewVehicleName}`} />
                               <PreviewFact label="Agreed Vehicle Value" value={reviewVehicleValue} />
@@ -863,56 +931,48 @@ export function CourtesyCarAgreementPage() {
                                   .join(" · ") || "—"}
                               />
                             </div>
-                          </div>
+                          </PreviewDocumentSection>
 
-                          <div className="mt-8">
-                            <PreviewSectionHeading title="Borrower Details" />
-                            <div className="mt-4 grid gap-x-10 gap-y-4 md:grid-cols-2">
+                          <PreviewDocumentSection title="Borrower Details">
+                            <div className="grid gap-x-10 gap-y-5 md:grid-cols-2">
                               <PreviewFact label="Full Name" value={reviewCustomerName} />
                               <PreviewFact label="Phone" value={reviewCustomerPhone} />
                               <PreviewFact label="Email" value={reviewCustomerEmail} />
                               <PreviewFact label="Address" value={reviewCustomerAddress} />
                               <PreviewFact label="Customer Plate" value={agreement.jobVehiclePlate || "—"} />
-                              <PreviewFact label="Driver Licence Number" value={agreement.driverLicenseNumber || "—"} />
-                              <PreviewFact label="Driver Licence Expiry" value={agreement.driverLicenseExpiry || "—"} />
                               <PreviewFact
                                 label="Emergency Contact"
                                 value={[licenseForm.emergencyContactName || null, licenseForm.emergencyContactPhone || null].filter(Boolean).join(" · ") || "—"}
                               />
                             </div>
-                          </div>
+                          </PreviewDocumentSection>
 
-                          <div className="mt-8">
-                            <PreviewSectionHeading title="Vehicle Summary" />
-                            <div className="mt-4 rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-                              <div className="grid gap-x-8 gap-y-4 md:grid-cols-2">
-                                <PreviewFact label="Plate" value={agreement.vehiclePlate || "—"} />
-                                <PreviewFact label="Vehicle" value={reviewVehicleName} />
-                                <PreviewFact label="Colour" value={agreement.vehicleColor || "—"} />
-                                <PreviewFact label="Year" value={agreement.vehicleYear ? String(agreement.vehicleYear) : "—"} />
-                                <PreviewFact label="Mileage" value={agreement.vehicleMileage ? `${agreement.vehicleMileage.toLocaleString("en-NZ")} km` : "—"} />
-                                <PreviewFact label="Fuel Level" value={agreement.vehicleFuelLevel || "—"} />
-                              </div>
+                          <PreviewDocumentSection title="Vehicle Summary">
+                            <div className="grid gap-x-8 gap-y-5 md:grid-cols-2">
+                              <PreviewFact label="Plate" value={agreement.vehiclePlate || "—"} />
+                              <PreviewFact label="Vehicle" value={reviewVehicleName} />
+                              <PreviewFact label="Colour" value={agreement.vehicleColor || "—"} />
+                              <PreviewFact label="Year" value={agreement.vehicleYear ? String(agreement.vehicleYear) : "—"} />
+                              <PreviewFact label="Mileage" value={agreement.vehicleMileage ? `${agreement.vehicleMileage.toLocaleString("en-NZ")} km` : "—"} />
+                              <PreviewFact label="Fuel Level" value={agreement.vehicleFuelLevel || "—"} />
                             </div>
-                          </div>
+                          </PreviewDocumentSection>
 
-                          <div className="mt-8">
-                            <PreviewSectionHeading title="Agreed Terms" />
-                            <div className="mt-4 space-y-4">
+                          <PreviewDocumentSection title="Agreed Terms">
+                            <div className="space-y-4">
                               {termsChecklist.map((item, index) => (
-                                <div key={item.id} className="flex items-start gap-3 text-[15px] leading-7 text-slate-800">
-                                  <div className="mt-1 text-[16px] font-bold leading-none text-emerald-600">✓</div>
+                                <div key={item.id} className="flex items-start gap-3 rounded-[18px] border border-slate-100 bg-slate-50/70 px-4 py-3 text-[15px] leading-7 text-slate-800">
+                                  <div className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-[13px] font-bold leading-none text-emerald-700">✓</div>
                                   <div className="min-w-0">
                                     <span className="font-semibold text-slate-950">{index + 1}.</span> {item.en}
                                   </div>
                                 </div>
                               ))}
                             </div>
-                          </div>
+                          </PreviewDocumentSection>
 
-                          <div className="mt-8">
-                            <PreviewSectionHeading title="Borrower Signature" />
-                            <div className="mt-4 rounded-[24px] border border-slate-200 bg-white p-5">
+                          <PreviewDocumentSection title="Borrower Signature">
+                            <div>
                               <div className="text-[17px] font-semibold tracking-[-0.02em] text-slate-900">
                                 {reviewCustomerName} confirms they have read and agree to all terms for vehicle {agreement.vehiclePlate || "—"}.
                               </div>
@@ -933,7 +993,7 @@ export function CourtesyCarAgreementPage() {
                                 <PreviewFact label="Signed At" value={reviewSignatureAt} />
                               </div>
                             </div>
-                          </div>
+                          </PreviewDocumentSection>
 
                           <div className="mt-8 border-t border-slate-200 pt-5 text-xs leading-6 text-slate-500">
                             This English version is intended to be the legally operative agreement. Submitting will generate the PDF and email it to the customer automatically.
@@ -1033,7 +1093,20 @@ function InfoLine({ label, value }: { label: string; value: string }) {
 }
 
 function PreviewSectionHeading({ title }: { title: string }) {
-  return <div className="text-[17px] font-semibold uppercase tracking-[0.14em] text-slate-900">{title}</div>;
+  return (
+    <div className="border-b border-slate-200 pb-3 text-[18px] font-bold uppercase tracking-[0.12em] text-slate-950">
+      {title}
+    </div>
+  );
+}
+
+function PreviewDocumentSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="mt-7 rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.04)]">
+      <PreviewSectionHeading title={title} />
+      <div className="mt-5">{children}</div>
+    </section>
+  );
 }
 
 function PreviewFact({ label, value }: { label: string; value: string }) {
@@ -1050,15 +1123,19 @@ function UploadBox({
   count,
   previewUrl,
   isUploading,
+  isPendingPreview,
   onPick,
 }: {
   title: string;
   count: number;
   previewUrl?: string;
   isUploading?: boolean;
+  isPendingPreview?: boolean;
   onPick: (file: File) => Promise<void>;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const previewLabel = isUploading ? "上传中..." : isPendingPreview ? "照片未保存，请重新拍摄" : "已保存，可预览";
+  const previewHint = isUploading ? "请稍等，不要关闭页面" : "点击重新拍摄 / Replace photo";
 
   return (
     <div className="space-y-2">
@@ -1072,7 +1149,12 @@ function UploadBox({
         onChange={async (event) => {
           const file = event.target.files?.[0];
           event.target.value = "";
-          if (file) await onPick(file);
+          if (!file) return;
+          try {
+            await onPick(file);
+          } catch (err) {
+            console.error("Courtesy car photo upload failed", err);
+          }
         }}
       />
 
@@ -1080,14 +1162,15 @@ function UploadBox({
         <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm">
           <button
             type="button"
+            disabled={isUploading}
             onClick={() => inputRef.current?.click()}
-            className="block w-full overflow-hidden bg-slate-50"
+            className="block w-full overflow-hidden bg-slate-50 disabled:cursor-wait"
           >
             <div className="relative">
               <img src={previewUrl} alt={`${title} preview`} className="h-48 w-full object-cover" />
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/65 to-transparent px-3 py-2 text-left text-white">
-                <div className="text-sm font-semibold">{isUploading ? "上传中..." : "已拍摄，可预览"}</div>
-                <div className="text-xs text-white/80">点击重新拍摄 / Replace photo</div>
+                <div className="text-sm font-semibold">{previewLabel}</div>
+                <div className="text-xs text-white/80">{previewHint}</div>
               </div>
             </div>
           </button>
@@ -1095,8 +1178,9 @@ function UploadBox({
             <div className="text-xs text-slate-500">{count} file(s) saved</div>
             <button
               type="button"
+              disabled={isUploading}
               onClick={() => inputRef.current?.click()}
-              className="inline-flex h-9 items-center justify-center rounded-[10px] border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              className="inline-flex h-9 items-center justify-center rounded-[10px] border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
             >
               重新拍摄
             </button>

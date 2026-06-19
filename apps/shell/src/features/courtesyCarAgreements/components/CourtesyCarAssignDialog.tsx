@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { AlertCircle, CarFront, CheckCircle2, Loader2, MapPinned, RefreshCcw, X } from "lucide-react";
 import { Button, Card, EmptyState } from "@/components/ui";
 import { createCourtesyCarDraft, fetchAvailableCourtesyCars } from "../api";
 import type { CourtesyCarAgreementDetail, CourtesyCarVehicle } from "../types";
+import type { CourtesyCarAgreementSummary } from "@/types";
 
 type CourtesyCarAssignDialogProps = {
   open: boolean;
   jobId: number | string;
+  existingAgreement?: CourtesyCarAgreementSummary | null;
   onClose: () => void;
 };
 
-export function CourtesyCarAssignDialog({ open, jobId, onClose }: CourtesyCarAssignDialogProps) {
+export function CourtesyCarAssignDialog({ open, jobId, existingAgreement, onClose }: CourtesyCarAssignDialogProps) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -21,6 +23,7 @@ export function CourtesyCarAssignDialog({ open, jobId, onClose }: CourtesyCarAss
   const [vehicles, setVehicles] = useState<CourtesyCarVehicle[]>([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
   const [createdAgreement, setCreatedAgreement] = useState<CourtesyCarAgreementDetail | null>(null);
+  const jobAlreadyLinked = Boolean(existingAgreement);
 
   const loadVehicles = async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -82,6 +85,10 @@ export function CourtesyCarAssignDialog({ open, jobId, onClose }: CourtesyCarAss
   );
 
   const handleCreateDraft = async () => {
+    if (jobAlreadyLinked) {
+      setError("This job already has a courtesy car agreement.");
+      return;
+    }
     if (!selectedVehicleId || creating) return;
     setCreating(true);
     setError(null);
@@ -110,7 +117,9 @@ export function CourtesyCarAssignDialog({ open, jobId, onClose }: CourtesyCarAss
           <div>
             <div className="text-2xl font-bold tracking-[-0.03em] text-slate-900">关联代步车</div>
             <div className="mt-1 text-sm text-slate-500">
-              所有 Job 都可以在这里关联代步车。选择一台可用代步车后会立即创建草稿协议，并把车辆先占用起来。
+              {jobAlreadyLinked
+                ? "This job already has a courtesy car agreement linked. Open the existing agreement instead of creating another draft."
+                : "选择一台可用代步车后会立即创建草稿协议，并把车辆先占用起来。"}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -133,6 +142,20 @@ export function CourtesyCarAssignDialog({ open, jobId, onClose }: CourtesyCarAss
           </div>
         </div>
 
+        {jobAlreadyLinked ? (
+          <div className="border-b border-[rgba(0,0,0,0.08)] bg-amber-50 px-6 py-4 text-sm text-amber-900">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>This job already has a courtesy car agreement. You cannot create another draft for the same job.</div>
+              <Link
+                to={`/courtesy-car-drafts/${existingAgreement?.id}`}
+                className="inline-flex h-9 items-center justify-center rounded-[8px] bg-amber-600 px-3 text-sm font-medium text-white transition hover:opacity-95"
+              >
+                Open existing agreement
+              </Link>
+            </div>
+          </div>
+        ) : null}
+
         <div className="grid min-h-0 flex-1 gap-0 overflow-hidden lg:grid-cols-[1.15fr,0.85fr]">
           <div className="min-h-0 overflow-y-auto p-5">
             {loading ? (
@@ -154,10 +177,14 @@ export function CourtesyCarAssignDialog({ open, jobId, onClose }: CourtesyCarAss
                     <Card
                       key={vehicle.id}
                       className={[
-                        "cursor-pointer border-[rgba(0,0,0,0.08)] transition hover:-translate-y-0.5 hover:shadow-md",
+                        "border-[rgba(0,0,0,0.08)] transition",
+                        jobAlreadyLinked ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:-translate-y-0.5 hover:shadow-md",
                         selected ? "ring-2 ring-[var(--ds-primary)]" : "",
                       ].join(" ")}
-                      onClick={() => setSelectedVehicleId(vehicle.id)}
+                      onClick={() => {
+                        if (jobAlreadyLinked) return;
+                        setSelectedVehicleId(vehicle.id);
+                      }}
                     >
                       <div className="p-4">
                         <div className="flex items-start justify-between gap-3">
@@ -220,6 +247,11 @@ export function CourtesyCarAssignDialog({ open, jobId, onClose }: CourtesyCarAss
                   <div>WOF: {selectedVehicle.wofExpiry || "—"}</div>
                   <div>Rego: {selectedVehicle.regoExpiry || "—"}</div>
                 </div>
+              ) : jobAlreadyLinked ? (
+                <div className="mt-4 rounded-[16px] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                  <div className="font-semibold">Draft creation disabled</div>
+                  <div className="mt-1">Open the existing agreement instead of creating another draft.</div>
+                </div>
               ) : (
                 <div className="mt-4 text-sm text-slate-500">
                   Pick a vehicle from the list to create a draft agreement.
@@ -242,11 +274,7 @@ export function CourtesyCarAssignDialog({ open, jobId, onClose }: CourtesyCarAss
                     variant="primary"
                     className="w-full"
                     onClick={() => {
-                      const params = new URLSearchParams({
-                        agreementId: String(createdAgreement.id),
-                        jobId: String(jobId),
-                      });
-                      navigate(`/courtesy-car-drafts?${params.toString()}`);
+                      navigate(`/courtesy-car?agreementId=${encodeURIComponent(String(createdAgreement.id))}`);
                       onClose();
                     }}
                   >
@@ -266,11 +294,11 @@ export function CourtesyCarAssignDialog({ open, jobId, onClose }: CourtesyCarAss
                   <Button
                     variant="primary"
                     className="flex-1"
-                    disabled={!selectedVehicle || creating}
+                    disabled={jobAlreadyLinked || !selectedVehicle || creating}
                     onClick={() => void handleCreateDraft()}
                     leftIcon={creating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   >
-                    {creating ? "Creating..." : "Create draft"}
+                    {jobAlreadyLinked ? "Already linked" : creating ? "Creating..." : "Create draft"}
                   </Button>
                   <Button className="flex-1" onClick={onClose}>
                     Close

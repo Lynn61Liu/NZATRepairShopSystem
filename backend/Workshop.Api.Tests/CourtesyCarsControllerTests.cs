@@ -45,7 +45,7 @@ public sealed class CourtesyCarsControllerTests
             });
         await context.SaveChangesAsync();
 
-        var controller = new CourtesyCarVehiclesController(context)
+        var controller = new CourtesyCarVehiclesController(context, null!)
         {
             ControllerContext = new ControllerContext
             {
@@ -102,7 +102,7 @@ public sealed class CourtesyCarsControllerTests
         });
         await context.SaveChangesAsync();
 
-        var controller = new CourtesyCarVehiclesController(context)
+        var controller = new CourtesyCarVehiclesController(context, null!)
         {
             ControllerContext = new ControllerContext
             {
@@ -156,7 +156,7 @@ public sealed class CourtesyCarsControllerTests
         });
         await context.SaveChangesAsync();
 
-        var controller = new CourtesyCarVehiclesController(context)
+        var controller = new CourtesyCarVehiclesController(context, null!)
         {
             ControllerContext = new ControllerContext
             {
@@ -209,7 +209,7 @@ public sealed class CourtesyCarsControllerTests
         });
         await context.SaveChangesAsync();
 
-        var controller = new CourtesyCarVehiclesController(context)
+        var controller = new CourtesyCarVehiclesController(context, null!)
         {
             ControllerContext = new ControllerContext
             {

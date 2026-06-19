@@ -35,7 +35,12 @@ function statusLabel(status: CourtesyCarAgreementListItem["status"]) {
   return "Draft";
 }
 
-export function CourtesyCarAgreementsPage() {
+type CourtesyCarAgreementsPageProps = {
+  embedded?: boolean;
+  onClose?: () => void;
+};
+
+export function CourtesyCarAgreementsPage({ embedded = false, onClose }: CourtesyCarAgreementsPageProps = {}) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const highlightAgreementId = searchParams.get("agreementId");
@@ -78,7 +83,22 @@ export function CourtesyCarAgreementsPage() {
   );
 
   return (
-    <div className="min-h-0 flex-1 space-y-6">
+    <div className={embedded ? "min-h-screen space-y-6 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] px-4 py-6 sm:px-6 lg:px-8" : "min-h-0 flex-1 space-y-6"}>
+      {embedded ? (
+        <div className="rounded-[28px] border border-[rgba(0,0,0,0.06)] bg-white/85 p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)] backdrop-blur">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-4xl font-bold tracking-[-0.04em] text-slate-900">Courtesy Car Drafts</div>
+              <div className="mt-2 text-lg text-slate-500">Select a draft to continue the customer handover flow.</div>
+            </div>
+            {onClose ? (
+              <Button onClick={onClose} className="!h-11 rounded-[14px] px-4">
+                返回首页
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : (
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="text-4xl font-bold tracking-[-0.04em] text-slate-900">Courtesy Car Drafts</div>
@@ -88,6 +108,7 @@ export function CourtesyCarAgreementsPage() {
           Back to dashboard
         </Button>
       </div>
+      )}
 
       {loading ? (
         <div className="rounded-[20px] border border-[rgba(0,0,0,0.08)] bg-white p-8 text-center text-sm text-slate-500 shadow-sm">

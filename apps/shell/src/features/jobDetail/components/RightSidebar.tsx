@@ -89,14 +89,17 @@ export function RightSidebar({
             <div className="mb-4 rounded-[12px] border border-[rgba(37,99,235,0.16)] bg-[rgba(37,99,235,0.06)] p-4">
               <div className="text-sm font-semibold text-[var(--ds-text)]">代步车</div>
               <div className="mt-1 text-xs text-[var(--ds-muted)]">
-                所有 Job 都可以在这里关联可用代步车，系统会立即创建草稿协议。
+                {courtesyCarAgreement
+                  ? "This job already has a courtesy car agreement linked."
+                  : "选择一台可用代步车后会立即创建草稿协议，并把车辆先占用起来。"}
               </div>
               <button
                 type="button"
                 onClick={onOpenCourtesyCarAssign}
-                className="mt-3 inline-flex h-9 items-center justify-center rounded-[8px] bg-[var(--ds-primary)] px-3 text-sm font-medium text-white transition hover:opacity-95"
+                disabled={Boolean(courtesyCarAgreement) || !onOpenCourtesyCarAssign}
+                className="mt-3 inline-flex h-9 items-center justify-center rounded-[8px] bg-[var(--ds-primary)] px-3 text-sm font-medium text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 disabled:hover:opacity-100"
               >
-                关联代步车
+                {courtesyCarAgreement ? "已关联代步车" : "关联代步车"}
               </button>
             </div>
 

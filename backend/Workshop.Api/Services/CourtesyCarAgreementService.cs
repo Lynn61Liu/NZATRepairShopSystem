@@ -13,6 +13,7 @@ namespace Workshop.Api.Services;
 public sealed class CourtesyCarAgreementService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private const string CompanyEmailAddress = "info@nzautotech.co.nz";
     private readonly AppDbContext _db;
     private readonly CourtesyCarAgreementStorageService _storage;
     private readonly GmailAccountService _gmailAccountService;
@@ -139,6 +140,72 @@ public sealed class CourtesyCarAgreementService
         }, now);
 
         await _db.SaveChangesAsync(ct);
+        var detail = await MapDetailAsync(agreement, ct);
+        var customerEmail = FirstNonBlank(agreement.EmailTo, agreement.ContactEmail, agreement.JobCustomerEmail);
+        if (string.IsNullOrWhiteSpace(customerEmail))
+        {
+            AddEvent(agreement, "return.email.skipped", "system", "system", new
+            {
+                status = agreement.Status,
+                reason = "Customer email is missing.",
+            }, DateTime.UtcNow);
+            await _db.SaveChangesAsync(ct);
+            return CourtesyCarAgreementMutationResult<CourtesyCarAgreementDetailDto>.Ok(detail);
+        }
+
+        var gmailAccount = await _gmailAccountService.GetEffectiveAccountAsync(ct);
+        if (gmailAccount is null)
+        {
+            AddEvent(agreement, "return.email.failed", "system", "system", new
+            {
+                status = agreement.Status,
+                error = "No Gmail account is configured for sending the return confirmation.",
+            }, DateTime.UtcNow);
+            await _db.SaveChangesAsync(ct);
+            return CourtesyCarAgreementMutationResult<CourtesyCarAgreementDetailDto>.Ok(detail);
+        }
+
+        var sendResult = await _gmailMessageSenderService.SendAsync(
+            new GmailMessageSendRequest(
+                customerEmail.Trim(),
+                $"Courtesy car returned - {agreement.VehiclePlate ?? agreement.JobVehiclePlate ?? agreement.Id.ToString(CultureInfo.InvariantCulture)}",
+                BuildReturnEmailBody(detail),
+                null,
+                null,
+                null,
+                null,
+                gmailAccount.Id,
+                false,
+                null,
+                true,
+                null,
+                CompanyEmailAddress),
+            ct);
+
+        if (sendResult.Ok)
+        {
+            AddEvent(agreement, "return.email.sent", "system", sendResult.GmailAccountEmail, new
+            {
+                sendResult.MessageId,
+                sendResult.ThreadId,
+                recipient = customerEmail.Trim(),
+                cc = CompanyEmailAddress,
+                status = agreement.Status,
+            }, DateTime.UtcNow);
+        }
+        else
+        {
+            AddEvent(agreement, "return.email.failed", "system", gmailAccount.Email, new
+            {
+                sendResult.StatusCode,
+                sendResult.Error,
+                recipient = customerEmail.Trim(),
+                cc = CompanyEmailAddress,
+                status = agreement.Status,
+            }, DateTime.UtcNow);
+        }
+
+        await _db.SaveChangesAsync(ct);
         return CourtesyCarAgreementMutationResult<CourtesyCarAgreementDetailDto>.Ok(await MapDetailAsync(agreement, ct));
     }
 
@@ -158,6 +225,10 @@ public sealed class CourtesyCarAgreementService
             return CourtesyCarAgreementMutationResult<CourtesyCarAgreementDetailDto>.Fail(404, "Job not found.");
         if (job.Customer is null)
             return CourtesyCarAgreementMutationResult<CourtesyCarAgreementDetailDto>.Fail(400, "Job customer is required to create a courtesy car agreement.");
+        var existingAgreement = await _db.CourtesyCarAgreements.AsNoTracking()
+            .AnyAsync(x => x.JobId == job.Id, ct);
+        if (existingAgreement)
+            return CourtesyCarAgreementMutationResult<CourtesyCarAgreementDetailDto>.Fail(409, "This job already has a courtesy car agreement.");
 
         var vehicle = await _db.CourtesyCarVehicles.FirstOrDefaultAsync(x => x.Id == vehicleId, ct);
         if (vehicle is null)
@@ -589,6 +660,23 @@ The attached PDF contains the completed agreement.
 """;
     }
 
+    private static string BuildReturnEmailBody(CourtesyCarAgreementDetailDto detail)
+    {
+        var vehicleLabel = FirstNonBlank(detail.VehiclePlate, detail.JobVehiclePlate, $"agreement {detail.Id}");
+        var customerName = FirstNonBlank(detail.ContactName, detail.JobCustomerName, "customer");
+        var returnedAt = detail.ClosedAt is null
+            ? "recently"
+            : detail.ClosedAt.Value.ToString("dd MMMM yyyy, HH:mm", CultureInfo.GetCultureInfo("en-NZ"));
+
+        return $"""
+Hello {customerName},
+
+This is a confirmation that the courtesy vehicle {vehicleLabel} has been returned and closed on {returnedAt}.
+
+If you have any questions, please reply to this email or contact NZ AUTO TECH.
+""";
+    }
+
     private static List<CourtesyCarAgreementAttachment> LoadAttachments(CourtesyCarAgreement agreement)
     {
         if (string.IsNullOrWhiteSpace(agreement.AttachmentsJson))
@@ -794,7 +882,8 @@ The attached PDF contains the completed agreement.
                 false,
                 null,
                 true,
-                [new GmailMessageAttachment(Path.GetFileName(pdfPath ?? $"courtesy-car-agreement-{agreement.Id}.pdf"), "application/pdf", pdfBytes ?? [])]),
+                [new GmailMessageAttachment(Path.GetFileName(pdfPath ?? $"courtesy-car-agreement-{agreement.Id}.pdf"), "application/pdf", pdfBytes ?? [])],
+                CompanyEmailAddress),
             ct);
 
         if (!sendResult.Ok)

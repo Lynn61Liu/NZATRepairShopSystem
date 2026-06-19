@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Workshop.Api.Data;
 using Workshop.Api.DTOs;
 using Workshop.Api.Models;
+using Workshop.Api.Services;
 
 namespace Workshop.Api.Controllers;
 
@@ -13,10 +14,12 @@ public sealed class CourtesyCarVehiclesController : ControllerBase
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly AppDbContext _db;
+    private readonly CourtesyCarAgreementService _agreementService;
 
-    public CourtesyCarVehiclesController(AppDbContext db)
+    public CourtesyCarVehiclesController(AppDbContext db, CourtesyCarAgreementService agreementService)
     {
         _db = db;
+        _agreementService = agreementService;
     }
 
     [HttpGet]
@@ -96,8 +99,8 @@ public sealed class CourtesyCarVehiclesController : ControllerBase
         _db.CourtesyCarVehicles.Add(vehicle);
         await _db.SaveChangesAsync(ct);
 
-        var currentAgreement = await LoadCurrentAgreementSummaryAsync(vehicle.Id, ct);
-        return Ok(new { vehicle = MapVehicle(vehicle, currentAgreement) });
+        var updatedAgreement = await LoadCurrentAgreementSummaryAsync(vehicle.Id, ct);
+        return Ok(new { vehicle = MapVehicle(vehicle, updatedAgreement) });
     }
 
     [HttpPut("{vehicleId:long}")]
@@ -158,8 +161,8 @@ public sealed class CourtesyCarVehiclesController : ControllerBase
         vehicle.UpdatedAt = now;
         await _db.SaveChangesAsync(ct);
 
-        var currentAgreement = await LoadCurrentAgreementSummaryAsync(vehicle.Id, ct);
-        return Ok(new { vehicle = MapVehicle(vehicle, currentAgreement) });
+        var refreshedAgreement = await LoadCurrentAgreementSummaryAsync(vehicle.Id, ct);
+        return Ok(new { vehicle = MapVehicle(vehicle, refreshedAgreement) });
     }
 
     [HttpPost("{vehicleId:long}/return")]
@@ -168,6 +171,19 @@ public sealed class CourtesyCarVehiclesController : ControllerBase
         var vehicle = await _db.CourtesyCarVehicles.FirstOrDefaultAsync(x => x.Id == vehicleId, ct);
         if (vehicle is null)
             return NotFound(new { error = "Vehicle not found." });
+
+        var currentAgreement = await LoadCurrentAgreementSummaryAsync(vehicle.Id, ct);
+        if (currentAgreement is not null)
+        {
+            var agreementResult = await _agreementService.ReturnAgreementAsync(currentAgreement.AgreementId, ct);
+            if (!agreementResult.Success)
+                return StatusCode(agreementResult.StatusCode, new { error = agreementResult.Error });
+
+            var refreshedVehicle = await _db.CourtesyCarVehicles.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == vehicleId, ct);
+            var closedAgreement = await LoadCurrentAgreementSummaryAsync(vehicle.Id, ct);
+            return Ok(new { vehicle = MapVehicle(refreshedVehicle ?? vehicle, closedAgreement) });
+        }
 
         var now = DateTime.UtcNow;
         vehicle.Status = "available";
@@ -178,8 +194,8 @@ public sealed class CourtesyCarVehiclesController : ControllerBase
         vehicle.UpdatedAt = now;
 
         await _db.SaveChangesAsync(ct);
-        var currentAgreement = await LoadCurrentAgreementSummaryAsync(vehicle.Id, ct);
-        return Ok(new { vehicle = MapVehicle(vehicle, currentAgreement) });
+        var refreshedAgreement = await LoadCurrentAgreementSummaryAsync(vehicle.Id, ct);
+        return Ok(new { vehicle = MapVehicle(vehicle, refreshedAgreement) });
     }
 
     [HttpDelete("{vehicleId:long}")]

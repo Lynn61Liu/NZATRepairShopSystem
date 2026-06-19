@@ -25,6 +25,7 @@ import { CourtesyCarAgreementsPage } from "./pages/courtesyCarAgreements/Courtes
 import { CourtesyCarAgreementPage } from "./pages/courtesyCarAgreements/CourtesyCarAgreementPage";
 import { CourtesyCarAgreementMessagePage } from "./pages/courtesyCarAgreements/CourtesyCarAgreementMessagePage";
 import { AgreementHistoryPage } from "./pages/agreementHistory/AgreementHistoryPage";
+import { CourtesyCarEntryPage } from "./pages/courtesyCarEntry/CourtesyCarEntryPage";
 
 // --- [从 Eric 版引入] 采购相关组件 ---
 import Shopfront from "./components/Shopfront";
@@ -34,6 +35,7 @@ import { ProcurementAdmin } from "./pages/procurement/ProcurementAdmin";
 const router = createBrowserRouter([
   { path: "/paint-tech", element: <PaintTechBoardPage /> },
   { path: "/customer/new-job", element: <CustomerSelfServiceNewJobPage /> },
+  { path: "/courtesy-car", element: <CourtesyCarEntryPage /> },
   { path: "/staff-shop", element: <Shopfront /> },
 
   {

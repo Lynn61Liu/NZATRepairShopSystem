@@ -191,6 +191,7 @@ export function JobDetailPage() {
       <CourtesyCarAssignDialog
         open={courtesyCarAssignOpen}
         jobId={id ?? ""}
+        existingAgreement={jobData.courtesyCarAgreement}
         onClose={() => setCourtesyCarAssignOpen(false)}
       />
       <DeleteJobDialog

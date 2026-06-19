@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using FluentAssertions;
@@ -80,6 +82,66 @@ public sealed class CourtesyCarAgreementServiceTests
         var agreement = await context.CourtesyCarAgreements.FirstAsync();
         agreement.Status.Should().Be("draft");
         agreement.VehiclePlate.Should().Be("LCZ123");
+    }
+
+    [Fact]
+    public async Task CreateDraftAsync_RejectsSecondAgreementForSameJob()
+    {
+        await using var context = CreateDb();
+        var root = TestRoot();
+        SeedJobGraph(context);
+        context.CourtesyCarVehicles.AddRange(
+            new CourtesyCarVehicle
+            {
+                Id = 11,
+                Plate = "LCZ123",
+                Make = "Toyota",
+                Model = "Corolla",
+                Status = "available",
+                AgreedVehicleValue = 22000,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            },
+            new CourtesyCarVehicle
+            {
+                Id = 12,
+                Plate = "LCZ124",
+                Make = "Toyota",
+                Model = "Corolla",
+                Status = "available",
+                AgreedVehicleValue = 22000,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            });
+        context.CourtesyCarAgreements.Add(new CourtesyCarAgreement
+        {
+            Id = 6001,
+            JobId = 1001,
+            VehicleId = 11,
+            CustomerId = 55,
+            Status = "closed",
+            CurrentStep = "closed",
+            JobVehiclePlate = "ABC123",
+            JobCustomerName = "Jane Smith",
+            JobCustomerPhone = "021 123 4567",
+            VehiclePlate = "LCZ123",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await context.SaveChangesAsync();
+
+        var service = CreateServiceWithWorkingGmail(context, root);
+
+        var result = await service.CreateDraftAsync(1001, 12, CancellationToken.None);
+
+        result.Success.Should().BeFalse();
+        result.StatusCode.Should().Be(409);
+        result.Error.Should().Be("This job already has a courtesy car agreement.");
+
+        var vehicle = await context.CourtesyCarVehicles.FirstAsync(x => x.Id == 12);
+        vehicle.Status.Should().Be("available");
+
+        (await context.CourtesyCarAgreements.CountAsync(x => x.JobId == 1001)).Should().Be(1);
     }
 
     [Fact]
@@ -470,6 +532,67 @@ public sealed class CourtesyCarAgreementServiceTests
     }
 
     [Fact]
+    public async Task SubmitAndReturnAsync_CcCompanyEmailOnBothMessages()
+    {
+        await using var context = CreateDb();
+        var root = TestRoot();
+        SeedJobGraph(context);
+        context.CourtesyCarVehicles.Add(new CourtesyCarVehicle
+        {
+            Id = 15,
+            Plate = "LCZ127",
+            Make = "Toyota",
+            Model = "Corolla",
+            Status = "available",
+            AgreedVehicleValue = 22000,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await context.SaveChangesAsync();
+
+        var handler = new RecordingHandler();
+        var service = CreateServiceWithRecordingGmail(context, root, handler);
+        var create = await service.CreateDraftAsync(1001, 15, CancellationToken.None);
+        create.Success.Should().BeTrue();
+
+        var contactUpdate = await service.UpdateAgreementAsync(create.Data!.Id, new UpdateCourtesyCarAgreementRequest
+        {
+            ContactName = "Demo Driver",
+            ContactPhone = "021 555 8888",
+            ContactEmail = "demo.driver@example.com",
+            ContactAddress = "12 Queen Street, Auckland",
+            CurrentStep = "vehicle",
+        }, CancellationToken.None);
+        contactUpdate.Success.Should().BeTrue();
+
+        await UploadAttachmentAsync(service, create.Data.Id, "license_front", "license-front.png");
+        await UploadAttachmentAsync(service, create.Data.Id, "license_back", "license-back.png");
+        await UploadAttachmentAsync(service, create.Data.Id, "signature", "signature.png");
+
+        var termsUpdate = await service.UpdateAgreementAsync(create.Data.Id, new UpdateCourtesyCarAgreementRequest
+        {
+            TermsConfirmed = true,
+            CurrentStep = "review",
+            EmergencyContactName = "Demo Emergency",
+            EmergencyContactPhone = "021 999 0000",
+        }, CancellationToken.None);
+        termsUpdate.Success.Should().BeTrue();
+
+        var submitted = await service.SubmitAsync(create.Data.Id, CancellationToken.None);
+        submitted.Success.Should().BeTrue();
+
+        var returned = await service.ReturnAgreementAsync(create.Data.Id, CancellationToken.None);
+        returned.Success.Should().BeTrue();
+
+        handler.SentMimeMessages.Should().HaveCount(2);
+        handler.SentMimeMessages[0].Should().Contain("To: demo.driver@example.com");
+        handler.SentMimeMessages[0].Should().Contain("Cc: info@nzautotech.co.nz");
+        handler.SentMimeMessages[1].Should().Contain("To: demo.driver@example.com");
+        handler.SentMimeMessages[1].Should().Contain("Cc: info@nzautotech.co.nz");
+        handler.SentMimeMessages[1].Should().Contain("Hello Demo Driver");
+    }
+
+    [Fact]
     public async Task ValidatePreviewAsync_ReturnsErrorWhenSignatureAttachmentIsMissing()
     {
         await using var context = CreateDb();
@@ -650,6 +773,28 @@ public sealed class CourtesyCarAgreementServiceTests
         return new CourtesyCarAgreementService(db, storage, gmailAccountService, gmailSender);
     }
 
+    private static CourtesyCarAgreementService CreateServiceWithRecordingGmail(AppDbContext db, string root, RecordingHandler handler)
+    {
+        var env = new TestWebHostEnvironment(root);
+        var storage = new CourtesyCarAgreementStorageService(env);
+        SeedGmailAccount(db);
+        var gmailAccountService = new GmailAccountService(db);
+
+        var gmailOptions = MsOptions.Create(new GmailOptions
+        {
+            ClientId = "client-id",
+            ClientSecret = "client-secret",
+            Scopes = "https://www.googleapis.com/auth/gmail.send",
+        });
+
+        var httpClientFactory = new RecordingHttpClientFactory(handler);
+        var tokenService = new GmailTokenService(httpClientFactory, gmailOptions, gmailAccountService);
+        var businessHoursService = new BusinessHoursService(MsOptions.Create(new PoFollowUpOptions()));
+        var jobPoStateService = new JobPoStateService(db, businessHoursService, MsOptions.Create(new PoFollowUpOptions()));
+        var gmailSender = new GmailMessageSenderService(db, httpClientFactory, gmailOptions, tokenService, jobPoStateService);
+        return new CourtesyCarAgreementService(db, storage, gmailAccountService, gmailSender);
+    }
+
     private static void SeedGmailAccount(AppDbContext db)
     {
         db.GmailAccounts.Add(new GmailAccount
@@ -718,6 +863,18 @@ public sealed class CourtesyCarAgreementServiceTests
         public HttpClient CreateClient(string name = "") => new(new SuccessfulHandler());
     }
 
+    private sealed class RecordingHttpClientFactory : IHttpClientFactory
+    {
+        private readonly RecordingHandler _handler;
+
+        public RecordingHttpClientFactory(RecordingHandler handler)
+        {
+            _handler = handler;
+        }
+
+        public HttpClient CreateClient(string name = "") => new(_handler);
+    }
+
     private sealed class ThrowingHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
@@ -766,6 +923,69 @@ public sealed class CourtesyCarAgreementServiceTests
             }
 
             throw new InvalidOperationException($"Unexpected outbound request: {request.Method} {request.RequestUri}");
+        }
+    }
+
+    private sealed class RecordingHandler : HttpMessageHandler
+    {
+        public List<string> SentMimeMessages { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var uri = request.RequestUri?.ToString() ?? "";
+            if (uri.Contains("oauth2.googleapis.com/token", StringComparison.OrdinalIgnoreCase))
+            {
+                return JsonResponse(HttpStatusCode.OK, """
+                {
+                  "access_token": "access-token-demo",
+                  "expires_in": 3600,
+                  "scope": "https://www.googleapis.com/auth/gmail.send"
+                }
+                """);
+            }
+
+            if (uri.Contains("/messages/send", StringComparison.OrdinalIgnoreCase))
+            {
+                var payload = await request.Content!.ReadAsStringAsync(cancellationToken);
+                using var doc = JsonDocument.Parse(payload);
+                var raw = doc.RootElement.GetProperty("raw").GetString() ?? "";
+                SentMimeMessages.Add(DecodeBase64Url(raw));
+                return JsonResponse(HttpStatusCode.OK, """
+                {
+                  "id": "sent-message-1",
+                  "threadId": "thread-1",
+                  "internalDate": "1718510400000"
+                }
+                """);
+            }
+
+            if (uri.Contains("/messages/sent-message-1", StringComparison.OrdinalIgnoreCase))
+            {
+                return JsonResponse(HttpStatusCode.OK, """
+                {
+                  "payload": {
+                    "headers": [
+                      { "name": "Message-Id", "value": "<sent-message-1@example.com>" },
+                      { "name": "References", "value": "<thread-1@example.com>" }
+                    ]
+                  }
+                }
+                """);
+            }
+
+            throw new InvalidOperationException($"Unexpected outbound request: {request.Method} {request.RequestUri}");
+        }
+
+        private static string DecodeBase64Url(string raw)
+        {
+            var normalized = raw.Replace('-', '+').Replace('_', '/');
+            var padding = normalized.Length % 4;
+            if (padding == 2)
+                normalized += "==";
+            else if (padding == 3)
+                normalized += "=";
+
+            return Encoding.UTF8.GetString(Convert.FromBase64String(normalized));
         }
     }
 

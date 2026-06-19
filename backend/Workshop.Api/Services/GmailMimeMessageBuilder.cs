@@ -15,6 +15,18 @@ public static class GmailMimeMessageBuilder
         string? replyToRfcMessageId,
         string? referencesHeader,
         IReadOnlyList<GmailMessageAttachment>? attachments = null)
+        => BuildRawMessage(to, null, subject, body, isHtmlBody, htmlBodyOverride, replyToRfcMessageId, referencesHeader, attachments);
+
+    public static string BuildRawMessage(
+        string to,
+        string? cc,
+        string subject,
+        string body,
+        bool isHtmlBody,
+        string? htmlBodyOverride,
+        string? replyToRfcMessageId,
+        string? referencesHeader,
+        IReadOnlyList<GmailMessageAttachment>? attachments = null)
     {
         var normalizedBody = !string.IsNullOrWhiteSpace(htmlBodyOverride)
             ? htmlBodyOverride
@@ -35,6 +47,9 @@ public static class GmailMimeMessageBuilder
             $"Subject: {EncodeMimeHeader(subject)}",
             "MIME-Version: 1.0",
         };
+
+        if (!string.IsNullOrWhiteSpace(cc))
+            headers.Add($"Cc: {cc}");
 
         if (!string.IsNullOrWhiteSpace(replyToRfcMessageId))
             headers.Add($"In-Reply-To: {replyToRfcMessageId.Trim()}");

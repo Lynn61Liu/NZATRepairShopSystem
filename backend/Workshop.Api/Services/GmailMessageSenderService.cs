@@ -54,6 +54,7 @@ public sealed class GmailMessageSenderService
         var recipients = NormalizeRecipientAddresses(request.To);
         if (recipients.Length == 0)
             return GmailMessageSendResult.Fail(400, "At least one valid recipient email is required.");
+        var ccRecipients = NormalizeRecipientAddresses(request.Cc);
 
         var normalizedCorrelationId = request.CorrelationId?.Trim();
         var normalizedSubject = request.Subject.Trim();
@@ -90,6 +91,7 @@ public sealed class GmailMessageSenderService
 
         var rawMessage = GmailMimeMessageBuilder.BuildRawMessage(
             string.Join(", ", recipients),
+            string.Join(", ", ccRecipients),
             normalizedSubject,
             request.Body ?? "",
             request.IsHtmlBody,
@@ -332,6 +334,7 @@ public sealed class GmailMessageSenderService
 
     private static string BuildRawMessage(
         string to,
+        string? cc,
         string subject,
         string body,
         bool isHtmlBody,
@@ -353,6 +356,9 @@ public sealed class GmailMessageSenderService
             "Content-Transfer-Encoding: 8bit",
             "MIME-Version: 1.0",
         };
+
+        if (!string.IsNullOrWhiteSpace(cc))
+            headers.Add($"Cc: {cc}");
 
         if (!string.IsNullOrWhiteSpace(replyToRfcMessageId))
             headers.Add($"In-Reply-To: {replyToRfcMessageId.Trim()}");
@@ -498,7 +504,8 @@ public sealed record GmailMessageSendRequest(
     bool IsHtmlBody = false,
     string? HtmlBodyOverride = null,
     bool BypassDuplicateProtection = false,
-    IReadOnlyList<GmailMessageAttachment>? Attachments = null);
+    IReadOnlyList<GmailMessageAttachment>? Attachments = null,
+    string? Cc = null);
 
 public sealed record GmailMessageSendResult(
     bool Ok,
