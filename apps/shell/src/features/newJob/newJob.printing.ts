@@ -1,5 +1,6 @@
 import type { ServiceType } from "./newJob.types";
 import type { JobSheetRow, JobSheetType } from "@/features/printing/jobSheetPrint";
+import type { PrintMode } from "@/features/printing/printModes";
 import { resolveJobSheetRouteKey, type SilentPrintRouteKey } from "@/features/printing/silentPrint.routes";
 
 export type SaveAndPrintTemplateType = "mech" | "paint";
@@ -19,7 +20,8 @@ type PrintJobSheetWithRoute = (
   type: JobSheetType,
   row: JobSheetRow,
   notes: string,
-  routeKey?: SilentPrintRouteKey
+  routeKey?: SilentPrintRouteKey,
+  printMode?: PrintMode
 ) => void;
 
 export type SaveAndPrintJobSheetOptions = {
@@ -27,6 +29,7 @@ export type SaveAndPrintJobSheetOptions = {
   row: JobSheetRow;
   notes: string;
   print: PrintJobSheetWithRoute;
+  printMode?: PrintMode;
 };
 
 export type SaveAndPrintJobSheetResult = {
@@ -41,6 +44,7 @@ export function printSavedJobSheets({
   row,
   notes,
   print,
+  printMode,
 }: SaveAndPrintJobSheetOptions): SaveAndPrintJobSheetResult {
   const printableTypes = getSaveAndPrintTypes(selectedServices);
   const result: SaveAndPrintJobSheetResult = {
@@ -53,7 +57,7 @@ export function printSavedJobSheets({
   for (const type of printableTypes) {
     try {
       const routeKey = resolveSaveAndPrintRouteKey(type, selectedServices);
-      print(type, row, notes, routeKey);
+      print(type, row, notes, routeKey, printMode);
       result.printedAny = true;
     } catch {
       result.failed = true;

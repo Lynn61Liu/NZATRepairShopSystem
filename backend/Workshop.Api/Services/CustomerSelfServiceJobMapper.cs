@@ -4,8 +4,6 @@ namespace Workshop.Api.Services;
 
 public static class CustomerSelfServiceJobMapper
 {
-    public const string SourceNote = "Customer-self job";
-
     public static IReadOnlyList<string> Validate(CustomerSelfServiceJobRequest? req)
     {
         if (req is null)
@@ -73,11 +71,10 @@ public static class CustomerSelfServiceJobMapper
 
     private static string BuildNotes(string? customerNotes, bool hasWof)
     {
-        var lines = new List<string> { SourceNote };
+        var lines = new List<string>();
         if (hasWof)
         {
             lines.Add("WOF");
-            lines.Add("需改2");
         }
         var trimmedNotes = customerNotes?.Trim();
         if (!string.IsNullOrWhiteSpace(trimmedNotes))

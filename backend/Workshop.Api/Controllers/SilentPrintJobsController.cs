@@ -17,6 +17,8 @@ public sealed class SilentPrintJobsController : ControllerBase
     [HttpPost]
     public IActionResult Create([FromBody] SilentPrintJobRequest request)
     {
+        if (!string.Equals(request.PrintMode, "silent", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { error = "printMode must be silent for silent print jobs." });
         if (string.IsNullOrWhiteSpace(request.RouteKey))
             return BadRequest(new { error = "Route key is required." });
         if (string.IsNullOrWhiteSpace(request.Html))

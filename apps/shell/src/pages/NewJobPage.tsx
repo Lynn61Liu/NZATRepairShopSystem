@@ -66,7 +66,8 @@ export function NewJobPage() {
   const [searchParams] = useSearchParams();
   const toast = useToast();
   const { print } = useJobSheetPrinter({
-    onPopupBlocked: () => toast.error("静默打印失败，请检查打印服务"),
+    onPopupBlocked: () => toast.error("打印预览窗口被浏览器拦截，请允许弹窗后重试"),
+    printMode: "preview",
   });
   const [rego, setRego] = useState("");
   const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null);
@@ -506,6 +507,7 @@ export function NewJobPage() {
       row,
       notes: notesText,
       print,
+      printMode: "preview",
     });
   };
 

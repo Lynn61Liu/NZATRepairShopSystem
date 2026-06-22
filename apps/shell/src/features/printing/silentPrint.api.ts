@@ -1,7 +1,9 @@
 import { requestJson } from "@/utils/api";
+import type { PrintMode } from "./printModes";
 import { resolveSilentPrintRoute, type SilentPrintRouteKey } from "./silentPrint.routes";
 
 export type SilentPrintJobSubmitRequest = {
+  printMode: Extract<PrintMode, "silent">;
   routeKey: SilentPrintRouteKey;
   html: string;
   assetBaseUrl: string;

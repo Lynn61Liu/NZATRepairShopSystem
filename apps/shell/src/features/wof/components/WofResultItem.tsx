@@ -176,7 +176,7 @@ export function WofResultItem({
   const [failReasonQuery, setFailReasonQuery] = useState("");
   const [selectedFailReason, setSelectedFailReason] = useState("");
   const { printTemplate } = useTemplatePrinter({
-    onPopupBlocked: () => toast.error("静默打印失败，请检查打印服务"),
+    onPopupBlocked: () => toast.error("打印预览窗口被浏览器拦截，请允许弹窗后重试"),
   });
 
   useEffect(() => {
@@ -300,9 +300,9 @@ export function WofResultItem({
       return;
     }
     const payload: WofPrintData = buildWofPrintData(normalizedRecord, { ...printContext, jobId: String(jobId) });
-    printTemplate({ type: "wof", data: payload });
-    setMessage("已发送打印任务");
-    toast.success("已发送打印任务");
+    printTemplate({ type: "wof", data: payload, printMode: "preview" });
+    setMessage("已打开打印预览");
+    toast.success("已打开打印预览");
   };
 
   const handleDelete = async () => {
@@ -358,9 +358,11 @@ export function WofResultItem({
               <span className="text-xs text-red-600">Expiry recheck Date: {formatNzDatePlusDays(28)}</span>
             ) : null}
             {!isDraft ? (
-              <Button className="ml-auto" variant="primary" onClick={handlePrint}>
-                {JOB_DETAIL_TEXT.buttons.print}
-              </Button>
+              <div className="ml-auto flex flex-col items-end gap-1">
+                <Button variant="primary" onClick={handlePrint}>
+                  {JOB_DETAIL_TEXT.buttons.print}
+                </Button>
+              </div>
             ) : (
               <div className="ml-auto" />
             )}

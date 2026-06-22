@@ -5,6 +5,7 @@ import {
   Car,
   CheckCircle2,
   ClipboardCheck,
+  Loader2,
   Mail,
   MapPin,
   Paintbrush,
@@ -14,6 +15,9 @@ import {
   User,
 } from "lucide-react";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
+import { useToast } from "@/components/ui";
+import { useJobSheetPrinter } from "@/features/printing/useJobSheetPrinter";
+import { fetchJob } from "@/features/jobDetail/api/jobDetailApi";
 import { withApiBase } from "@/utils/api";
 
 type ServicePath = "wof" | "mechPaint";
@@ -70,6 +74,12 @@ type SubmitResponse = {
   errors?: string[];
 };
 
+type PrintStatus =
+  | { phase: "idle"; message: string }
+  | { phase: "sending"; message: string }
+  | { phase: "sent"; message: string }
+  | { phase: "error"; message: string };
+
 const initialForm: FormState = {
   plate: "",
   hasWof: false,
@@ -109,6 +119,38 @@ export function CustomerSelfServiceNewJobPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [createdJobId, setCreatedJobId] = useState("");
+  const [printStatus, setPrintStatus] = useState<PrintStatus>({ phase: "idle", message: "等待发送机修单" });
+  const printedJobIdRef = useRef("");
+  const printRequestJobIdRef = useRef("");
+  const toast = useToast();
+  const { printById } = useJobSheetPrinter({
+    printMode: "silent",
+    onError: (message) => toast.error(message),
+    resolveById: async (jobId) => {
+      const res = await fetchJob(jobId);
+      if (!res.ok) return null;
+
+      const job = (res.data as any)?.job ?? res.data;
+      const row = {
+        plate: job?.vehicle?.plate ?? "",
+        vehicleModel: [job?.vehicle?.make, job?.vehicle?.model, job?.vehicle?.year]
+          .filter(Boolean)
+          .join(" "),
+        customerCode: job?.customer?.businessCode ?? "",
+        customerName: job?.customer?.name ?? "",
+        createdAt: job?.createdAt ?? "",
+        panels: null,
+        nzFirstRegistration: job?.vehicle?.nzFirstRegistration ?? "",
+        vin: job?.vehicle?.vin ?? "",
+      };
+
+      return {
+        row,
+        notes: job?.notes ?? job?.customer?.notes ?? "",
+        routeKey: job?.hasWofService ? "job-wof" : "job-mech",
+      };
+    },
+  });
 
   useEffect(() => {
     const previousTitle = document.title;
@@ -261,6 +303,34 @@ export function CustomerSelfServiceNewJobPage() {
     };
   }, [form.plate, plateLookup?.importQueued, vehicleInfo]);
 
+  useEffect(() => {
+    if (step !== "success") return;
+    if (selectedPath !== "wof") return;
+    if (!createdJobId) return;
+    if (printRequestJobIdRef.current === createdJobId) return;
+
+    printRequestJobIdRef.current = createdJobId;
+    setPrintStatus({ phase: "sending", message: "正在发送机修单到打印机" });
+
+    let cancelled = false;
+    void (async () => {
+      const result = await printById(createdJobId, "mech");
+      if (cancelled) return;
+
+      if (result.ok) {
+        printedJobIdRef.current = createdJobId;
+        setPrintStatus({ phase: "sent", message: "已发送，正在等待打印完成" });
+        return;
+      }
+
+      setPrintStatus({ phase: "error", message: result.error || "打印失败，请重试" });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [createdJobId, printById, selectedPath, step]);
+
   const submit = async () => {
     if (submitting) return;
     setSubmitting(true);
@@ -311,6 +381,9 @@ export function CustomerSelfServiceNewJobPage() {
     setSubmitting(false);
     setSubmitError("");
     setCreatedJobId("");
+    setPrintStatus({ phase: "idle", message: "等待发送机修单" });
+    printedJobIdRef.current = "";
+    printRequestJobIdRef.current = "";
   };
 
   const serviceLabel = selectedPath === "wof" ? "WOF" : "Repair";
@@ -415,7 +488,28 @@ export function CustomerSelfServiceNewJobPage() {
                 />
               ) : null}
 
-              {step === "success" ? <SuccessStep jobId={createdJobId} form={form} serviceLabel={serviceLabel} onReset={reset} /> : null}
+              {step === "success" ? (
+                <SuccessStep
+                  jobId={createdJobId}
+                  form={form}
+                  serviceLabel={serviceLabel}
+                  printStatus={printStatus}
+                  onRetryPrint={() => {
+                    printRequestJobIdRef.current = "";
+                    setPrintStatus({ phase: "sending", message: "正在发送机修单到打印机" });
+                    void (async () => {
+                      const result = await printById(createdJobId, "mech");
+                      if (result.ok) {
+                        printedJobIdRef.current = createdJobId;
+                        setPrintStatus({ phase: "sent", message: "已发送，正在等待打印完成" });
+                        return;
+                      }
+                      setPrintStatus({ phase: "error", message: result.error || "打印失败，请重试" });
+                    })();
+                  }}
+                  onReset={reset}
+                />
+              ) : null}
             </div>
           </section>
         </div>
@@ -768,7 +862,21 @@ function ReviewStep({
   );
 }
 
-function SuccessStep({ jobId, form, serviceLabel, onReset }: { jobId: string; form: FormState; serviceLabel: string; onReset: () => void }) {
+function SuccessStep({
+  jobId,
+  form,
+  serviceLabel,
+  printStatus,
+  onRetryPrint,
+  onReset,
+}: {
+  jobId: string;
+  form: FormState;
+  serviceLabel: string;
+  printStatus: PrintStatus;
+  onRetryPrint: () => void;
+  onReset: () => void;
+}) {
   return (
     <div className="flex min-h-[620px] flex-col items-center justify-center gap-6 py-8 text-center">
       <div className="flex h-24 w-24 items-center justify-center rounded-full bg-green-500 text-white shadow-xl shadow-green-100">
@@ -781,6 +889,30 @@ function SuccessStep({ jobId, form, serviceLabel, onReset }: { jobId: string; fo
       <div className="rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 px-8 py-5">
         <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Job ID</div>
         <div className="mt-1 font-mono text-4xl font-black text-slate-900">{jobId || "-"}</div>
+      </div>
+      <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-5 text-left shadow-sm">
+        <div className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">打印提示</div>
+        <div className="mt-3 flex items-start gap-3">
+          <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+            {printStatus.phase === "sending" ? <Loader2 size={20} className="animate-spin" /> : <ClipboardCheck size={20} />}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-base font-bold text-slate-900">{printStatus.message}</div>
+            <div className="mt-1 text-sm leading-6 text-slate-500">WOF 提交已完成，系统会自动发送机修单到打印机。</div>
+            {printStatus.phase === "error" ? (
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={onRetryPrint}
+                  className="h-10 rounded-xl bg-red-500 px-4 text-sm font-bold text-white shadow-sm shadow-red-200"
+                >
+                  重试发送
+                </button>
+                <span className="text-sm text-red-600">{printStatus.message}</span>
+              </div>
+            ) : null}
+          </div>
+        </div>
       </div>
       <div className="grid w-full max-w-md grid-cols-2 gap-3 text-left">
         <div className="rounded-2xl bg-red-50 p-4">

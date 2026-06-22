@@ -1,12 +1,12 @@
-export type SilentPrintRouteKey = "job-mech" | "job-wof" | "job-pnp" | "wof-record";
+export type SilentPrintRouteKey = "job-mech" | "job-wof" | "job-pnp" | "wof-record" | "small-tag";
 
-export type SilentPrintPrinterFamily = "hp" | "epson";
+export type SilentPrintPrinterFamily = "hp" | "epson" | "brother";
 
 export type SilentPrintRoute = {
   routeKey: SilentPrintRouteKey;
   printerFamily: SilentPrintPrinterFamily;
   printerName: string;
-  templateKey: "mech" | "pnp" | "wof-record";
+  templateKey: "mech" | "pnp" | "wof-record" | "small-tag";
 };
 
 const SILENT_PRINT_ROUTE_TABLE: Record<SilentPrintRouteKey, SilentPrintRoute> = {
@@ -31,8 +31,14 @@ const SILENT_PRINT_ROUTE_TABLE: Record<SilentPrintRouteKey, SilentPrintRoute> = 
   "wof-record": {
     routeKey: "wof-record",
     printerFamily: "epson",
-    printerName: "Epson",
+    printerName: "EPSON LQ-730KII",
     templateKey: "wof-record",
+  },
+  "small-tag": {
+    routeKey: "small-tag",
+    printerFamily: "brother",
+    printerName: "Brother QL-810W",
+    templateKey: "small-tag",
   },
 };
 
@@ -57,4 +63,8 @@ export function resolveJobSheetRouteKey(
 
 export function resolveWofRecordRouteKey(): SilentPrintRouteKey {
   return "wof-record";
+}
+
+export function resolveSmallTagRouteKey(): SilentPrintRouteKey {
+  return "small-tag";
 }

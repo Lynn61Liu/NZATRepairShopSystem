@@ -70,3 +70,18 @@ test("save and print uses job-wof route when wof is selected", () => {
 
   assert.deepEqual(calls, ["mech:job-wof"]);
 });
+
+test("save and print forwards explicit print mode", () => {
+  const calls: Array<string> = [];
+  printSavedJobSheets({
+    selectedServices: ["mech"],
+    row: { plate: "ABC123" },
+    notes: "notes",
+    printMode: "silent",
+    print(type, _row, _notes, routeKey, printMode) {
+      calls.push(`${type}:${routeKey}:${printMode}`);
+    },
+  });
+
+  assert.deepEqual(calls, ["mech:job-mech:silent"]);
+});

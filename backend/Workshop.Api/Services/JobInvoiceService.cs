@@ -1464,7 +1464,7 @@ public sealed class JobInvoiceService
 
         var rego = string.IsNullOrWhiteSpace(vehicle.Plate) ? "[REGO]" : vehicle.Plate.Trim().ToUpperInvariant();
         var poPrefix = string.IsNullOrWhiteSpace(job.PoNumber)
-            ? $"Po Pending {rego}"
+            ? $"PO# Pending {rego}"
             : $"{job.PoNumber.Trim()} {rego}";
         var year = vehicle.Year.HasValue && vehicle.Year.Value > 0 ? vehicle.Year.Value.ToString() : "[YEAR]";
         var make = string.IsNullOrWhiteSpace(vehicle.Make) ? "[MAKE]" : vehicle.Make.Trim();

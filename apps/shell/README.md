@@ -85,6 +85,11 @@ pnpm dev
 ```
 
 If you prefer a globally installed pnpm instead of Corepack shims, install with `npm install -g pnpm@11.2.2`.
+
+## Silent print config
+
+If a machine does not have `EPSON LQ-730KII` installed, leave `VITE_SILENT_PRINT_QUEUE_EPSON` empty in `apps/shell/.env.local` and the WOF print button will stay disabled in the UI.
+`VITE_SILENT_PRINT_QUEUE_BROTHER` is reserved for future small-tag printing with `Brother QL-810W`.
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

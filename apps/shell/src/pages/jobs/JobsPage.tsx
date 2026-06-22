@@ -403,8 +403,9 @@ export function JobsPage() {
   );
 
   const { printById } = useJobSheetPrinter({
-    onPopupBlocked: () => toast.error("静默打印失败，请检查打印服务"),
+    onPopupBlocked: () => toast.error("打印预览窗口被浏览器拦截，请允许弹窗后重试"),
     resolveById: resolveJobSheetData,
+    printMode: "preview",
   });
 
   const handlePrintTemplate = useCallback(

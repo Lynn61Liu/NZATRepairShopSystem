@@ -6,6 +6,7 @@ import { JOB_DETAIL_TEXT } from "@/features/jobDetail/jobDetail.constants";
 import type { TagOption } from "@/components/MultiTagSelect";
 import { MultiTagSelect } from "@/components/MultiTagSelect";
 import { formatJobDisplayId } from "@/utils/jobId";
+import { getDurationDays } from "@/features/paint/paintBoard.utils";
 import { useJobSheetPrinter } from "@/features/printing/useJobSheetPrinter";
 import { resolveJobSheetRouteKey } from "@/features/printing/silentPrint.routes";
 
@@ -145,7 +146,14 @@ export function JobHeader({
     }
   };
 
-  const { print } = useJobSheetPrinter();
+  const { print } = useJobSheetPrinter({ printMode: "preview" });
+  const inShopPill = useMemo(() => {
+    if (!createdAt) return null;
+    const days = getDurationDays(createdAt);
+    if (!Number.isFinite(days)) return null;
+    const variant: "danger" | "warning" | "neutral" = days >= 5 ? "danger" : days >= 3 ? "warning" : "neutral";
+    return { label: `${days}天在店`, variant };
+  }, [createdAt]);
 
   const handlePrint = (type: "mech" | "paint") => {
     const row = {
@@ -191,11 +199,20 @@ export function JobHeader({
       <div className="flex w-full flex-wrap items-center gap-2 md:flex-nowrap">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold text-[var(--ds-text)]">{JOB_DETAIL_TEXT.labels.jobDetail}</h1>
-          <p className="text-sm text-[var(--ds-muted)] mt-1">{formatJobDisplayId(jobId)}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <p className="text-sm text-[var(--ds-muted)]">{formatJobDisplayId(jobId, createdAt)}</p>
+            {inShopPill ? (
+              <TagPill
+                label={inShopPill.label}
+                variant={inShopPill.variant}
+                className="whitespace-nowrap"
+              />
+            ) : null}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <TagPill label={status} className={getStatusColor(status)} />
+          {status === "In Shop" ? null : <TagPill label={status} className={getStatusColor(status)} />}
           {isUrgent ? (
             <TagPill
               label={JOB_DETAIL_TEXT.labels.urgent}

@@ -10,6 +10,7 @@ import {
     ChevronDown,
     CircleDollarSign,
     Clock3,
+  LayoutDashboard,
   Eye,
   FileSignature,
   FileText,
@@ -57,6 +58,7 @@ export function Sidebar() {
   const location = useLocation();
 
   const mainItems: SidebarItem[] = [
+    { to: "/", label: "Dashboard", icon: LayoutDashboard },
     { to: "/jobs", label: "工单", icon: FileText },
     { to: "/worklog", label: "工时记录", icon: Clock3, badge: worklogAlertCount },
     { to: "/parts-flow", label: "配件流转", icon: PackageOpen },

@@ -1,12 +1,13 @@
 import { buildJobSheetHtml, type JobSheetRow, type JobSheetType } from "./jobSheetPrint";
+import type { PrintMode } from "./printModes";
 import { buildWofHtml, type WofPrintData } from "./wofPrint";
 import type { SilentPrintRouteKey } from "./silentPrint.routes";
 
 export type PrintTemplateType = JobSheetType | "wof";
 
 export type PrintTemplatePayload =
-  | { type: JobSheetType; data: { row: JobSheetRow; notes: string } }
-  | { type: "wof"; data: WofPrintData };
+  | { type: JobSheetType; data: { row: JobSheetRow; notes: string }; printMode?: PrintMode }
+  | { type: "wof"; data: WofPrintData; printMode?: PrintMode };
 
 export type RoutedPrintTemplatePayload = PrintTemplatePayload & {
   routeKey?: SilentPrintRouteKey;

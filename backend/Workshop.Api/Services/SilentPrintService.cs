@@ -1,6 +1,7 @@
 namespace Workshop.Api.Services;
 
 public sealed record SilentPrintJobRequest(
+    string PrintMode,
     string RouteKey,
     string Html,
     string AssetBaseUrl,
@@ -33,6 +34,9 @@ public sealed class SilentPrintService
 
     public SilentPrintJobResponse Dispatch(SilentPrintJobRequest request)
     {
+        if (!string.Equals(request.PrintMode, "silent", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Silent print jobs require printMode=silent.");
+
         var jobId = Guid.NewGuid().ToString("N");
         _ = Task.Run(async () =>
         {
