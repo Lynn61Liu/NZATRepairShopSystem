@@ -2199,7 +2199,7 @@ public class JobsController : ControllerBase
                     discount = "",
                     notes = customer.Notes ?? ""
                 },
-                invoice = MapInvoice(invoiceSync.Invoice),
+                invoice = MapInvoice(invoiceSync.Invoice, id),
                 steps = new
                 {
                     replacement = replacementStep,
@@ -2341,7 +2341,7 @@ public class JobsController : ControllerBase
     private static string FormatDateTime(DateTime dateTime)
         => DateTimeHelper.FormatUtc(dateTime);
 
-    private static object? MapInvoice(JobInvoice? invoice)
+    private static object? MapInvoice(JobInvoice? invoice, long jobId)
     {
         if (invoice is null) return null;
 
@@ -2361,6 +2361,14 @@ public class JobsController : ControllerBase
             tenantId = invoice.TenantId,
             requestPayloadJson = invoice.RequestPayloadJson,
             responsePayloadJson = invoice.ResponsePayloadJson,
+            pdfUrl = (invoice.PdfContent is { Length: > 0 } || (!string.IsNullOrWhiteSpace(invoice.PdfFilePath) && System.IO.File.Exists(invoice.PdfFilePath)))
+                ? $"/api/jobs/{jobId}/xero-draft-invoice/pdf"
+                : null,
+            pdfPreviewUrl = (invoice.PdfPreviewContent is { Length: > 0 } || (!string.IsNullOrWhiteSpace(invoice.PdfPreviewPath) && System.IO.File.Exists(invoice.PdfPreviewPath)))
+                ? $"/api/jobs/{jobId}/xero-draft-invoice/pdf-preview"
+                : null,
+            pdfDownloadedAt = invoice.PdfDownloadedAt,
+            pdfPreviewGeneratedAt = invoice.PdfPreviewGeneratedAt,
             createdAt = invoice.CreatedAt,
             updatedAt = invoice.UpdatedAt,
         };

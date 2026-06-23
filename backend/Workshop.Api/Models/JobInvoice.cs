@@ -16,6 +16,12 @@ public class JobInvoice
     public string? TenantId { get; set; }
     public string? RequestPayloadJson { get; set; }
     public string? ResponsePayloadJson { get; set; }
+    public byte[]? PdfContent { get; set; }
+    public byte[]? PdfPreviewContent { get; set; }
+    public string? PdfFilePath { get; set; }
+    public string? PdfPreviewPath { get; set; }
+    public DateTime? PdfDownloadedAt { get; set; }
+    public DateTime? PdfPreviewGeneratedAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

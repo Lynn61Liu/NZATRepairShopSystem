@@ -174,30 +174,52 @@ export const buildJobSheetHtml = (type: JobSheetType, row: JobSheetRow, notes: s
   </style>
 </head>
 <body>
-  <button class="noprint" onclick="window.print()">Print</button>
   <div class="page">
     <div class="bg"></div>
     ${fieldsHtml}
   </div>
+  <script>
+    window.addEventListener("load", function () {
+      window.focus();
+      window.print();
+    });
+    window.addEventListener("afterprint", function () {
+      try {
+        var frame = window.frameElement;
+        if (frame && frame.parentNode) {
+          frame.parentNode.removeChild(frame);
+        }
+      } catch {}
+    });
+  </script>
 </body>
 </html>`;
 };
 
-export const openJobSheetPopup = (onPopupBlocked?: () => void) => {
-  const popup = window.open("", "_blank", "width=900,height=650");
-  if (!popup) {
+export const createJobSheetPrintFrame = (onPopupBlocked?: () => void) => {
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  iframe.style.opacity = "0";
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.tabIndex = -1;
+
+  const { body } = document;
+  if (!body) {
     onPopupBlocked?.();
     return null;
   }
-  popup.document.write("<html><body>Loading...</body></html>");
-  popup.document.close();
-  return popup;
+  body.appendChild(iframe);
+  return iframe;
 };
 
-export const renderJobSheetPopup = (popup: Window, html: string, delayMs = 50) => {
+export const renderJobSheetPopup = (popup: Window, html: string) => {
   popup.document.open();
   popup.document.write(html);
   popup.document.close();
   popup.focus();
-  window.setTimeout(() => popup.print(), delayMs);
 };

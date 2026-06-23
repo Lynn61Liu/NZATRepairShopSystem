@@ -54,7 +54,7 @@ public class JobXeroInvoicesController : ControllerBase
 
         return Ok(new
         {
-            invoice = MapInvoice(result.Invoice),
+            invoice = MapInvoice(result.Invoice, id),
             scope = result.Scope,
             accessTokenExpiresIn = result.AccessTokenExpiresIn,
             latestRefreshToken = result.LatestRefreshToken,
@@ -78,9 +78,49 @@ public class JobXeroInvoicesController : ControllerBase
 
         return Ok(new
         {
-            invoice = MapInvoice(result.Invoice),
+            invoice = MapInvoice(result.Invoice, id),
             xero = result.Payload,
         });
+    }
+
+    [HttpPost("pdf/pull")]
+    public async Task<IActionResult> PullPdfFromXero(long id, CancellationToken ct)
+    {
+        var result = await _jobInvoiceService.SyncInvoicePdfAsync(id, ct);
+        if (!result.Ok)
+        {
+            return StatusCode(result.StatusCode, new
+            {
+                error = result.Error,
+            });
+        }
+
+        return Ok(new
+        {
+            invoice = MapInvoice(result.Invoice, id),
+        });
+    }
+
+    [HttpGet("pdf")]
+    public async Task<IActionResult> DownloadPdf(long id, CancellationToken ct)
+    {
+        var result = await _jobInvoiceService.GetPdfAsync(id, ct);
+        if (result is null)
+            return NotFound(new { error = "Invoice PDF not found." });
+
+        Response.Headers.ContentDisposition = $"inline; filename=\"{result.FileName}\"";
+        return File(result.Bytes, result.ContentType);
+    }
+
+    [HttpGet("pdf-preview")]
+    public async Task<IActionResult> DownloadPdfPreview(long id, CancellationToken ct)
+    {
+        var result = await _jobInvoiceService.GetPdfPreviewAsync(id, ct);
+        if (result is null)
+            return NotFound(new { error = "Invoice PDF preview not found." });
+
+        Response.Headers.ContentDisposition = $"inline; filename=\"{result.FileName}\"";
+        return File(result.Bytes, result.ContentType);
     }
 
     [HttpPost("attach")]
@@ -124,11 +164,11 @@ public class JobXeroInvoicesController : ControllerBase
 
         return Ok(new
         {
-            invoice = MapInvoice(result.Invoice, result.LatestPayment),
+            invoice = MapInvoice(result.Invoice, id, result.LatestPayment),
         });
     }
 
-    private static object? MapInvoice(Workshop.Api.Models.JobInvoice? invoice, Workshop.Api.Models.JobPayment? latestPayment = null)
+    private static object? MapInvoice(Workshop.Api.Models.JobInvoice? invoice, long jobId, Workshop.Api.Models.JobPayment? latestPayment = null)
     {
         if (invoice is null) return null;
 
@@ -148,6 +188,14 @@ public class JobXeroInvoicesController : ControllerBase
             tenantId = invoice.TenantId,
             requestPayloadJson = invoice.RequestPayloadJson,
             responsePayloadJson = invoice.ResponsePayloadJson,
+            pdfUrl = (invoice.PdfContent is { Length: > 0 } || (!string.IsNullOrWhiteSpace(invoice.PdfFilePath) && System.IO.File.Exists(invoice.PdfFilePath)))
+                ? $"/api/jobs/{jobId}/xero-draft-invoice/pdf"
+                : null,
+            pdfPreviewUrl = (invoice.PdfPreviewContent is { Length: > 0 } || (!string.IsNullOrWhiteSpace(invoice.PdfPreviewPath) && System.IO.File.Exists(invoice.PdfPreviewPath)))
+                ? $"/api/jobs/{jobId}/xero-draft-invoice/pdf-preview"
+                : null,
+            pdfDownloadedAt = invoice.PdfDownloadedAt,
+            pdfPreviewGeneratedAt = invoice.PdfPreviewGeneratedAt,
             createdAt = invoice.CreatedAt,
             updatedAt = invoice.UpdatedAt,
             latestPayment = latestPayment is null ? null : new

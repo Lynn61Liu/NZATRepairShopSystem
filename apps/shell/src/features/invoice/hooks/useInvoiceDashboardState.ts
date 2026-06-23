@@ -3,7 +3,7 @@ import { useToast } from "@/components/ui";
 import { requestJson } from "@/utils/api";
 import { usePoEmailDraftActions } from "@/features/invoice/hooks/usePoEmailDraftActions";
 import { notifyPoDashboardRefresh } from "@/utils/refreshSignals";
-import { pullJobXeroDraftInvoice, syncJobXeroDraftInvoice, updateJobInvoiceXeroState, updateJobPoSelection } from "@/features/jobDetail/api/jobDetailApi";
+import { pullJobXeroDraftInvoice, pullJobXeroDraftInvoicePdf, syncJobXeroDraftInvoice, updateJobInvoiceXeroState, updateJobPoSelection } from "@/features/jobDetail/api/jobDetailApi";
 import type {
   AmountsAre,
   EmailState,
@@ -476,6 +476,7 @@ export function useInvoiceDashboardState({
   const [selectedDetectionId, setSelectedDetectionId] = useState<string | null>(null);
   const [hasExternalDraftSend, setHasExternalDraftSend] = useState(false);
   const [refreshingFromXero, setRefreshingFromXero] = useState(false);
+  const [pullingInvoicePdf, setPullingInvoicePdf] = useState(false);
   const [updatingXeroState, setUpdatingXeroState] = useState(false);
   const [manualPoNumber, setManualPoNumber] = useState("");
   const [poPanelLoading, setPoPanelLoading] = useState(true);
@@ -616,6 +617,48 @@ export function useInvoiceDashboardState({
       toast.success("Invoice pulled from Xero");
     } finally {
       setRefreshingFromXero(false);
+    }
+  };
+
+  const pullInvoicePdf = async () => {
+    if (!jobId) return { success: false, message: "Missing job id." };
+
+    setPullingInvoicePdf(true);
+    try {
+      const res = await pullJobXeroDraftInvoicePdf(jobId);
+      if (!res.ok) {
+        const message = res.error || "Failed to pull invoice PDF from Xero";
+        toast.error(message);
+        return { success: false, message };
+      }
+
+      const pulledInvoice = res.data?.invoice;
+      if (pulledInvoice) {
+        setSourceInvoice(pulledInvoice);
+        const now = new Date().toLocaleString("zh-CN", { hour12: false }).replace(/\//g, "-");
+        setInvoice((prev) => ({
+          ...prev,
+          contact: pulledInvoice.contactName || prev.contact,
+          reference: pulledInvoice.reference || prev.reference,
+          invoiceNote: pulledInvoice.invoiceNote ?? prev.invoiceNote,
+          amountsAre: pulledInvoice.lineAmountTypes ? mapLineAmountTypes(pulledInvoice.lineAmountTypes) : prev.amountsAre,
+          issueDate: pulledInvoice.invoiceDate || prev.issueDate,
+          invoiceNumber: pulledInvoice.externalInvoiceNumber || prev.invoiceNumber,
+          xeroInvoiceId: pulledInvoice.externalInvoiceId || prev.xeroInvoiceId,
+          xeroStatus: mapXeroStatus(pulledInvoice.externalStatus),
+          latestPaymentMethod: pulledInvoice.latestPayment?.method || prev.latestPaymentMethod,
+          latestPaymentReference: pulledInvoice.latestPayment?.reference || prev.latestPaymentReference,
+          status: resolveInvoiceStatus(pulledInvoice.externalStatus, savedPoNumber) || prev.status,
+          synced: true,
+          lastSyncTime: pulledInvoice.updatedAt || now,
+          lastSyncDirection: "Xero -> System",
+        }));
+      }
+
+      toast.success("Invoice PDF pulled from Xero");
+      return { success: true, message: "Invoice PDF pulled from Xero" };
+    } finally {
+      setPullingInvoicePdf(false);
     }
   };
 
@@ -1192,17 +1235,24 @@ export function useInvoiceDashboardState({
   const invoicePanel = {
     persistedInvoice,
     sourceInvoice,
+    activeInvoice: sourceInvoice ?? persistedInvoice ?? null,
     invoice,
     items,
     refreshingFromXero,
+    pullingInvoicePdf,
     updatingXeroState,
     referencePreview,
+    invoicePdfUrl: (sourceInvoice ?? persistedInvoice ?? null)?.pdfUrl ?? "",
+    invoicePdfPreviewUrl: (sourceInvoice ?? persistedInvoice ?? null)?.pdfPreviewUrl ?? "",
+    invoicePdfDownloadedAt: (sourceInvoice ?? persistedInvoice ?? null)?.pdfDownloadedAt ?? "",
+    invoicePdfPreviewGeneratedAt: (sourceInvoice ?? persistedInvoice ?? null)?.pdfPreviewGeneratedAt ?? "",
     subtotal,
     taxTotal,
     totalAmount,
     updateXeroState,
     resolveXeroStateOption,
     refreshFromXero,
+    pullInvoicePdf,
     openInXero,
   };
 
@@ -1219,6 +1269,8 @@ export function useInvoiceDashboardState({
     poLockReason,
     hasExternalDraftSend,
     unreadReplyCount,
+    invoicePdfPreviewUrl: (sourceInvoice ?? persistedInvoice ?? null)?.pdfPreviewUrl ?? "",
+    invoicePdfPreviewGeneratedAt: (sourceInvoice ?? persistedInvoice ?? null)?.pdfPreviewGeneratedAt ?? "",
     totalAmount,
     manualPoNumber,
     setSelectedDetectionId,
@@ -1244,6 +1296,7 @@ export function useInvoiceDashboardState({
     detections,
     selectedDetectionId,
     refreshingFromXero,
+    pullingInvoicePdf,
     updatingXeroState,
     referencePreview,
     poPanelLoading,
@@ -1261,6 +1314,7 @@ export function useInvoiceDashboardState({
     updateXeroState,
     resolveXeroStateOption,
     refreshFromXero,
+    pullInvoicePdf,
     openInXero,
     createPoDraft,
     recreatePoDraft,

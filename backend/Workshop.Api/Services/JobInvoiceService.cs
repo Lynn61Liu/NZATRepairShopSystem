@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Workshop.Api.Data;
@@ -18,6 +19,7 @@ public sealed class JobInvoiceService
     private readonly XeroInvoiceService _xeroInvoiceService;
     private readonly XeroPaymentService _xeroPaymentService;
     private readonly XeroPaymentOptions _xeroPaymentOptions;
+    private readonly IWebHostEnvironment _environment;
     private readonly ILogger<JobInvoiceService> _logger;
 
     public JobInvoiceService(
@@ -27,6 +29,7 @@ public sealed class JobInvoiceService
         XeroInvoiceService xeroInvoiceService,
         XeroPaymentService xeroPaymentService,
         Microsoft.Extensions.Options.IOptions<XeroPaymentOptions> xeroPaymentOptions,
+        IWebHostEnvironment environment,
         ILogger<JobInvoiceService> logger)
     {
         _db = db;
@@ -35,7 +38,24 @@ public sealed class JobInvoiceService
         _xeroInvoiceService = xeroInvoiceService;
         _xeroPaymentService = xeroPaymentService;
         _xeroPaymentOptions = xeroPaymentOptions.Value;
+        _environment = environment;
         _logger = logger;
+    }
+
+    private async Task EnsureJobInvoicePdfColumnsAsync(CancellationToken ct)
+    {
+        if (!_db.Database.IsRelational())
+            return;
+
+        await _db.Database.ExecuteSqlRawAsync("""
+            ALTER TABLE IF EXISTS job_invoices
+              ADD COLUMN IF NOT EXISTS pdf_content BYTEA,
+              ADD COLUMN IF NOT EXISTS pdf_preview_content BYTEA,
+              ADD COLUMN IF NOT EXISTS pdf_file_path TEXT,
+              ADD COLUMN IF NOT EXISTS pdf_preview_path TEXT,
+              ADD COLUMN IF NOT EXISTS pdf_downloaded_at TIMESTAMPTZ,
+              ADD COLUMN IF NOT EXISTS pdf_preview_generated_at TIMESTAMPTZ;
+        """, ct);
     }
 
     public sealed record ServiceSelectionSnapshot(long ServiceCatalogItemId, string ServiceNameSnapshot);
@@ -44,6 +64,7 @@ public sealed class JobInvoiceService
     {
         try
         {
+            await EnsureJobInvoicePdfColumnsAsync(ct);
             var totalStopwatch = Stopwatch.StartNew();
 
             var existingLookupStopwatch = Stopwatch.StartNew();
@@ -377,6 +398,7 @@ public sealed class JobInvoiceService
 
     public async Task<JobInvoiceCreateResult> SyncFromXeroAsync(long jobId, CancellationToken ct)
     {
+        await EnsureJobInvoicePdfColumnsAsync(ct);
         var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
         if (jobInvoice is null)
             return JobInvoiceCreateResult.Fail(404, "Job invoice not found.");
@@ -389,6 +411,7 @@ public sealed class JobInvoiceService
 
     public async Task<JobInvoiceCreateResult> SyncFromXeroInvoiceIdAsync(Guid invoiceId, CancellationToken ct)
     {
+        await EnsureJobInvoicePdfColumnsAsync(ct);
         var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.ExternalInvoiceId == invoiceId.ToString(), ct);
         if (jobInvoice is null)
             return JobInvoiceCreateResult.Fail(404, "Linked job invoice not found.");
@@ -415,8 +438,29 @@ public sealed class JobInvoiceService
         return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true, payload: xeroResult.Payload, requestBody: request);
     }
 
+    public async Task<JobInvoiceCreateResult> SyncInvoicePdfAsync(long jobId, CancellationToken ct)
+    {
+        await EnsureJobInvoicePdfColumnsAsync(ct);
+        var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (jobInvoice is null)
+            return JobInvoiceCreateResult.Fail(404, "Job invoice not found.");
+
+        if (!string.Equals(jobInvoice.Provider, "xero", StringComparison.OrdinalIgnoreCase))
+            return JobInvoiceCreateResult.Fail(400, "Only Xero invoice PDFs can be pulled.");
+
+        if (string.IsNullOrWhiteSpace(jobInvoice.ExternalInvoiceId) || !Guid.TryParse(jobInvoice.ExternalInvoiceId, out var invoiceId))
+            return JobInvoiceCreateResult.Fail(400, "Missing Xero invoice id.");
+
+        var pulled = await TrySyncInvoicePdfAsync(jobInvoice, invoiceId, ct);
+        if (!pulled)
+            return JobInvoiceCreateResult.Fail(502, "Failed to pull invoice PDF from Xero.");
+
+        return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true);
+    }
+
     public async Task<JobInvoiceCreateResult> SyncWofItemsToDraftAsync(long jobId, CancellationToken ct)
     {
+        await EnsureJobInvoicePdfColumnsAsync(ct);
         var synced = await SyncFromXeroAsync(jobId, ct);
         if (!synced.Ok)
             return synced;
@@ -545,6 +589,7 @@ public sealed class JobInvoiceService
         IReadOnlyList<ServiceSelectionSnapshot> selections,
         CancellationToken ct)
     {
+        await EnsureJobInvoicePdfColumnsAsync(ct);
         if (selections.Count == 0)
             return JobInvoiceCreateResult.Success(null, alreadyExists: true);
 
@@ -646,6 +691,7 @@ public sealed class JobInvoiceService
 
     public async Task<JobInvoiceUnlinkResult> UnlinkInvoiceAsync(long jobId, CancellationToken ct)
     {
+        await EnsureJobInvoicePdfColumnsAsync(ct);
         var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
         if (jobInvoice is null)
             return JobInvoiceUnlinkResult.Fail(404, "Job invoice not found.");
@@ -654,6 +700,7 @@ public sealed class JobInvoiceService
         if (job is null)
             return JobInvoiceUnlinkResult.Fail(404, "Job not found.");
 
+        DeleteInvoiceDocuments(jobInvoice.Id);
         _db.JobInvoices.Remove(jobInvoice);
         job.InvoiceReference = null;
         job.UpdatedAt = DateTime.UtcNow;
@@ -664,6 +711,7 @@ public sealed class JobInvoiceService
 
     public async Task<JobInvoiceStateUpdateResult> UpdateXeroStateAsync(long jobId, UpdateJobInvoiceXeroStateRequest payload, CancellationToken ct)
     {
+        await EnsureJobInvoicePdfColumnsAsync(ct);
         var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
         if (jobInvoice is null)
             return JobInvoiceStateUpdateResult.Fail(404, "Job invoice not found.");
@@ -832,6 +880,7 @@ public sealed class JobInvoiceService
 
     public async Task<JobInvoiceDeleteResult> DeleteDraftInXeroAsync(long jobId, CancellationToken ct)
     {
+        await EnsureJobInvoicePdfColumnsAsync(ct);
         var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
         if (jobInvoice is null)
             return JobInvoiceDeleteResult.Success(false, "没有找到关联的 invoice，跳过 Xero 删除。");
@@ -882,6 +931,7 @@ public sealed class JobInvoiceService
 
     public async Task<JobInvoiceContactUpdateResult> UpdateContactNameForJobAsync(long jobId, string contactName, CancellationToken ct)
     {
+        await EnsureJobInvoicePdfColumnsAsync(ct);
         var normalizedContactName = contactName.Trim();
         if (string.IsNullOrWhiteSpace(normalizedContactName))
             return JobInvoiceContactUpdateResult.Fail(400, "Contact name is required.");
@@ -958,6 +1008,258 @@ public sealed class JobInvoiceService
 
         ApplyInvoiceUpdate(jobInvoice, request, syncResult.Payload, syncResult.TenantId);
         return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true, payload: syncResult.Payload, requestBody: request);
+    }
+
+    private async Task<bool> TrySyncInvoicePdfAsync(JobInvoice jobInvoice, Guid invoiceId, CancellationToken ct)
+    {
+        try
+        {
+            var pdfResult = await _xeroInvoiceService.GetInvoicePdfByIdAsync(invoiceId, ct);
+            if (!pdfResult.Ok || pdfResult.PdfBytes is null || pdfResult.PdfBytes.Length == 0)
+            {
+                _logger.LogWarning(
+                    "Failed to sync invoice PDF for job invoice {JobInvoiceId} / Xero invoice {InvoiceId}: {Error}",
+                    jobInvoice.Id,
+                    invoiceId,
+                    pdfResult.Error ?? "empty pdf response");
+                return false;
+            }
+
+            var now = DateTime.UtcNow;
+            var pdfPath = GetInvoicePdfPath(jobInvoice.Id);
+            var previewPath = GetInvoicePdfPreviewPath(jobInvoice.Id);
+            Directory.CreateDirectory(Path.GetDirectoryName(pdfPath)!);
+            await File.WriteAllBytesAsync(pdfPath, pdfResult.PdfBytes, ct);
+
+            var generatedPreviewPath = await TryGenerateInvoicePreviewAsync(pdfPath, previewPath, ct);
+            byte[]? previewBytes = null;
+            if (!string.IsNullOrWhiteSpace(generatedPreviewPath) && File.Exists(generatedPreviewPath))
+            {
+                previewBytes = await File.ReadAllBytesAsync(generatedPreviewPath, ct);
+            }
+
+            jobInvoice.PdfContent = pdfResult.PdfBytes;
+            jobInvoice.PdfPreviewContent = previewBytes;
+            jobInvoice.PdfFilePath = pdfPath;
+            jobInvoice.PdfDownloadedAt = now;
+            jobInvoice.PdfPreviewPath = generatedPreviewPath;
+            jobInvoice.PdfPreviewGeneratedAt = generatedPreviewPath is null ? null : now;
+            jobInvoice.UpdatedAt = now;
+            await _db.SaveChangesAsync(ct);
+
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(
+                ex,
+                "Failed to store invoice PDF for job invoice {JobInvoiceId} / Xero invoice {InvoiceId}",
+                jobInvoice.Id,
+                invoiceId);
+            return false;
+        }
+    }
+
+    public async Task<JobInvoiceDocumentResult?> GetPdfAsync(long jobId, CancellationToken ct)
+    {
+        await EnsureJobInvoicePdfColumnsAsync(ct);
+        var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (jobInvoice is null)
+            return null;
+
+        var bytes = await ResolvePdfBytesAsync(jobInvoice, ct);
+        if (bytes is null || bytes.Length == 0)
+            return null;
+
+        return new JobInvoiceDocumentResult(bytes, "application/pdf", BuildPdfDownloadFileName(jobInvoice));
+    }
+
+    public async Task<JobInvoiceDocumentResult?> GetPdfPreviewAsync(long jobId, CancellationToken ct)
+    {
+        await EnsureJobInvoicePdfColumnsAsync(ct);
+        var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (jobInvoice is null)
+            return null;
+
+        var bytes = await ResolvePreviewBytesAsync(jobInvoice, ct);
+        if (bytes is null || bytes.Length == 0)
+            return null;
+
+        return new JobInvoiceDocumentResult(bytes, "image/png", BuildPdfPreviewFileName(jobInvoice));
+    }
+
+    private async Task<string?> TryGenerateInvoicePreviewAsync(string pdfPath, string previewPath, CancellationToken ct)
+    {
+        if (File.Exists(previewPath))
+            File.Delete(previewPath);
+
+        if (!OperatingSystem.IsMacOS() || !File.Exists("/usr/bin/qlmanage"))
+            return null;
+
+        var previewDirectory = Path.GetDirectoryName(previewPath);
+        if (string.IsNullOrWhiteSpace(previewDirectory))
+            return null;
+
+        Directory.CreateDirectory(previewDirectory);
+
+        using var process = new Process();
+        process.StartInfo = new ProcessStartInfo
+        {
+            FileName = "/usr/bin/qlmanage",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        process.StartInfo.ArgumentList.Add("-t");
+        process.StartInfo.ArgumentList.Add("-s");
+        process.StartInfo.ArgumentList.Add("2000");
+        process.StartInfo.ArgumentList.Add("-o");
+        process.StartInfo.ArgumentList.Add(previewDirectory);
+        process.StartInfo.ArgumentList.Add(pdfPath);
+
+        process.Start();
+        try
+        {
+            await process.WaitForExitAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            try
+            {
+                if (!process.HasExited)
+                    process.Kill(entireProcessTree: true);
+            }
+            catch
+            {
+            }
+            return null;
+        }
+
+        if (process.ExitCode != 0)
+            return null;
+
+        if (File.Exists(previewPath))
+            return previewPath;
+
+        var expectedPrefix = Path.GetFileName(pdfPath);
+        var generatedPreview = Directory.GetFiles(previewDirectory, $"{expectedPrefix}*.png")
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(generatedPreview) || !File.Exists(generatedPreview))
+            return null;
+
+        File.Copy(generatedPreview, previewPath, overwrite: true);
+        return previewPath;
+    }
+
+    private string GetInvoiceDirectory(long jobInvoiceId)
+    {
+        var dir = Path.Combine(_environment.ContentRootPath, "App_Data", "xero-invoices", jobInvoiceId.ToString(CultureInfo.InvariantCulture));
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    private string GetInvoicePdfPath(long jobInvoiceId) => Path.Combine(GetInvoiceDirectory(jobInvoiceId), "invoice.pdf");
+
+    private string GetInvoicePdfPreviewPath(long jobInvoiceId) => Path.Combine(GetInvoiceDirectory(jobInvoiceId), "invoice.pdf.png");
+
+    private string? ResolvePdfPath(JobInvoice jobInvoice)
+    {
+        if (!string.IsNullOrWhiteSpace(jobInvoice.PdfFilePath))
+            return jobInvoice.PdfFilePath;
+
+        var derived = GetInvoicePdfPath(jobInvoice.Id);
+        return File.Exists(derived) ? derived : null;
+    }
+
+    private string? ResolvePreviewPath(JobInvoice jobInvoice)
+    {
+        if (!string.IsNullOrWhiteSpace(jobInvoice.PdfPreviewPath))
+            return jobInvoice.PdfPreviewPath;
+
+        var derived = GetInvoicePdfPreviewPath(jobInvoice.Id);
+        return File.Exists(derived) ? derived : null;
+    }
+
+    private async Task<byte[]?> ResolvePdfBytesAsync(JobInvoice jobInvoice, CancellationToken ct)
+    {
+        if (jobInvoice.PdfContent is { Length: > 0 })
+            return jobInvoice.PdfContent;
+
+        var pdfPath = ResolvePdfPath(jobInvoice);
+        if (string.IsNullOrWhiteSpace(pdfPath) || !File.Exists(pdfPath))
+            return null;
+
+        var bytes = await File.ReadAllBytesAsync(pdfPath, ct);
+        if (bytes.Length == 0)
+            return null;
+
+        jobInvoice.PdfContent = bytes;
+        jobInvoice.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return bytes;
+    }
+
+    private async Task<byte[]?> ResolvePreviewBytesAsync(JobInvoice jobInvoice, CancellationToken ct)
+    {
+        if (jobInvoice.PdfPreviewContent is { Length: > 0 })
+            return jobInvoice.PdfPreviewContent;
+
+        var previewPath = ResolvePreviewPath(jobInvoice);
+        if (string.IsNullOrWhiteSpace(previewPath) || !File.Exists(previewPath))
+            return null;
+
+        var bytes = await File.ReadAllBytesAsync(previewPath, ct);
+        if (bytes.Length == 0)
+            return null;
+
+        jobInvoice.PdfPreviewContent = bytes;
+        jobInvoice.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return bytes;
+    }
+
+    private static string BuildPdfDownloadFileName(JobInvoice jobInvoice)
+    {
+        var baseName = string.IsNullOrWhiteSpace(jobInvoice.ExternalInvoiceNumber)
+            ? $"job-invoice-{jobInvoice.JobId.ToString(CultureInfo.InvariantCulture)}"
+            : jobInvoice.ExternalInvoiceNumber.Trim();
+        return $"{SanitizeFileName(baseName)}.pdf";
+    }
+
+    private static string BuildPdfPreviewFileName(JobInvoice jobInvoice)
+    {
+        var baseName = string.IsNullOrWhiteSpace(jobInvoice.ExternalInvoiceNumber)
+            ? $"job-invoice-{jobInvoice.JobId.ToString(CultureInfo.InvariantCulture)}"
+            : jobInvoice.ExternalInvoiceNumber.Trim();
+        return $"{SanitizeFileName(baseName)}.png";
+    }
+
+    private static string SanitizeFileName(string fileName)
+    {
+        var raw = string.IsNullOrWhiteSpace(fileName) ? "attachment" : fileName.Trim();
+        var invalid = Path.GetInvalidFileNameChars();
+        var cleaned = new string(raw.Select(ch => invalid.Contains(ch) ? '_' : ch).ToArray());
+        return string.IsNullOrWhiteSpace(cleaned) ? "attachment" : cleaned;
+    }
+
+    private void DeleteInvoiceDocuments(long jobInvoiceId)
+    {
+        var dir = Path.Combine(_environment.ContentRootPath, "App_Data", "xero-invoices", jobInvoiceId.ToString(CultureInfo.InvariantCulture));
+        if (!Directory.Exists(dir))
+            return;
+
+        try
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 
     private async Task<JobInvoiceStateUpdateResult> BuildStateUpdateResultAsync(JobInvoice jobInvoice, CancellationToken ct)
@@ -1966,4 +2268,18 @@ public sealed class JobInvoiceUnlinkResult
             StatusCode = statusCode,
             Error = error,
         };
+}
+
+public sealed class JobInvoiceDocumentResult
+{
+    public byte[] Bytes { get; }
+    public string ContentType { get; }
+    public string FileName { get; }
+
+    public JobInvoiceDocumentResult(byte[] bytes, string contentType, string fileName)
+    {
+        Bytes = bytes;
+        ContentType = contentType;
+        FileName = fileName;
+    }
 }

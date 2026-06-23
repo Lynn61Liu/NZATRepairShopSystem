@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { FileText, Plus, RefreshCcw, X } from "lucide-react";
 import { Button, Input, Select } from "@/components/ui";
 import { InvoiceDashboard } from "@/features/invoice/components/invoicePanel/InvoiceDashboard";
 import type { InvoicePanelModel } from "@/features/invoice/hooks/useInvoiceDashboardState";
+import { withApiBase } from "@/utils/api";
 import { formatNzDateTime } from "@/utils/date";
 
 type InvoicePanelProps = {
@@ -45,6 +46,7 @@ export function InvoicePanel({
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
   const [paymentEditing, setPaymentEditing] = useState(true);
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
 
   const invoiceTotal = useMemo(() => {
     if (!model) return 0;
@@ -52,6 +54,19 @@ export function InvoicePanel({
   }, [model]);
 
   const latestPayment = model?.sourceInvoice?.latestPayment ?? model?.persistedInvoice?.latestPayment ?? null;
+  const activeInvoice = model?.activeInvoice ?? model?.sourceInvoice ?? model?.persistedInvoice ?? null;
+  const pdfUrl = activeInvoice?.pdfUrl ? withApiBase(activeInvoice.pdfUrl) : "";
+  const pdfPreviewUrl = activeInvoice?.pdfPreviewUrl ? withApiBase(activeInvoice.pdfPreviewUrl) : "";
+  const pdfDownloadedAt = activeInvoice?.pdfDownloadedAt ?? "";
+  const pdfPreviewGeneratedAt = activeInvoice?.pdfPreviewGeneratedAt ?? "";
+  const hasPdf = Boolean(pdfUrl);
+  const canPullPdf = Boolean(activeInvoice?.externalInvoiceId);
+
+  useEffect(() => {
+    if (!pdfUrl) {
+      setPdfPreviewOpen(false);
+    }
+  }, [pdfUrl]);
 
   useEffect(() => {
     if (!hasInvoice) {
@@ -201,6 +216,101 @@ export function InvoicePanel({
       />
       {hasInvoice && model ? (
         <div className="mt-6 rounded-xl border border-[rgba(0,0,0,0.08)] bg-white p-4">
+          <div className="flex flex-wrap items-start gap-4">
+            <div className={["relative min-w-0 flex-1 overflow-visible", hasPdf ? "group" : ""].join(" ")}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (hasPdf) setPdfPreviewOpen(true);
+                }}
+                disabled={!hasPdf}
+                className={[
+                  "flex w-full items-start gap-4 rounded-[16px] border bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(250,250,250,0.92))] p-4 text-left shadow-sm transition",
+                  hasPdf
+                    ? "border-[rgba(0,0,0,0.08)] hover:-translate-y-0.5 hover:shadow-md"
+                    : "cursor-default border-dashed border-[rgba(0,0,0,0.10)]",
+                ].join(" ")}
+              >
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[14px] bg-[rgba(220,38,38,0.08)] text-[rgba(220,38,38,0.92)] shadow-inner">
+                  <FileText className="h-7 w-7" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-[rgba(0,0,0,0.76)]">Invoice PDF</div>
+                  <div className="mt-1 text-sm text-[var(--ds-muted)]">
+                    {pdfDownloadedAt ? `Saved locally ${formatNzDateTime(pdfDownloadedAt)}` : "PDF has not been cached locally yet."}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium">
+                    {hasPdf ? (
+                      <>
+                        <span className="rounded-full bg-[rgba(0,0,0,0.04)] px-2.5 py-1 text-[rgba(0,0,0,0.62)]">Hover to preview</span>
+                        {pdfPreviewGeneratedAt ? (
+                          <span className="rounded-full bg-[rgba(16,185,129,0.10)] px-2.5 py-1 text-[rgba(6,95,70,0.9)]">
+                            Preview generated {formatNzDateTime(pdfPreviewGeneratedAt)}
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-[rgba(0,0,0,0.04)] px-2.5 py-1 text-[rgba(0,0,0,0.62)]">Preview unavailable</span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="rounded-full bg-[rgba(0,0,0,0.04)] px-2.5 py-1 text-[rgba(0,0,0,0.62)]">No PDF cached yet</span>
+                    )}
+                  </div>
+                </div>
+              </button>
+
+              {hasPdf ? (
+                <div className="pointer-events-none absolute left-0 top-full z-20 mt-3 w-[360px] opacity-0 translate-y-2 transition duration-200 group-hover:opacity-100 group-hover:translate-y-0">
+                  <div className="overflow-hidden rounded-2xl border border-[rgba(0,0,0,0.08)] bg-white shadow-2xl">
+                    {pdfPreviewUrl ? (
+                      <img src={pdfPreviewUrl} alt="Invoice PDF preview" className="h-[420px] w-full object-contain bg-slate-100" />
+                    ) : (
+                      <div className="flex h-[420px] items-center justify-center bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(250,250,250,0.94))] p-6 text-center">
+                        <div>
+                          <FileText className="mx-auto h-10 w-10 text-[rgba(220,38,38,0.72)]" />
+                          <div className="mt-3 text-sm font-semibold text-[rgba(0,0,0,0.72)]">Preview unavailable</div>
+                          <div className="mt-1 text-xs text-[var(--ds-muted)]">
+                            Pull the latest invoice PDF to generate a preview thumbnail.
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+              <div className="flex w-full flex-row gap-2 sm:w-auto sm:flex-col">
+                <a
+                  href={pdfUrl || "#"}
+                  onClick={(event) => {
+                    if (!pdfUrl) event.preventDefault();
+                  }}
+                  target={pdfUrl ? "_blank" : undefined}
+                  rel={pdfUrl ? "noreferrer" : undefined}
+                  className={[
+                    "inline-flex h-10 items-center justify-center rounded-[10px] px-4 text-sm font-medium transition",
+                    pdfUrl
+                      ? "border border-[rgba(0,0,0,0.08)] bg-white text-[rgba(0,0,0,0.72)] hover:bg-[rgba(0,0,0,0.02)]"
+                      : "cursor-not-allowed border border-[rgba(0,0,0,0.08)] bg-[rgba(0,0,0,0.03)] text-[rgba(0,0,0,0.38)]",
+                  ].join(" ")}
+                >
+                  Open
+                </a>
+                <Button
+                  variant="primary"
+                  className="h-10 rounded-[10px] px-4"
+                  leftIcon={<RefreshCcw className={["h-4 w-4", model.pullingInvoicePdf ? "animate-spin" : ""].join(" ")} />}
+                  onClick={() => void model.pullInvoicePdf()}
+                  disabled={model.pullingInvoicePdf || !canPullPdf}
+                >
+                  {model.pullingInvoicePdf ? "Pulling PDF..." : pdfUrl ? "Re-pull PDF" : "Pull PDF"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      {hasInvoice && model ? (
+        <div className="mt-6 rounded-xl border border-[rgba(0,0,0,0.08)] bg-white p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div className="text-xl font-semibold text-[rgba(0,0,0,0.72)]">Payment</div>
             {!paymentEditing && latestPayment ? (
@@ -258,6 +368,28 @@ export function InvoicePanel({
           )}
           <div className="mt-2 text-xs text-[var(--ds-muted)]">
             Cash will delete the Xero draft. ePost and bank transfer will set the invoice to Waiting payment.
+          </div>
+        </div>
+      ) : null}
+      {pdfPreviewOpen && pdfUrl ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
+          <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div className="min-w-0">
+                <div className="truncate text-base font-semibold text-slate-900">Invoice PDF</div>
+                <div className="text-xs text-slate-500">Local cached copy</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPdfPreviewOpen(false)}
+                className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="min-h-[70vh] flex-1 bg-slate-100">
+              <iframe title="Invoice PDF preview" src={pdfUrl} className="h-[70vh] w-full border-0" />
+            </div>
           </div>
         </div>
       ) : null}

@@ -41,6 +41,10 @@ type SidebarItem = {
   badge?: number;
 };
 
+type SidebarGroupItem = SidebarItem & {
+  child?: boolean;
+};
+
 const settingsPathRoots = ["/customers", "/tags", "/wof-fails", "/service-settings", "/xero-item-codes", "/integrations"];
 
 function isPathActive(pathname: string, to: string) {
@@ -54,6 +58,7 @@ export function Sidebar() {
   });
   const [wofTodoCount, setWofTodoCount] = useState(0);
   const [settingsCollapsed, setSettingsCollapsed] = useState(true);
+  const [courtesyCarCollapsed, setCourtesyCarCollapsed] = useState(true);
   const poUnreadSummary = usePoUnreadSummary();
   const location = useLocation();
 
@@ -64,12 +69,15 @@ export function Sidebar() {
     { to: "/parts-flow", label: "配件流转", icon: PackageOpen },
     { to: "/invoice", label: "发票收款", icon: CircleDollarSign },
     { to: "/wof-schedule", label: "WOF 排班表", icon: CalendarClock, badge: wofTodoCount },
-    { to: "/courtesy-cars", label: "代步车管理", icon: CarFront },
-    { to: "/courtesy-car-drafts", label: "借车协议", icon: FileSignature },
-    { to: "/agreement-history", label: "协议历史", icon: Clock3 },
     { to: "/po-dashboard-preview", label: "采购预览", icon: Eye, badge: poUnreadSummary.totalUnreadReplies },
     { to: "/shop", label: "内部商城", icon: ShoppingBag },
     { to: "/procurement-admin", label: "采购后台", icon: ShieldCheck },
+  ];
+
+  const courtesyCarItems: SidebarGroupItem[] = [
+    { to: "/courtesy-cars", label: "代步车管理", icon: CarFront, child: true },
+    { to: "/courtesy-car-drafts", label: "代步车协议", icon: FileSignature, child: true },
+    { to: "/agreement-history", label: "历史", icon: Clock3, child: true },
   ];
 
   const settingsItems: SidebarItem[] = [
@@ -83,6 +91,8 @@ export function Sidebar() {
 
   const settingsRouteActive = settingsPathRoots.some((path) => isPathActive(location.pathname, path));
   const settingsOpen = settingsRouteActive || !settingsCollapsed;
+  const courtesyCarRouteActive = courtesyCarItems.some(({ to }) => isPathActive(location.pathname, to));
+  const courtesyCarOpen = courtesyCarRouteActive || !courtesyCarCollapsed;
 
   useEffect(() => {
     return subscribeWorklogCostAlert((count) => setWorklogAlertCount(count));
@@ -147,6 +157,42 @@ export function Sidebar() {
               ) : null}
             </NavLink>
           ))}
+
+          <div className="mt-1">
+            <button
+              type="button"
+              aria-expanded={courtesyCarOpen}
+              className={`flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 transition border border-transparent ${
+                courtesyCarOpen ? linkActive : linkIdle
+              }`}
+              onClick={() => setCourtesyCarCollapsed((open) => !open)}
+            >
+              <span className="flex min-w-0 items-center gap-3">
+                <CarFront className="h-4 w-4 shrink-0" />
+                <span className="truncate">代步车</span>
+              </span>
+              <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${courtesyCarOpen ? "rotate-180" : ""}`} />
+            </button>
+
+            {courtesyCarOpen ? (
+              <div className="mt-2 flex flex-col gap-2 pl-4">
+                {courtesyCarItems.map(({ to, label, icon: Icon }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    className={({ isActive }) =>
+                      `${linkBase} pl-4 ${isActive ? linkActive : linkIdle}`
+                    }
+                  >
+                    <span className="flex min-w-0 items-center gap-3">
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{label}</span>
+                    </span>
+                  </NavLink>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <div>

@@ -15,6 +15,10 @@ export type JobInvoiceData = {
   tenantId?: string;
   requestPayloadJson?: string;
   responsePayloadJson?: string;
+  pdfUrl?: string | null;
+  pdfPreviewUrl?: string | null;
+  pdfDownloadedAt?: string | null;
+  pdfPreviewGeneratedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
   latestPayment?: {

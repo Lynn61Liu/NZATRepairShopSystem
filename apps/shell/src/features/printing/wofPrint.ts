@@ -550,6 +550,10 @@ export const buildWofHtml = (data: WofPrintData) => {
         if (flag === "1" || flag === "true") {
           document.body.classList.add("debug");
         }
+        window.addEventListener("load", function () {
+          window.focus();
+          window.print();
+        });
         document.addEventListener("keydown", function (event) {
           if (event.key === "d" || event.key === "D") {
             document.body.classList.toggle("debug");

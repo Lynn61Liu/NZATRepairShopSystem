@@ -30,6 +30,8 @@ export function PoDashboard({ model }: PoDashboardProps) {
           readOnly={model.poLocked}
           readOnlyReason={model.poLockReason}
           externalSendDetected={model.hasExternalDraftSend}
+          invoicePdfPreviewUrl={model.invoicePdfPreviewUrl}
+          invoicePdfPreviewGeneratedAt={model.invoicePdfPreviewGeneratedAt}
           onCreateDraft={model.createPoDraft}
           onRecreateDraft={model.recreatePoDraft}
           onViewDraft={model.viewPoDraft}

@@ -213,6 +213,62 @@ public sealed class XeroInvoiceService
         return XeroInvoiceGetResult.Success(parsedResponse, tokenResult.TenantId);
     }
 
+    public async Task<XeroInvoicePdfResult> GetInvoicePdfByIdAsync(Guid invoiceId, CancellationToken ct)
+    {
+        var missing = new List<string>();
+        if (string.IsNullOrWhiteSpace(_configuration.ClientId)) missing.Add("Xero:ClientId");
+        if (string.IsNullOrWhiteSpace(_configuration.ClientSecret)) missing.Add("Xero:ClientSecret");
+        if (missing.Count > 0)
+        {
+            return XeroInvoicePdfResult.Fail(
+                400,
+                "Missing Xero configuration for invoice PDF read.",
+                new { missing },
+                "");
+        }
+
+        var tokenResult = await _xeroTokenService.RefreshAccessTokenAsync(ct);
+        if (!tokenResult.Ok)
+        {
+            return XeroInvoicePdfResult.Fail(
+                tokenResult.StatusCode,
+                tokenResult.Error ?? "Failed to refresh Xero access token.",
+                null,
+                tokenResult.TenantId);
+        }
+
+        if (string.IsNullOrWhiteSpace(tokenResult.TenantId))
+        {
+            return XeroInvoicePdfResult.Fail(
+                400,
+                "Missing Xero tenant id for invoice PDF read.",
+                new { missing = new[] { "Xero:TenantId" } },
+                "");
+        }
+
+        var client = _httpClientFactory.CreateClient();
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Get, $"https://api.xero.com/api.xro/2.0/Invoices/{invoiceId}");
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenResult.AccessToken);
+        httpRequest.Headers.Add("xero-tenant-id", tokenResult.TenantId);
+        httpRequest.Headers.Accept.Clear();
+        httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/pdf"));
+
+        using var response = await client.SendAsync(httpRequest, ct);
+        var responseBytes = await response.Content.ReadAsByteArrayAsync(ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var responseBody = responseBytes.Length == 0 ? "" : Encoding.UTF8.GetString(responseBytes);
+            return XeroInvoicePdfResult.Fail((int)response.StatusCode, responseBody, null, tokenResult.TenantId);
+        }
+
+        if (responseBytes.Length == 0)
+        {
+            return XeroInvoicePdfResult.Fail(502, "Xero returned an empty PDF response.", null, tokenResult.TenantId);
+        }
+
+        return XeroInvoicePdfResult.Success(responseBytes, tokenResult.TenantId);
+    }
+
     public async Task<XeroInvoiceGetResult> GetInvoicesByNumberAsync(string invoiceNumber, CancellationToken ct)
     {
         var normalizedInvoiceNumber = invoiceNumber?.Trim();
@@ -568,6 +624,35 @@ public sealed class XeroInvoiceGetResult
         };
 
     public static XeroInvoiceGetResult Fail(int statusCode, string error, object? payload, string tenantId) =>
+        new()
+        {
+            Ok = false,
+            StatusCode = statusCode,
+            Error = error,
+            Payload = payload,
+            TenantId = tenantId,
+        };
+}
+
+public sealed class XeroInvoicePdfResult
+{
+    public bool Ok { get; private init; }
+    public int StatusCode { get; private init; }
+    public string? Error { get; private init; }
+    public byte[]? PdfBytes { get; private init; }
+    public object? Payload { get; private init; }
+    public string TenantId { get; private init; } = "";
+
+    public static XeroInvoicePdfResult Success(byte[] pdfBytes, string tenantId) =>
+        new()
+        {
+            Ok = true,
+            StatusCode = 200,
+            PdfBytes = pdfBytes,
+            TenantId = tenantId,
+        };
+
+    public static XeroInvoicePdfResult Fail(int statusCode, string error, object? payload, string tenantId) =>
         new()
         {
             Ok = false,

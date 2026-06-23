@@ -11,6 +11,7 @@ import type { EmailState, EmailTimelineEvent, InvoiceItem, MerchantEmailRecipien
 const DEFAULT_DRAFT_IMAGE_WIDTH = 360;
 const MIN_DRAFT_IMAGE_WIDTH = 120;
 const MAX_DRAFT_IMAGE_WIDTH = 720;
+const INVOICE_PREVIEW_BLOCK_SELECTOR = '[data-invoice-pdf-preview-block="true"]';
 
 function escapeHtmlAttribute(value: string) {
   return value
@@ -36,6 +37,64 @@ function readFileAsDataUrl(file: File) {
 
 function buildDraftImageHtml(src: string, name: string, width = DEFAULT_DRAFT_IMAGE_WIDTH) {
   return `<img src="${src}" alt="${escapeHtmlAttribute(name)}" data-po-draft-image="true" style="display:block; width:${width}px; max-width:100%; height:auto; margin:8px 0; border-radius:8px;" />`;
+}
+
+function buildInvoicePdfPreviewBlockHtml(src: string, updatedAt?: string | null) {
+  return `
+    <div data-invoice-pdf-preview-block="true" data-invoice-pdf-preview-updated-at="${escapeHtmlAttribute(updatedAt || "")}" style="margin: 0 0 28px 0;">
+      <img
+        src="${escapeHtmlAttribute(src)}"
+        alt="Invoice PDF preview"
+        data-po-draft-image="true"
+        data-invoice-pdf-preview-image="true"
+        style="display:block; width:360px; max-width:100%; height:auto; margin:8px 0; border:1px solid #d8dee5; border-radius:8px;"
+      />
+    </div>
+  `;
+}
+
+function appendCacheKey(url: string, key?: string | null) {
+  const normalized = url.trim();
+  if (!normalized) return "";
+  const separator = normalized.includes("?") ? "&" : "?";
+  return `${normalized}${separator}poPreview=${encodeURIComponent(key || "latest")}`;
+}
+
+function upsertInvoicePdfPreviewBlock(bodyHtml: string, previewSrc: string, updatedAt?: string | null) {
+  const host = document.createElement("div");
+  host.innerHTML = bodyHtml || "";
+
+  const nextBlockTemplate = document.createElement("template");
+  nextBlockTemplate.innerHTML = buildInvoicePdfPreviewBlockHtml(previewSrc, updatedAt);
+  const nextBlock = nextBlockTemplate.content.firstElementChild;
+  if (!nextBlock) return bodyHtml;
+
+  const existingBlock = host.querySelector(INVOICE_PREVIEW_BLOCK_SELECTOR);
+  if (existingBlock) {
+    existingBlock.replaceWith(nextBlock);
+    return host.innerHTML;
+  }
+
+  const signature = Array.from(host.querySelectorAll("div")).find((node) => {
+    const style = node.getAttribute("style") || "";
+    return style.includes("direction:ltr") && style.includes("Tahoma");
+  });
+  if (signature?.parentNode) {
+    signature.parentNode.insertBefore(nextBlock, signature);
+  } else {
+    host.appendChild(nextBlock);
+  }
+
+  return host.innerHTML;
+}
+
+function removeInvoicePdfPreviewBlock(bodyHtml: string) {
+  const host = document.createElement("div");
+  host.innerHTML = bodyHtml || "";
+  const existingBlock = host.querySelector(INVOICE_PREVIEW_BLOCK_SELECTOR);
+  if (!existingBlock) return bodyHtml;
+  existingBlock.remove();
+  return host.innerHTML;
 }
 
 function normalizeDraftEditorImages(editor: HTMLDivElement | null) {
@@ -72,6 +131,8 @@ type Props = {
   readOnly: boolean;
   readOnlyReason?: string;
   externalSendDetected?: boolean;
+  invoicePdfPreviewUrl?: string;
+  invoicePdfPreviewGeneratedAt?: string | null;
   draftState: PoDraftState;
   onCreateDraft: (payload: { to: string; subject: string; body: string }) => Promise<boolean>;
   onRecreateDraft: (payload: { to: string; subject: string; body: string }) => Promise<boolean>;
@@ -102,6 +163,8 @@ export function PoRequestPanel({
   readOnly,
   readOnlyReason,
   externalSendDetected,
+  invoicePdfPreviewUrl,
+  invoicePdfPreviewGeneratedAt,
   draftState,
   onCreateDraft,
   onRecreateDraft,
@@ -192,7 +255,7 @@ export function PoRequestPanel({
         <div style="margin-bottom: 8px;">
           <div style="margin-bottom: 6px;"><strong>- Rego:</strong> ${vehicleRego || ""}</div>
           <div style="margin-bottom: 6px;"><strong>- Make & Model:</strong> ${[vehicleYear, vehicleMake, vehicleModel].filter(Boolean).join(" ")}</div>
-          <div style="margin-bottom: 6px;"><strong>- Total Amount:</strong> $${snapshotTotal.toFixed(2)}</div>
+          <div style="margin-bottom: 6px;"><strong>- Total Amount:</strong> $${snapshotTotal.toFixed(2)} +GST</div>
           <div style="margin-bottom: 6px;"><strong>- Job Details:</strong></div>
         </div>
         
@@ -204,6 +267,20 @@ export function PoRequestPanel({
       </div>
     `;
   }, [greetingName, vehicleRego, vehicleYear, vehicleMake, vehicleModel, snapshotTotal, items]);
+
+  const invoicePdfPreviewSrc = useMemo(() => {
+    const trimmed = invoicePdfPreviewUrl?.trim();
+    if (!trimmed) return "";
+    return appendCacheKey(withApiBase(trimmed), invoicePdfPreviewGeneratedAt);
+  }, [invoicePdfPreviewGeneratedAt, invoicePdfPreviewUrl]);
+
+  const defaultComparableBody = useMemo(
+    () =>
+      invoicePdfPreviewSrc
+        ? upsertInvoicePdfPreviewBlock(defaultBody, invoicePdfPreviewSrc, invoicePdfPreviewGeneratedAt)
+        : defaultBody,
+    [defaultBody, invoicePdfPreviewGeneratedAt, invoicePdfPreviewSrc]
+  );
 
   const [subject, setSubject] = useState(defaultSubject);
   const [body, setBody] = useState(defaultBody);
@@ -348,13 +425,22 @@ export function PoRequestPanel({
   }, [defaultBody]);
 
   useEffect(() => {
+    setBody((currentBody) => {
+      const nextBody = invoicePdfPreviewSrc
+        ? upsertInvoicePdfPreviewBlock(currentBody, invoicePdfPreviewSrc, invoicePdfPreviewGeneratedAt)
+        : removeInvoicePdfPreviewBlock(currentBody);
+      return nextBody === currentBody ? currentBody : nextBody;
+    });
+  }, [defaultBody, invoicePdfPreviewGeneratedAt, invoicePdfPreviewSrc]);
+
+  useEffect(() => {
     if (editorRef.current && editorRef.current.innerHTML !== body) {
       editorRef.current.innerHTML = body;
       normalizeDraftEditorImages(editorRef.current);
     }
   }, [body]);
 
-  const isModified = to !== selectedMerchantEmail || subject !== defaultSubject || body !== defaultBody;
+  const isModified = to !== selectedMerchantEmail || subject !== defaultSubject || body !== defaultComparableBody;
   const handleCreateDraft = async () => {
     const payload = { to: normalizedToValue, subject, body };
     setDraftActionBusy(true);
@@ -393,7 +479,7 @@ export function PoRequestPanel({
   const handleCancel = () => {
     setTo(selectedMerchantEmail);
     setSubject(defaultSubject);
-    setBody(defaultBody);
+    setBody(defaultComparableBody);
     setQuickAddRecipient("");
   };
 

@@ -80,6 +80,24 @@ type PrintStatus =
   | { phase: "sent"; message: string }
   | { phase: "error"; message: string };
 
+const CUSTOMER_SELF_WOF_PRINT_PROMISES = new Map<string, Promise<unknown>>();
+
+function getOrCreateCustomerSelfPrintPromise<T>(
+  jobId: string,
+  task: () => Promise<T>
+): Promise<T> {
+  const existing = CUSTOMER_SELF_WOF_PRINT_PROMISES.get(jobId);
+  if (existing) {
+    return existing as Promise<T>;
+  }
+
+  const next = task().finally(() => {
+    CUSTOMER_SELF_WOF_PRINT_PROMISES.delete(jobId);
+  }) as Promise<T>;
+  CUSTOMER_SELF_WOF_PRINT_PROMISES.set(jobId, next);
+  return next;
+}
+
 const initialForm: FormState = {
   plate: "",
   hasWof: false,
@@ -120,8 +138,6 @@ export function CustomerSelfServiceNewJobPage() {
   const [submitError, setSubmitError] = useState("");
   const [createdJobId, setCreatedJobId] = useState("");
   const [printStatus, setPrintStatus] = useState<PrintStatus>({ phase: "idle", message: "等待发送机修单" });
-  const printedJobIdRef = useRef("");
-  const printRequestJobIdRef = useRef("");
   const toast = useToast();
   const { printById } = useJobSheetPrinter({
     printMode: "silent",
@@ -307,18 +323,18 @@ export function CustomerSelfServiceNewJobPage() {
     if (step !== "success") return;
     if (selectedPath !== "wof") return;
     if (!createdJobId) return;
-    if (printRequestJobIdRef.current === createdJobId) return;
-
-    printRequestJobIdRef.current = createdJobId;
-    setPrintStatus({ phase: "sending", message: "正在发送机修单到打印机" });
+    setPrintStatus((prev) =>
+      prev.phase === "sending" || prev.phase === "sent"
+        ? prev
+        : { phase: "sending", message: "正在发送机修单到打印机" }
+    );
 
     let cancelled = false;
     void (async () => {
-      const result = await printById(createdJobId, "mech");
+      const result = await getOrCreateCustomerSelfPrintPromise(createdJobId, () => printById(createdJobId, "mech"));
       if (cancelled) return;
 
       if (result.ok) {
-        printedJobIdRef.current = createdJobId;
         setPrintStatus({ phase: "sent", message: "已发送，正在等待打印完成" });
         return;
       }
@@ -382,8 +398,7 @@ export function CustomerSelfServiceNewJobPage() {
     setSubmitError("");
     setCreatedJobId("");
     setPrintStatus({ phase: "idle", message: "等待发送机修单" });
-    printedJobIdRef.current = "";
-    printRequestJobIdRef.current = "";
+    CUSTOMER_SELF_WOF_PRINT_PROMISES.delete(createdJobId);
   };
 
   const serviceLabel = selectedPath === "wof" ? "WOF" : "Repair";
@@ -495,12 +510,12 @@ export function CustomerSelfServiceNewJobPage() {
                   serviceLabel={serviceLabel}
                   printStatus={printStatus}
                   onRetryPrint={() => {
-                    printRequestJobIdRef.current = "";
                     setPrintStatus({ phase: "sending", message: "正在发送机修单到打印机" });
                     void (async () => {
-                      const result = await printById(createdJobId, "mech");
+                      const result = await getOrCreateCustomerSelfPrintPromise(createdJobId, () =>
+                        printById(createdJobId, "mech")
+                      );
                       if (result.ok) {
-                        printedJobIdRef.current = createdJobId;
                         setPrintStatus({ phase: "sent", message: "已发送，正在等待打印完成" });
                         return;
                       }

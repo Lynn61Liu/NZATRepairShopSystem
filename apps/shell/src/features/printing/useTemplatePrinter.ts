@@ -4,7 +4,7 @@ import { DEFAULT_PRINT_MODE } from "./printModes";
 import { getSilentPrintRouteUnavailableMessage } from "./silentPrint.availability";
 import { resolveSilentPrintRoute, type SilentPrintRouteKey } from "./silentPrint.routes";
 import { submitSilentPrintJob, wrapHtmlWithBaseUrl } from "./silentPrint.api";
-import { openJobSheetPopup, renderJobSheetPopup } from "./jobSheetPrint";
+import { createJobSheetPrintFrame, renderJobSheetPopup } from "./jobSheetPrint";
 
 type UseTemplatePrinterOptions = {
   onPopupBlocked?: () => void;
@@ -55,7 +55,8 @@ export function useTemplatePrinter(options: UseTemplatePrinterOptions = {}) {
           const htmlWithBaseUrl = wrapHtmlWithBaseUrl(html, window.location.origin);
 
           if (mode === "preview") {
-            const popup = openJobSheetPopup(onPopupBlocked);
+            const frame = createJobSheetPrintFrame(onPopupBlocked);
+            const popup = frame?.contentWindow;
             if (!popup) {
               return { ok: false, mode };
             }

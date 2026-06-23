@@ -298,6 +298,12 @@ public class AppDbContext : DbContext
         ji.Property(x => x.TenantId).HasColumnName("tenant_id");
         ji.Property(x => x.RequestPayloadJson).HasColumnName("request_payload_json");
         ji.Property(x => x.ResponsePayloadJson).HasColumnName("response_payload_json");
+        ji.Property(x => x.PdfContent).HasColumnName("pdf_content").HasColumnType("bytea");
+        ji.Property(x => x.PdfPreviewContent).HasColumnName("pdf_preview_content").HasColumnType("bytea");
+        ji.Property(x => x.PdfFilePath).HasColumnName("pdf_file_path");
+        ji.Property(x => x.PdfPreviewPath).HasColumnName("pdf_preview_path");
+        ji.Property(x => x.PdfDownloadedAt).HasColumnName("pdf_downloaded_at");
+        ji.Property(x => x.PdfPreviewGeneratedAt).HasColumnName("pdf_preview_generated_at");
         ji.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         ji.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         ji.HasIndex(x => x.JobId).IsUnique().HasDatabaseName("ux_job_invoices_job_id");

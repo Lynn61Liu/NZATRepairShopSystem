@@ -116,6 +116,12 @@ export function pullJobXeroDraftInvoice(jobId: string) {
   });
 }
 
+export function pullJobXeroDraftInvoicePdf(jobId: string) {
+  return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}/xero-draft-invoice/pdf/pull`, {
+    method: "POST",
+  });
+}
+
 export function updateJobInvoiceXeroState(jobId: string, payload: unknown) {
   return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}/xero-draft-invoice/state`, {
     method: "PUT",
