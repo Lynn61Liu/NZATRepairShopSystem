@@ -195,17 +195,43 @@ public sealed class SilentPrintCommandExecutor
             CreateNoWindow = true,
         };
 
-        using var process = Process.Start(psi) ?? throw new InvalidOperationException($"Failed to start '{fileName}'.");
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
-        var stderrTask = process.StandardError.ReadToEndAsync(ct);
-        await process.WaitForExitAsync(ct);
-        var stdout = await stdoutTask;
-        var stderr = await stderrTask;
+        try
+        {
+            using var process = Process.Start(psi) ?? throw new InvalidOperationException($"Failed to start '{fileName}'.");
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
+            var stderrTask = process.StandardError.ReadToEndAsync(ct);
+            await process.WaitForExitAsync(ct);
+            var stdout = await stdoutTask;
+            var stderr = await stderrTask;
 
-        if (process.ExitCode != 0)
+            if (process.ExitCode != 0)
+            {
+                throw new InvalidOperationException(BuildProcessFailureMessage(fileName, process.ExitCode, stdout, stderr));
+            }
+        }
+        catch (System.ComponentModel.Win32Exception ex)
         {
             throw new InvalidOperationException(
-                $"Printing command '{fileName}' failed with exit code {process.ExitCode}. {stderr}{stdout}");
+                $"Printing command '{fileName}' is not available in this environment. Install CUPS client tools and make sure the print server is reachable.",
+                ex);
         }
+    }
+
+    internal static string BuildProcessFailureMessage(string fileName, int exitCode, string stdout, string stderr)
+    {
+        var detail = string.Join(
+            Environment.NewLine,
+            new[] { stderr?.Trim(), stdout?.Trim() }.Where(value => !string.IsNullOrWhiteSpace(value)));
+
+        if (!string.IsNullOrWhiteSpace(detail) &&
+            detail.Contains("No such file or directory", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Printing command '{fileName}' failed because the CUPS server or printer queue is not reachable. {detail}";
+        }
+
+        if (string.IsNullOrWhiteSpace(detail))
+            return $"Printing command '{fileName}' failed with exit code {exitCode}.";
+
+        return $"Printing command '{fileName}' failed with exit code {exitCode}. {detail}";
     }
 }

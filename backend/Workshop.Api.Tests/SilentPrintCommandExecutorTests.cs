@@ -39,4 +39,28 @@ system default destination: Office_Printer
         SilentPrintCommandExecutor.TryResolvePrinterQueueNameFromLpstatOutput("Laser", lpstatOutput)
             .Should().BeNull();
     }
+
+    [Fact]
+    public void BuildProcessFailureMessage_ExplainsUnreachableCupsServer()
+    {
+        var message = SilentPrintCommandExecutor.BuildProcessFailureMessage(
+            "lp",
+            1,
+            "",
+            "lp: No such file or directory");
+
+        message.Should().Contain("CUPS server or printer queue is not reachable");
+    }
+
+    [Fact]
+    public void BuildProcessFailureMessage_FallsBackToExitCodeWhenDetailIsDifferent()
+    {
+        var message = SilentPrintCommandExecutor.BuildProcessFailureMessage(
+            "lp",
+            1,
+            "",
+            "lp: printer is busy");
+
+        message.Should().Be("Printing command 'lp' failed with exit code 1. lp: printer is busy");
+    }
 }

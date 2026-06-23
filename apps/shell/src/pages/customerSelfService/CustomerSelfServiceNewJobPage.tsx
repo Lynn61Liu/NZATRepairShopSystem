@@ -794,11 +794,11 @@ function AddressStep({
             className={fieldClass(false, locked)}
           />
         </Field>
-        <Field label="Vehicle address" icon={<MapPin size={17} />} error={touched && !addressValid ? "Vehicle address is required for WOF." : ""}>
+        <Field label="Address" icon={<MapPin size={17} />} error={touched && !addressValid ? "Vehicle address is required for WOF." : ""}>
           <AddressAutocomplete
             value={form.address}
             onChange={(address) => onChange({ address })}
-            placeholder="Start typing the vehicle address"
+            placeholder="Start typing the address"
             className={fieldClass(touched && !addressValid, locked)}
             maxSuggestions={10}
             disabled={locked}

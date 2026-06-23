@@ -32,8 +32,10 @@ export function PoDashboard({ model }: PoDashboardProps) {
           externalSendDetected={model.hasExternalDraftSend}
           invoicePdfPreviewUrl={model.invoicePdfPreviewUrl}
           invoicePdfPreviewGeneratedAt={model.invoicePdfPreviewGeneratedAt}
+          pullingInvoicePdf={model.pullingInvoicePdf}
           onCreateDraft={model.createPoDraft}
           onRecreateDraft={model.recreatePoDraft}
+          onPullInvoicePdf={model.pullInvoicePdf}
           onViewDraft={model.viewPoDraft}
           onOpenSentMailbox={model.openSentMailbox}
           onSelectDetection={model.setSelectedDetectionId}

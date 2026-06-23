@@ -133,9 +133,11 @@ type Props = {
   externalSendDetected?: boolean;
   invoicePdfPreviewUrl?: string;
   invoicePdfPreviewGeneratedAt?: string | null;
+  pullingInvoicePdf?: boolean;
   draftState: PoDraftState;
   onCreateDraft: (payload: { to: string; subject: string; body: string }) => Promise<boolean>;
   onRecreateDraft: (payload: { to: string; subject: string; body: string }) => Promise<boolean>;
+  onPullInvoicePdf?: () => Promise<{ success: boolean; message: string }>;
   onViewDraft: () => Promise<boolean>;
   onOpenSentMailbox: () => boolean | Promise<boolean>;
   onSelectDetection: (id: string) => void;
@@ -165,9 +167,11 @@ export function PoRequestPanel({
   externalSendDetected,
   invoicePdfPreviewUrl,
   invoicePdfPreviewGeneratedAt,
+  pullingInvoicePdf,
   draftState,
   onCreateDraft,
   onRecreateDraft,
+  onPullInvoicePdf,
   onViewDraft,
   onOpenSentMailbox,
   onSelectDetection,
@@ -461,6 +465,11 @@ export function PoRequestPanel({
     } finally {
       setDraftActionBusy(false);
     }
+  };
+
+  const handleInsertInvoice = async () => {
+    if (!onPullInvoicePdf) return;
+    await onPullInvoicePdf();
   };
 
   const handleViewDraft = async () => {
@@ -835,23 +844,33 @@ export function PoRequestPanel({
                     </Button>
                   </>
                 ) : (
-                  <Button
-                    variant="primary"
-                    className="h-10 px-4"
-                    leftIcon={isDraftAvailable ? <MailCheck className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
-                    onClick={isDraftAvailable ? handleViewDraft : handleCreateDraft}
-                    disabled={isDraftAvailable ? readOnly || draftActionBusy || isDraftLoading : createDisabled}
-                  >
-                    {isDraftLoading
-                      ? "加载草稿状态..."
-                      : draftActionBusy
-                        ? isDraftAvailable
-                          ? "打开中..."
-                          : "创建中..."
-                        : isDraftAvailable
-                          ? "查看草稿"
-                          : "创建草稿"}
-                  </Button>
+                  <>
+                    <Button
+                      className="h-10 px-4"
+                      leftIcon={<FileSearch className="h-4 w-4" />}
+                      onClick={handleInsertInvoice}
+                      disabled={!onPullInvoicePdf || readOnly || !canEditDraft || Boolean(pullingInvoicePdf)}
+                    >
+                      {pullingInvoicePdf ? "拉取中..." : "插入 Invoice"}
+                    </Button>
+                    <Button
+                      variant="primary"
+                      className="h-10 px-4"
+                      leftIcon={isDraftAvailable ? <MailCheck className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
+                      onClick={isDraftAvailable ? handleViewDraft : handleCreateDraft}
+                      disabled={isDraftAvailable ? readOnly || draftActionBusy || isDraftLoading : createDisabled}
+                    >
+                      {isDraftLoading
+                        ? "加载草稿状态..."
+                        : draftActionBusy
+                          ? isDraftAvailable
+                            ? "打开中..."
+                            : "创建中..."
+                          : isDraftAvailable
+                            ? "查看草稿"
+                            : "创建草稿"}
+                    </Button>
+                  </>
                 )}
               </div>
             </div>

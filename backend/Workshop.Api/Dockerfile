@@ -19,6 +19,11 @@ FROM mcr.microsoft.com/playwright/dotnet:v1.57.0-jammy AS final
 WORKDIR /app
 
 # 官方镜像已内置 Chromium + 所有依赖
+# Add CUPS client tools so the silent print path can invoke `lp`/`lpstat`.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends cups-client \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app/publish ./
 
 ENV ASPNETCORE_URLS=http://+:8080

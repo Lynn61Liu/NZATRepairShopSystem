@@ -159,9 +159,19 @@ fi
 
 GHCR_USERNAME="$(strip_wrapping_quotes "$(read_env_value GHCR_USERNAME || true)")"
 GHCR_TOKEN="$(strip_wrapping_quotes "$(read_env_value GHCR_TOKEN || true)")"
+CUPS_SOCKET_PATH="$(strip_wrapping_quotes "$(read_env_value CUPS_SOCKET_PATH || true)")"
 
 if [ -z "${GHCR_USERNAME}" ] || [ -z "${GHCR_TOKEN}" ]; then
   echo "GHCR_USERNAME or GHCR_TOKEN is missing in .env"
+  exit 1
+fi
+
+if [ -z "${CUPS_SOCKET_PATH}" ]; then
+  CUPS_SOCKET_PATH="/private/var/run/cups/cups.sock"
+fi
+
+if [ ! -S "${CUPS_SOCKET_PATH}" ]; then
+  echo "CUPS socket not found at ${CUPS_SOCKET_PATH}. Start CUPS on macOS or update CUPS_SOCKET_PATH in .env."
   exit 1
 fi
 

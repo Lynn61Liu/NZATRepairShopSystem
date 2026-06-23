@@ -18,6 +18,7 @@ services:
       ConnectionStrings__Carjam: ${DB_CONN_STRING}
       ConnectionStrings__Redis: ${REDIS_CONN_STRING}
       Redis__InstanceName: ${REDIS_INSTANCE_NAME:-workshop-api:}
+      CUPS_SERVER: ${CUPS_SERVER:-/run/cups/cups.sock}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       Gmail__ClientId: ${GMAIL_CLIENT_ID}
       Gmail__ClientSecret: ${GMAIL_CLIENT_SECRET}
@@ -40,6 +41,7 @@ services:
     ports:
       - "${API_PORT:-8080}:8080"
     volumes:
+      - ${CUPS_SOCKET_PATH:-/private/var/run/cups/cups.sock}:/run/cups/cups.sock
       - api_data:/app/App_Data
 
   web:
