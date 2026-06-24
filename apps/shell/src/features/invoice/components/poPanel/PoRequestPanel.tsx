@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef, type ClipboardEvent, type DragEvent, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef, type ClipboardEvent, type DragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { ChevronDown, Clock3, FileSearch, Mail, MailCheck, MessageSquareText, Paperclip, Send, Settings2, X } from "lucide-react";
 import { Button, Card, Input, Select, Textarea } from "@/components/ui";
 import { buildSharedEmailSignatureHtml } from "@/features/email/emailSignature";
@@ -9,9 +9,82 @@ import { StatusBadge } from "./StatusBadge";
 import type { EmailState, EmailTimelineEvent, InvoiceItem, MerchantEmailRecipient, PoDetection } from "../../types";
 
 const DEFAULT_DRAFT_IMAGE_WIDTH = 360;
+const DEFAULT_INVOICE_PREVIEW_IMAGE_WIDTH = Math.round(DEFAULT_DRAFT_IMAGE_WIDTH * 2.5);
 const MIN_DRAFT_IMAGE_WIDTH = 120;
 const MAX_DRAFT_IMAGE_WIDTH = 720;
+const MIN_INVOICE_PREVIEW_CROP_SIZE = 32;
 const INVOICE_PREVIEW_BLOCK_SELECTOR = '[data-invoice-pdf-preview-block="true"]';
+
+type CropRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type CropDragMode = "move" | "nw" | "ne" | "sw" | "se";
+
+type InvoicePreviewCropState = {
+  image: HTMLImageElement;
+  imageRect: CropRect;
+  crop: CropRect;
+};
+
+const cropHandleClasses: Record<Exclude<CropDragMode, "move">, string> = {
+  nw: "-left-2 -top-2 cursor-nwse-resize",
+  ne: "-right-2 -top-2 cursor-nesw-resize",
+  sw: "-bottom-2 -left-2 cursor-nesw-resize",
+  se: "-bottom-2 -right-2 cursor-nwse-resize",
+};
+
+function clampCropToImage(crop: CropRect, imageRect: CropRect) {
+  const width = Math.min(Math.max(crop.width, MIN_INVOICE_PREVIEW_CROP_SIZE), imageRect.width);
+  const height = Math.min(Math.max(crop.height, MIN_INVOICE_PREVIEW_CROP_SIZE), imageRect.height);
+  const x = Math.min(Math.max(crop.x, 0), imageRect.width - width);
+  const y = Math.min(Math.max(crop.y, 0), imageRect.height - height);
+  return { x, y, width, height };
+}
+
+function getDraggedCrop(mode: CropDragMode, startCrop: CropRect, dx: number, dy: number, imageRect: CropRect) {
+  if (mode === "move") {
+    return clampCropToImage(
+      {
+        ...startCrop,
+        x: startCrop.x + dx,
+        y: startCrop.y + dy,
+      },
+      imageRect
+    );
+  }
+
+  let left = startCrop.x;
+  let top = startCrop.y;
+  let right = startCrop.x + startCrop.width;
+  let bottom = startCrop.y + startCrop.height;
+
+  if (mode.includes("w")) {
+    left = Math.min(Math.max(startCrop.x + dx, 0), right - MIN_INVOICE_PREVIEW_CROP_SIZE);
+  }
+  if (mode.includes("e")) {
+    right = Math.max(Math.min(right + dx, imageRect.width), left + MIN_INVOICE_PREVIEW_CROP_SIZE);
+  }
+  if (mode.includes("n")) {
+    top = Math.min(Math.max(startCrop.y + dy, 0), bottom - MIN_INVOICE_PREVIEW_CROP_SIZE);
+  }
+  if (mode.includes("s")) {
+    bottom = Math.max(Math.min(bottom + dy, imageRect.height), top + MIN_INVOICE_PREVIEW_CROP_SIZE);
+  }
+
+  return clampCropToImage(
+    {
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top,
+    },
+    imageRect
+  );
+}
 
 function escapeHtmlAttribute(value: string) {
   return value
@@ -47,7 +120,7 @@ function buildInvoicePdfPreviewBlockHtml(src: string, updatedAt?: string | null)
         alt="Invoice PDF preview"
         data-po-draft-image="true"
         data-invoice-pdf-preview-image="true"
-        style="display:block; width:360px; max-width:100%; height:auto; margin:8px 0; border:1px solid #d8dee5; border-radius:8px;"
+        style="display:block; width:${DEFAULT_INVOICE_PREVIEW_IMAGE_WIDTH}px; max-width:100%; height:auto; margin:8px 0; border:1px solid #d8dee5; border-radius:8px;"
       />
     </div>
   `;
@@ -295,9 +368,18 @@ export function PoRequestPanel({
   const [previewAttachment, setPreviewAttachment] = useState<{ fileName: string; mimeType: string; url: string } | null>(null);
   const [selectedDraftImageActive, setSelectedDraftImageActive] = useState(false);
   const [selectedDraftImageWidth, setSelectedDraftImageWidth] = useState(DEFAULT_DRAFT_IMAGE_WIDTH);
+  const [invoicePreviewCrop, setInvoicePreviewCrop] = useState<InvoicePreviewCropState | null>(null);
 
   const editorRef = useRef<HTMLDivElement>(null);
   const selectedDraftImageRef = useRef<HTMLImageElement | null>(null);
+  const cropOverlayRef = useRef<HTMLDivElement | null>(null);
+  const invoicePreviewCropRef = useRef<InvoicePreviewCropState | null>(null);
+  const cropDragRef = useRef<{
+    mode: CropDragMode;
+    startClientX: number;
+    startClientY: number;
+    startCrop: CropRect;
+  } | null>(null);
 
   const threadEvents = useMemo(
     () => timelineEvents.filter((event) => ["sent", "reminder", "reply"].includes(event.type)),
@@ -446,7 +528,10 @@ export function PoRequestPanel({
 
   const isModified = to !== selectedMerchantEmail || subject !== defaultSubject || body !== defaultComparableBody;
   const handleCreateDraft = async () => {
-    const payload = { to: normalizedToValue, subject, body };
+    if (invoicePreviewCropRef.current) {
+      commitInvoicePreviewCrop();
+    }
+    const payload = { to: normalizedToValue, subject, body: editorRef.current?.innerHTML ?? body };
     setDraftActionBusy(true);
     try {
       await onCreateDraft(payload);
@@ -457,7 +542,10 @@ export function PoRequestPanel({
   };
 
   const handleRecreateDraft = async () => {
-    const payload = { to: normalizedToValue, subject, body };
+    if (invoicePreviewCropRef.current) {
+      commitInvoicePreviewCrop();
+    }
+    const payload = { to: normalizedToValue, subject, body: editorRef.current?.innerHTML ?? body };
     setDraftActionBusy(true);
     try {
       await onRecreateDraft(payload);
@@ -527,10 +615,146 @@ export function PoRequestPanel({
     setActiveTab("compose");
   };
 
-  const syncBodyFromEditor = () => {
+  const syncBodyFromEditor = useCallback(() => {
     normalizeDraftEditorImages(editorRef.current);
     setBody(editorRef.current?.innerHTML ?? "");
+  }, []);
+
+  const closeInvoicePreviewCrop = useCallback(() => {
+    cropDragRef.current = null;
+    setInvoicePreviewCrop(null);
+  }, []);
+
+  const commitInvoicePreviewCrop = useCallback(() => {
+    const cropState = invoicePreviewCropRef.current;
+    if (!cropState) return;
+
+    const { image, imageRect, crop } = cropState;
+    if (!image.isConnected || !image.naturalWidth || !image.naturalHeight || !imageRect.width || !imageRect.height) {
+      closeInvoicePreviewCrop();
+      return;
+    }
+
+    const scaleX = image.naturalWidth / imageRect.width;
+    const scaleY = image.naturalHeight / imageRect.height;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(crop.width * scaleX));
+    canvas.height = Math.max(1, Math.round(crop.height * scaleY));
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      closeInvoicePreviewCrop();
+      return;
+    }
+
+    try {
+      context.drawImage(
+        image,
+        Math.round(crop.x * scaleX),
+        Math.round(crop.y * scaleY),
+        Math.round(crop.width * scaleX),
+        Math.round(crop.height * scaleY),
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+      image.src = canvas.toDataURL("image/png");
+      image.style.width = `${Math.round(imageRect.width)}px`;
+      image.style.maxWidth = "100%";
+      image.style.height = "auto";
+      syncBodyFromEditor();
+    } catch {
+      // If the source cannot be read by canvas, leave the original image untouched.
+    } finally {
+      closeInvoicePreviewCrop();
+    }
+  }, [closeInvoicePreviewCrop, syncBodyFromEditor]);
+
+  const beginInvoicePreviewCrop = (image: HTMLImageElement) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const imageRect = image.getBoundingClientRect();
+    const editorRect = editor.getBoundingClientRect();
+    if (imageRect.width < MIN_INVOICE_PREVIEW_CROP_SIZE || imageRect.height < MIN_INVOICE_PREVIEW_CROP_SIZE) return;
+
+    selectedDraftImageRef.current = null;
+    setSelectedDraftImageActive(false);
+    setInvoicePreviewCrop({
+      image,
+      imageRect: {
+        x: imageRect.left - editorRect.left,
+        y: imageRect.top - editorRect.top,
+        width: imageRect.width,
+        height: imageRect.height,
+      },
+      crop: {
+        x: 0,
+        y: 0,
+        width: imageRect.width,
+        height: imageRect.height,
+      },
+    });
   };
+
+  const handleCropPointerDown = (event: ReactPointerEvent<HTMLElement>, mode: CropDragMode) => {
+    if (!invoicePreviewCrop) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    cropDragRef.current = {
+      mode,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startCrop: invoicePreviewCrop.crop,
+    };
+  };
+
+  const handleCropPointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = cropDragRef.current;
+    const cropState = invoicePreviewCropRef.current;
+    if (!drag || !cropState) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    const dx = event.clientX - drag.startClientX;
+    const dy = event.clientY - drag.startClientY;
+    setInvoicePreviewCrop((current) =>
+      current
+        ? {
+            ...current,
+            crop: getDraggedCrop(drag.mode, drag.startCrop, dx, dy, current.imageRect),
+          }
+        : current
+    );
+  };
+
+  const handleCropPointerUp = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!cropDragRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    cropDragRef.current = null;
+  };
+
+  useEffect(() => {
+    invoicePreviewCropRef.current = invoicePreviewCrop;
+  }, [invoicePreviewCrop]);
+
+  useEffect(() => {
+    if (!invoicePreviewCrop) return undefined;
+
+    const handlePointerDown = (event: globalThis.PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (cropOverlayRef.current?.contains(target)) return;
+      if (invoicePreviewCropRef.current?.image === target) return;
+      commitInvoicePreviewCrop();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    return () => document.removeEventListener("pointerdown", handlePointerDown, true);
+  }, [commitInvoicePreviewCrop, invoicePreviewCrop]);
 
   const insertHtmlIntoEditor = (html: string) => {
     const editor = editorRef.current;
@@ -590,11 +814,23 @@ export function PoRequestPanel({
   const handleEditorClick = (event: MouseEvent<HTMLDivElement>) => {
     const target = event.target;
     if (!(target instanceof HTMLImageElement) || !editorRef.current?.contains(target)) {
+      if (invoicePreviewCropRef.current) {
+        commitInvoicePreviewCrop();
+      }
       selectedDraftImageRef.current = null;
       setSelectedDraftImageActive(false);
       return;
     }
 
+    if (target.dataset.invoicePdfPreviewImage === "true" && !readOnly && canEditDraft) {
+      if (invoicePreviewCropRef.current?.image === target) return;
+      beginInvoicePreviewCrop(target);
+      return;
+    }
+
+    if (invoicePreviewCropRef.current) {
+      commitInvoicePreviewCrop();
+    }
     selectedDraftImageRef.current = target;
     setSelectedDraftImageActive(true);
     const parsedWidth = Number.parseInt(target.style.width || String(target.width), 10);
@@ -774,20 +1010,66 @@ export function PoRequestPanel({
               </div>
               <div>
                 <div className="mb-1 font-semibold text-slate-900">正文</div>
-                <div
-                  ref={editorRef}
-                  contentEditable={!readOnly && canEditDraft}
-                  className={`min-h-[280px] w-full overflow-auto rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-md [&_table]:max-w-full ${readOnly || !canEditDraft ? "cursor-not-allowed opacity-50" : ""}`}
-                  onInput={syncBodyFromEditor}
-                  onPaste={handleEditorPaste}
-                  onDrop={handleEditorDrop}
-                  onDragOver={(event) => {
-                    if (!readOnly && canEditDraft) {
-                      event.preventDefault();
-                    }
-                  }}
-                  onClick={handleEditorClick}
-                />
+                <div className="relative">
+                  <div
+                    ref={editorRef}
+                    contentEditable={!readOnly && canEditDraft}
+                    className={`min-h-[280px] w-full overflow-auto rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-md [&_table]:max-w-full ${readOnly || !canEditDraft ? "cursor-not-allowed opacity-50" : ""}`}
+                    onInput={syncBodyFromEditor}
+                    onPaste={handleEditorPaste}
+                    onDrop={handleEditorDrop}
+                    onDragOver={(event) => {
+                      if (!readOnly && canEditDraft) {
+                        event.preventDefault();
+                      }
+                    }}
+                    onClick={handleEditorClick}
+                  />
+                  {invoicePreviewCrop ? (
+                    <div
+                      ref={cropOverlayRef}
+                      className="absolute z-20 overflow-hidden rounded-md"
+                      style={{
+                        left: invoicePreviewCrop.imageRect.x,
+                        top: invoicePreviewCrop.imageRect.y,
+                        width: invoicePreviewCrop.imageRect.width,
+                        height: invoicePreviewCrop.imageRect.height,
+                      }}
+                      onPointerDown={(event) => {
+                        if (event.currentTarget === event.target) {
+                          event.preventDefault();
+                          commitInvoicePreviewCrop();
+                        }
+                      }}
+                    >
+                      <div
+                        className="absolute border-2 border-sky-500 bg-sky-500/10 shadow-[0_0_0_9999px_rgba(15,23,42,0.28)]"
+                        style={{
+                          left: invoicePreviewCrop.crop.x,
+                          top: invoicePreviewCrop.crop.y,
+                          width: invoicePreviewCrop.crop.width,
+                          height: invoicePreviewCrop.crop.height,
+                        }}
+                        onPointerDown={(event) => handleCropPointerDown(event, "move")}
+                        onPointerMove={handleCropPointerMove}
+                        onPointerUp={handleCropPointerUp}
+                      >
+                        {(["nw", "ne", "sw", "se"] as const).map((mode) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            aria-label={`Resize crop ${mode}`}
+                            title="拖动裁剪"
+                            className={`absolute h-4 w-4 rounded-full border border-white bg-sky-600 shadow ${cropHandleClasses[mode]}`}
+                            onPointerDown={(event) => handleCropPointerDown(event, mode)}
+                            onPointerMove={handleCropPointerMove}
+                            onPointerUp={handleCropPointerUp}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
                 {selectedDraftImageActive ? (
                   <div className="mt-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
                     <span className="shrink-0 font-medium text-slate-700">图片宽度</span>
