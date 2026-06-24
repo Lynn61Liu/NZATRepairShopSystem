@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -17,6 +17,7 @@ import {
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { useToast } from "@/components/ui";
 import { useJobSheetPrinter } from "@/features/printing/useJobSheetPrinter";
+import type { SilentPrintRouteKey } from "@/features/printing/silentPrint.routes";
 import { fetchJob } from "@/features/jobDetail/api/jobDetailApi";
 import { withApiBase } from "@/utils/api";
 
@@ -139,34 +140,38 @@ export function CustomerSelfServiceNewJobPage() {
   const [createdJobId, setCreatedJobId] = useState("");
   const [printStatus, setPrintStatus] = useState<PrintStatus>({ phase: "idle", message: "等待发送机修单" });
   const toast = useToast();
+  const customerSelfResolveById = useCallback(async (jobId: string) => {
+    const res = await fetchJob(jobId);
+    if (!res.ok) return null;
+
+    const job = (res.data as any)?.job ?? res.data;
+    const row = {
+      plate: job?.vehicle?.plate ?? "",
+      vehicleModel: [job?.vehicle?.make, job?.vehicle?.model, job?.vehicle?.year]
+        .filter(Boolean)
+        .join(" "),
+      customerCode: job?.customer?.businessCode ?? "",
+      customerName: job?.customer?.name ?? "",
+      createdAt: job?.createdAt ?? "",
+      panels: null,
+      nzFirstRegistration: job?.vehicle?.nzFirstRegistration ?? "",
+      vin: job?.vehicle?.vin ?? "",
+    };
+
+    const routeKey = (job?.hasWofService ? "job-wof" : "job-mech") as SilentPrintRouteKey;
+
+    return {
+      row,
+      notes: job?.notes ?? job?.customer?.notes ?? "",
+      routeKey,
+    };
+  }, []);
   const { printById } = useJobSheetPrinter({
     printMode: "silent",
     onError: (message) => toast.error(message),
-    resolveById: async (jobId) => {
-      const res = await fetchJob(jobId);
-      if (!res.ok) return null;
-
-      const job = (res.data as any)?.job ?? res.data;
-      const row = {
-        plate: job?.vehicle?.plate ?? "",
-        vehicleModel: [job?.vehicle?.make, job?.vehicle?.model, job?.vehicle?.year]
-          .filter(Boolean)
-          .join(" "),
-        customerCode: job?.customer?.businessCode ?? "",
-        customerName: job?.customer?.name ?? "",
-        createdAt: job?.createdAt ?? "",
-        panels: null,
-        nzFirstRegistration: job?.vehicle?.nzFirstRegistration ?? "",
-        vin: job?.vehicle?.vin ?? "",
-      };
-
-      return {
-        row,
-        notes: job?.notes ?? job?.customer?.notes ?? "",
-        routeKey: job?.hasWofService ? "job-wof" : "job-mech",
-      };
-    },
+    resolveById: customerSelfResolveById,
   });
+  const autoPrintTriggeredJobIdRef = useRef<string>("");
 
   useEffect(() => {
     const previousTitle = document.title;
@@ -323,6 +328,8 @@ export function CustomerSelfServiceNewJobPage() {
     if (step !== "success") return;
     if (selectedPath !== "wof") return;
     if (!createdJobId) return;
+    if (autoPrintTriggeredJobIdRef.current === createdJobId) return;
+    autoPrintTriggeredJobIdRef.current = createdJobId;
     setPrintStatus((prev) =>
       prev.phase === "sending" || prev.phase === "sent"
         ? prev
@@ -383,6 +390,7 @@ export function CustomerSelfServiceNewJobPage() {
   };
 
   const reset = () => {
+    autoPrintTriggeredJobIdRef.current = "";
     setSelectedPath(null);
     setForm(initialForm);
     setVehicleInfo(null);
