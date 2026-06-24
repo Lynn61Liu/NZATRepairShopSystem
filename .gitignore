@@ -19,3 +19,4 @@ zic8STUb
 *.png
 backend/secrets/nzat-wof-f39beb2312a5.json
 .playwright-mcp/console-2026-06-03T21-36-33-445Z.log
+/backend/Workshop.Api/App_Data
