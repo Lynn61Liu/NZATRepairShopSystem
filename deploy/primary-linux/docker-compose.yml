@@ -48,7 +48,7 @@ services:
       XeroPayments__BankTransferAccountCode: ${XERO_PAYMENTS_BANK_TRANSFER_ACCOUNT_CODE:-}
       ImageOcr__Enabled: ${IMAGE_OCR_ENABLED:-false}
       GmailSync__Enabled: ${GMAIL_SYNC_ENABLED:-true}
-      PoFollowUp__Enabled: ${PO_FOLLOW_UP_ENABLED:-true}
+      PoFollowUp__Enabled: ${PO_FOLLOW_UP_ENABLED:-false}
       XeroPolling__Enabled: ${XERO_POLLING_ENABLED:-true}
     depends_on:
       - db

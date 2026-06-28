@@ -4,7 +4,7 @@ public sealed class PoFollowUpOptions
 {
     public const string SectionName = "PoFollowUp";
 
-    public bool Enabled { get; set; } = true;
+    public bool Enabled { get; set; } = false;
     public int StartupDelaySeconds { get; set; } = 180;
     public int CheckIntervalSeconds { get; set; } = 60;
     public int PollIntervalSeconds { get; set; } = 60;

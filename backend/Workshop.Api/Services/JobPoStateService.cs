@@ -55,7 +55,7 @@ public sealed class JobPoStateService
                 CorrelationId = correlationId,
                 Status = string.IsNullOrWhiteSpace(job.PoNumber) ? JobPoStateStatus.Draft : JobPoStateStatus.PoConfirmed,
                 ConfirmedPoNumber = string.IsNullOrWhiteSpace(job.PoNumber) ? null : job.PoNumber.Trim(),
-                FollowUpEnabled = true,
+                FollowUpEnabled = _options.Enabled,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
                 LastSyncedAt = DateTime.UtcNow,
@@ -153,6 +153,11 @@ public sealed class JobPoStateService
             .FirstOrDefault();
 
         state.CorrelationId = correlationId;
+        if (!_options.Enabled)
+        {
+            state.FollowUpEnabled = false;
+        }
+
         state.CounterpartyEmail = string.IsNullOrWhiteSpace(latestCounterpartyEmail) ? state.CounterpartyEmail : latestCounterpartyEmail;
         state.ConfirmedPoNumber = string.IsNullOrWhiteSpace(job.PoNumber) ? null : job.PoNumber.Trim();
         state.DetectedPoNumber = string.IsNullOrWhiteSpace(latestDetectedPo) ? null : latestDetectedPo;
