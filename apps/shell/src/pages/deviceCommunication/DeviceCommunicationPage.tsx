@@ -4,7 +4,7 @@ import { Alert, Button, Card, EmptyState, Tabs } from "@/components/ui";
 import { requestJson } from "@/utils/api";
 import { Activity, PackageOpen, RefreshCcw, Search, TriangleAlert } from "lucide-react";
 
-type ViewKey = "stations" | "tags" | "logs";
+type ViewKey = "stations" | "tags" | "bindings" | "logs";
 
 type StationStatus = {
   stationId: string;
@@ -57,9 +57,26 @@ type MqttHealth = {
   clientIdPrefix: string;
 };
 
+type LightBindingRow = {
+  id: number;
+  jobId: number;
+  plate: string;
+  stationId: string;
+  tagId: string;
+  groupNo: number;
+  status: string;
+  batteryPercent?: number | null;
+  currentColor?: string | null;
+  isLightOn: boolean;
+  lastSeenAt?: string | null;
+  lastResultAt?: string | null;
+  failureReason?: string | null;
+};
+
 const tabs = [
   { key: "stations", label: "Base Stations" },
   { key: "tags", label: "Light Tags" },
+  { key: "bindings", label: "Bindings" },
   { key: "logs", label: "MQTT Logs" },
 ];
 
@@ -71,9 +88,9 @@ function formatDate(value?: string | null) {
 }
 
 function statusTone(value: string) {
-  if (value === "Online" || value === "Processed") return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  if (value === "Warning" || value === "Received") return "border-amber-200 bg-amber-50 text-amber-700";
-  if (value === "Offline" || value === "Failed" || value.startsWith("Invalid") || value === "StationMismatch") {
+  if (value === "Online" || value === "Processed" || value === "Bound") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (value === "Warning" || value === "Received" || value === "PendingBind") return "border-amber-200 bg-amber-50 text-amber-700";
+  if (value === "Offline" || value === "Failed" || value === "BindFailed" || value.startsWith("Invalid") || value === "StationMismatch") {
     return "border-red-200 bg-red-50 text-red-700";
   }
   return "border-slate-200 bg-slate-50 text-slate-700";
@@ -110,6 +127,7 @@ export function DeviceCommunicationPage() {
   const [activeView, setActiveView] = useState<ViewKey>("stations");
   const [stations, setStations] = useState<StationStatus[]>([]);
   const [lightTags, setLightTags] = useState<LightTagStatus[]>([]);
+  const [bindings, setBindings] = useState<LightBindingRow[]>([]);
   const [logs, setLogs] = useState<MqttLogRow[]>([]);
   const [mqttHealth, setMqttHealth] = useState<MqttHealth | null>(null);
   const [loading, setLoading] = useState(true);
@@ -120,6 +138,7 @@ export function DeviceCommunicationPage() {
   const [batteryFilter, setBatteryFilter] = useState("");
   const [logStatusFilter, setLogStatusFilter] = useState("");
   const [logTypeFilter, setLogTypeFilter] = useState("");
+  const [bindingActionId, setBindingActionId] = useState<number | null>(null);
 
   const stationSummary = useMemo(() => {
     return {
@@ -147,20 +166,22 @@ export function DeviceCommunicationPage() {
     if (logStatusFilter.trim()) logQuery.set("processingStatus", logStatusFilter.trim());
     logQuery.set("limit", "100");
 
-    const [healthRes, stationRes, tagRes, logRes] = await Promise.all([
+    const [healthRes, stationRes, tagRes, bindingRes, logRes] = await Promise.all([
       requestJson<MqttHealth>("/api/estation/mqtt-health"),
       requestJson<StationStatus[]>("/api/estation/stations"),
       requestJson<LightTagStatus[]>(`/api/estation/light-tags${tagQueryString ? `?${tagQueryString}` : ""}`),
+      requestJson<LightBindingRow[]>("/api/estation/light-bindings"),
       requestJson<MqttLogRow[]>(`/api/estation/mqtt-logs?${logQuery}`),
     ]);
 
-    if (!healthRes.ok || !stationRes.ok || !tagRes.ok || !logRes.ok) {
-      setError(healthRes.error || stationRes.error || tagRes.error || logRes.error || "Failed to load device communication data.");
+    if (!healthRes.ok || !stationRes.ok || !tagRes.ok || !bindingRes.ok || !logRes.ok) {
+      setError(healthRes.error || stationRes.error || tagRes.error || bindingRes.error || logRes.error || "Failed to load device communication data.");
     }
 
     setMqttHealth(healthRes.data);
     setStations(stationRes.data ?? []);
     setLightTags(tagRes.data ?? []);
+    setBindings(bindingRes.data ?? []);
     setLogs(logRes.data ?? []);
     setLoading(false);
     setRefreshing(false);
@@ -177,6 +198,20 @@ export function DeviceCommunicationPage() {
 
     return () => window.clearInterval(timer);
   }, [stationFilter, groupFilter, batteryFilter, logStatusFilter, logTypeFilter]);
+
+  const sendBindingLightCommand = async (binding: LightBindingRow, action: "light-on" | "light-off") => {
+    setBindingActionId(binding.id);
+    setError(null);
+    const res = await requestJson(`/api/estation/light-bindings/${binding.id}/${action}`, { method: "POST" });
+    setBindingActionId(null);
+
+    if (!res.ok) {
+      setError(res.error || "Failed to send light command.");
+      return;
+    }
+
+    await loadAll(true);
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 text-[14px]">
@@ -289,10 +324,81 @@ export function DeviceCommunicationPage() {
             setStationFilter(stationId);
             setActiveView("logs");
           }} />
+        ) : activeView === "bindings" ? (
+          <BindingsTable rows={bindings} onOpenLogs={(stationId) => {
+            setStationFilter(stationId);
+            setActiveView("logs");
+          }} onLightCommand={sendBindingLightCommand} activeActionId={bindingActionId} />
         ) : (
           <LogsTable rows={logs} />
         )}
       </Card>
+    </div>
+  );
+}
+
+function BindingsTable({
+  rows,
+  onOpenLogs,
+  onLightCommand,
+  activeActionId,
+}: {
+  rows: LightBindingRow[];
+  onOpenLogs: (stationId: string) => void;
+  onLightCommand: (row: LightBindingRow, action: "light-on" | "light-off") => void;
+  activeActionId: number | null;
+}) {
+  if (rows.length === 0) return <EmptyState title="No light strip bindings" message="No Job-to-light-strip binding has been created yet." />;
+
+  return (
+    <div className="h-full overflow-auto">
+      <table className="min-w-full divide-y divide-[var(--ds-border)] text-left text-sm">
+        <thead className="sticky top-0 bg-white text-xs uppercase tracking-[0.06em] text-[rgba(0,0,0,0.45)]">
+          <tr>
+            <th className="px-4 py-3">Plate</th>
+            <th className="px-4 py-3">Job</th>
+            <th className="px-4 py-3">Tag ID</th>
+            <th className="px-4 py-3">Station</th>
+            <th className="px-4 py-3">Group</th>
+            <th className="px-4 py-3">Status</th>
+            <th className="px-4 py-3">Battery</th>
+            <th className="px-4 py-3">Light</th>
+            <th className="px-4 py-3">Last Result</th>
+            <th className="px-4 py-3">Failure</th>
+            <th className="px-4 py-3"></th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-[var(--ds-border)]">
+          {rows.map((row) => (
+            <tr key={row.id} className="hover:bg-[rgba(0,0,0,0.02)]">
+              <td className="px-4 py-3 font-semibold">{row.plate}</td>
+              <td className="px-4 py-3">{row.jobId}</td>
+              <td className="px-4 py-3 font-mono text-xs">{row.tagId}</td>
+              <td className="px-4 py-3 font-mono text-xs">{row.stationId}</td>
+              <td className="px-4 py-3">{row.groupNo}</td>
+              <td className="px-4 py-3"><Badge tone={statusTone(row.status)}>{row.status}</Badge></td>
+              <td className="px-4 py-3">{row.batteryPercent != null ? `${row.batteryPercent}%` : "-"}</td>
+              <td className="px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <Badge tone={row.isLightOn ? statusTone("Online") : statusTone("Unknown")}>{row.currentColor || "Unknown"}</Badge>
+                  <Button
+                    onClick={() => onLightCommand(row, row.isLightOn ? "light-off" : "light-on")}
+                    className="h-8 px-2 text-xs"
+                    disabled={activeActionId === row.id || row.status !== "Bound"}
+                  >
+                    {activeActionId === row.id ? "发送中..." : row.isLightOn ? "停止" : "点亮"}
+                  </Button>
+                </div>
+              </td>
+              <td className="px-4 py-3">{formatDate(row.lastResultAt)}</td>
+              <td className="max-w-[260px] px-4 py-3 text-xs text-red-700">{row.failureReason || "-"}</td>
+              <td className="px-4 py-3 text-right">
+                <Button onClick={() => onOpenLogs(row.stationId)} className="h-8 px-2 text-xs">Logs</Button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

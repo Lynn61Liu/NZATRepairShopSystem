@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Workshop.Api.Features.EStationMonitoring.Models;
+using Workshop.Api.Features.JobLightBindings.Models;
 using Workshop.Api.Models;
 using Workshop.Api.Utils;
 
@@ -47,6 +48,7 @@ public class AppDbContext : DbContext
     public DbSet<LightStation> LightStations => Set<LightStation>();
     public DbSet<LightTag> LightTags => Set<LightTag>();
     public DbSet<MqttMessageLog> MqttMessageLogs => Set<MqttMessageLog>();
+    public DbSet<JobLightBinding> JobLightBindings => Set<JobLightBinding>();
     
 
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
@@ -796,6 +798,33 @@ public class AppDbContext : DbContext
         mqttMessageLog.HasIndex(x => new { x.StationId, x.ReceivedAt }).HasDatabaseName("ix_mqtt_message_logs_station_received_at");
         mqttMessageLog.HasIndex(x => new { x.MessageType, x.ReceivedAt }).HasDatabaseName("ix_mqtt_message_logs_type_received_at");
         mqttMessageLog.HasIndex(x => new { x.ProcessingStatus, x.ReceivedAt }).HasDatabaseName("ix_mqtt_message_logs_status_received_at");
+
+        var jobLightBinding = modelBuilder.Entity<JobLightBinding>();
+        jobLightBinding.ToTable("job_light_bindings");
+        jobLightBinding.HasKey(x => x.Id);
+        jobLightBinding.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        jobLightBinding.Property(x => x.JobId).HasColumnName("job_id").IsRequired();
+        jobLightBinding.Property(x => x.Plate).HasColumnName("plate").HasMaxLength(32).IsRequired();
+        jobLightBinding.Property(x => x.StationId).HasColumnName("station_id").HasMaxLength(32).IsRequired();
+        jobLightBinding.Property(x => x.TagId).HasColumnName("tag_id").HasMaxLength(32).IsRequired();
+        jobLightBinding.Property(x => x.GroupNo).HasColumnName("group_no").IsRequired();
+        jobLightBinding.Property(x => x.Status).HasColumnName("status").HasMaxLength(40).HasDefaultValue(LightBindingStatus.PendingBind).IsRequired();
+        jobLightBinding.Property(x => x.FailureReason).HasColumnName("failure_reason");
+        jobLightBinding.Property(x => x.LastResultAt).HasColumnName("last_result_at");
+        jobLightBinding.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        jobLightBinding.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        jobLightBinding.HasIndex(x => x.JobId)
+            .IsUnique()
+            .HasFilter("status IN ('PendingBind', 'Bound')")
+            .HasDatabaseName("ux_job_light_bindings_active_job_id");
+        jobLightBinding.HasIndex(x => x.TagId)
+            .IsUnique()
+            .HasFilter("status IN ('PendingBind', 'Bound')")
+            .HasDatabaseName("ux_job_light_bindings_active_tag_id");
+        jobLightBinding.HasIndex(x => x.StationId).HasDatabaseName("ix_job_light_bindings_station_id");
+        jobLightBinding.HasIndex(x => x.Status).HasDatabaseName("ix_job_light_bindings_status");
+        jobLightBinding.HasIndex(x => x.UpdatedAt).HasDatabaseName("ix_job_light_bindings_updated_at");
+        jobLightBinding.HasOne<Job>().WithMany().HasForeignKey(x => x.JobId).OnDelete(DeleteBehavior.Cascade);
     }
 
     private void NormalizeDateTimes()
