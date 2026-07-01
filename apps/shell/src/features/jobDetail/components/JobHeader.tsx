@@ -1,6 +1,6 @@
 import { Archive, Trash2, AlertCircle, Plus, Pencil } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { Button, TagPill, Textarea } from "@/components/ui";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Button, Input, TagPill, Textarea } from "@/components/ui";
 import { XeroButton, getXeroInvoiceUrl } from "@/components/common/XeroButton";
 import { JOB_DETAIL_TEXT } from "@/features/jobDetail/jobDetail.constants";
 import type { TagOption } from "@/components/MultiTagSelect";
@@ -9,6 +9,18 @@ import { formatJobDisplayId } from "@/utils/jobId";
 import { getDurationDays } from "@/features/paint/paintBoard.utils";
 import { useJobSheetPrinter } from "@/features/printing/useJobSheetPrinter";
 import { resolveJobSheetRouteKey } from "@/features/printing/silentPrint.routes";
+import {
+  createJobLightBinding,
+  fetchJobLightBindings,
+  lightOnJobLightBinding,
+  type JobLightBindingResponse,
+} from "@/features/jobDetail/api/jobDetailApi";
+
+const LIGHT_TAG_PATTERN = /^AD1[0-9A-F]{9}$/;
+
+function normalizeLightTagInput(value: string) {
+  return value.trim().toUpperCase().replace(/\s+/g, "");
+}
 
 interface JobHeaderProps {
   jobId: string;
@@ -77,6 +89,16 @@ export function JobHeader({
   const [noteMessage, setNoteMessage] = useState<string | null>(null);
   const [noteError, setNoteError] = useState<string | null>(null);
   const [editingNote, setEditingNote] = useState(false);
+  const [bindDialogOpen, setBindDialogOpen] = useState(false);
+  const [bindingTagInput, setBindingTagInput] = useState("");
+  const [bindingSubmitting, setBindingSubmitting] = useState(false);
+  const [bindingError, setBindingError] = useState<string | null>(null);
+  const [bindingResult, setBindingResult] = useState<JobLightBindingResponse | null>(null);
+  const [currentLightBinding, setCurrentLightBinding] = useState<JobLightBindingResponse | null>(null);
+  const [lightCommandBusy, setLightCommandBusy] = useState(false);
+  const [lightCommandMessage, setLightCommandMessage] = useState<string | null>(null);
+  const [lightCommandError, setLightCommandError] = useState<string | null>(null);
+  const bindingInputRef = useRef<HTMLInputElement | null>(null);
 
   const tagIdByLabel = useMemo(() => {
     const map = new Map<string, string>();
@@ -115,6 +137,26 @@ export function JobHeader({
     }, 2500);
     return () => window.clearTimeout(timer);
   }, [noteMessage, noteError]);
+
+  useEffect(() => {
+    if (!bindDialogOpen) return;
+    const timer = window.setTimeout(() => bindingInputRef.current?.focus(), 50);
+    return () => window.clearTimeout(timer);
+  }, [bindDialogOpen]);
+
+  const refreshCurrentLightBinding = async () => {
+    const res = await fetchJobLightBindings(jobId);
+    if (!res.ok || !res.data) return;
+
+    const active = res.data.find((item) => item.status === "Bound")
+      ?? res.data.find((item) => item.status === "PendingBind")
+      ?? null;
+    setCurrentLightBinding(active);
+  };
+
+  useEffect(() => {
+    void refreshCurrentLightBinding();
+  }, [jobId]);
 
   const saveTags = async () => {
     if (!onSaveTags) return;
@@ -181,6 +223,85 @@ export function JobHeader({
     const url = getXeroInvoiceUrl(externalInvoiceId);
     window.open(url, "_blank", "noopener,noreferrer");
   };
+
+  const openBindDialog = () => {
+    setBindingTagInput("");
+    setBindingError(null);
+    setBindingResult(null);
+    setBindDialogOpen(true);
+  };
+
+  const closeBindDialog = () => {
+    if (bindingSubmitting) return;
+    setBindDialogOpen(false);
+  };
+
+  const waitForBindingResult = async (bindingId: number) => {
+    for (let attempt = 0; attempt < 16; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      const res = await fetchJobLightBindings(jobId);
+      if (!res.ok || !res.data) continue;
+
+      const binding = res.data.find((item) => item.id === bindingId);
+      if (!binding) continue;
+
+      setBindingResult(binding);
+      if (binding.status === "Bound") {
+        setCurrentLightBinding(binding);
+        return;
+      }
+      if (binding.status === "BindFailed") {
+        setBindingError(binding.failureReason || "绑定失败");
+        return;
+      }
+    }
+
+    setBindingError("绑定指令已发送，但暂未收到基站确认");
+  };
+
+  const submitLightBinding = async () => {
+    const tagId = normalizeLightTagInput(bindingTagInput);
+    setBindingTagInput(tagId);
+    setBindingError(null);
+    setBindingResult(null);
+
+    if (!LIGHT_TAG_PATTERN.test(tagId)) {
+      setBindingError("灯条码格式不正确");
+      return;
+    }
+
+    setBindingSubmitting(true);
+    const res = await createJobLightBinding(jobId, tagId);
+    if (!res.ok || !res.data) {
+      setBindingSubmitting(false);
+      setBindingError(res.error || "绑定失败");
+      return;
+    }
+
+    setBindingResult(res.data);
+    setCurrentLightBinding(res.data);
+    await waitForBindingResult(res.data.id);
+    setBindingSubmitting(false);
+  };
+
+  const handleLightOnClick = async () => {
+    if (!currentLightBinding || currentLightBinding.status !== "Bound") return;
+
+    setLightCommandBusy(true);
+    setLightCommandMessage(null);
+    setLightCommandError(null);
+    const res = await lightOnJobLightBinding(currentLightBinding.id);
+    setLightCommandBusy(false);
+
+    if (!res.ok) {
+      setLightCommandError(res.error || "点亮失败");
+      return;
+    }
+
+    if (res.data) setCurrentLightBinding(res.data);
+    setLightCommandMessage("点亮命令已发送");
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "In Shop":
@@ -195,6 +316,7 @@ export function JobHeader({
   };
 
   return (
+    <>
     <div className="flex flex-col gap-4">
       <div className="flex w-full flex-wrap items-center gap-2 md:flex-nowrap">
         <div className="min-w-0">
@@ -317,19 +439,22 @@ export function JobHeader({
             </div>
           )}
         </div>
-         <div className="flex flex-col items-center gap-2 ml-40">
-          <Button variant="primary" onClick={handlePaintClick}>
-            喷漆打印2
-          </Button>
-          <Button variant="primary" onClick={() => handlePrint("mech")}>
-            机修打印2
-          </Button>
-          {externalInvoiceId ? (
-            <XeroButton
-              onClick={openXero}
-              showIcon={false}
-            />
-          ) : null}
+        <div className="flex flex-col items-center gap-2 ml-40">
+          {currentLightBinding?.status === "Bound" ? (
+            <Button variant="primary" onClick={() => void handleLightOnClick()} disabled={lightCommandBusy}>
+              {lightCommandBusy ? "发送中..." : "点亮"}
+            </Button>
+          ) : currentLightBinding ? (
+            <Button variant="primary" disabled>
+              {currentLightBinding.status}
+            </Button>
+          ) : (
+            <Button variant="primary" onClick={openBindDialog}>
+              绑定灯条
+            </Button>
+          )}
+          {lightCommandMessage ? <div className="text-xs text-green-600">{lightCommandMessage}</div> : null}
+          {lightCommandError ? <div className="text-xs text-red-600">{lightCommandError}</div> : null}
         </div>
 
         <div className="flex flex-col items-center gap-2 ml-40">
@@ -348,5 +473,66 @@ export function JobHeader({
         </div>
       </div>
     </div>
+    {bindDialogOpen ? (
+      <div
+        className="fixed inset-0 z-[90] flex items-center justify-center bg-black/35 px-4"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) closeBindDialog();
+        }}
+      >
+        <form
+          className="w-full max-w-[420px] rounded-[8px] border border-[rgba(0,0,0,0.12)] bg-white p-5 shadow-xl"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submitLightBinding();
+          }}
+        >
+          <div className="text-lg font-semibold text-[var(--ds-text)]">绑定灯条</div>
+          <div className="mt-4 space-y-4">
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-[rgba(0,0,0,0.62)]">车牌号</span>
+              <Input value={vehiclePlate || "—"} readOnly className="bg-[rgba(0,0,0,0.03)] font-semibold" />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-[rgba(0,0,0,0.62)]">灯条码</span>
+              <Input
+                ref={bindingInputRef}
+                value={bindingTagInput}
+                onChange={(event) => {
+                  setBindingTagInput(normalizeLightTagInput(event.target.value));
+                  setBindingError(null);
+                }}
+                placeholder="扫描或输入灯条码"
+                disabled={bindingSubmitting}
+              />
+            </label>
+          </div>
+
+          {bindingResult ? (
+            <div className="mt-4 rounded-[8px] border border-[rgba(0,0,0,0.08)] bg-[rgba(0,0,0,0.025)] px-3 py-2 text-sm text-[var(--ds-text)]">
+              <div>状态：{bindingResult.status}</div>
+              <div>灯条码：{bindingResult.tagId}</div>
+              <div>基站：{bindingResult.stationId}</div>
+              <div>Group：{bindingResult.groupNo}</div>
+            </div>
+          ) : null}
+
+          {bindingError ? <div className="mt-3 text-sm text-red-600">{bindingError}</div> : null}
+          {bindingSubmitting && !bindingError ? (
+            <div className="mt-3 text-sm text-[rgba(0,0,0,0.62)]">绑定指令已发送，等待基站确认...</div>
+          ) : null}
+
+          <div className="mt-5 flex justify-end gap-2">
+            <Button onClick={closeBindDialog} disabled={bindingSubmitting}>
+              取消
+            </Button>
+            <Button variant="primary" type="submit" disabled={bindingSubmitting}>
+              {bindingSubmitting ? "确认中..." : "确认"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    ) : null}
+    </>
   );
 }

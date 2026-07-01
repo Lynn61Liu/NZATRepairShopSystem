@@ -44,6 +44,36 @@ export function updateJobNotes(jobId: string, notes: string) {
   });
 }
 
+export type JobLightBindingResponse = {
+  id: number;
+  jobId: number;
+  plate: string;
+  stationId: string;
+  tagId: string;
+  groupNo: number;
+  status: string;
+  failureReason?: string | null;
+  lastResultAt?: string | null;
+};
+
+export function createJobLightBinding(jobId: string, tagId: string) {
+  return requestJson<JobLightBindingResponse>(`/api/jobs/${encodeURIComponent(jobId)}/light-bindings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tagId }),
+  });
+}
+
+export function fetchJobLightBindings(jobId: string) {
+  return requestJson<JobLightBindingResponse[]>(`/api/jobs/${encodeURIComponent(jobId)}/light-bindings`);
+}
+
+export function lightOnJobLightBinding(bindingId: number) {
+  return requestJson<JobLightBindingResponse>(`/api/estation/light-bindings/${encodeURIComponent(String(bindingId))}/light-on`, {
+    method: "POST",
+  });
+}
+
 export function updateJobPoSelection(jobId: string, payload: { poNumber?: string; invoiceReference?: string }) {
   return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}/po-selection`, {
     method: "PUT",

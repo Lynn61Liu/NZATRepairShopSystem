@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Workshop.Api.Features.EStationMonitoring.DTOs;
 using Workshop.Api.Features.EStationMonitoring.Models;
+using Workshop.Api.Features.JobLightBindings.Services;
 
 namespace Workshop.Api.Features.EStationMonitoring.Services;
 
@@ -14,15 +15,18 @@ public sealed class EStationMqttMessageProcessor
     private readonly MqttMessageLogService _logService;
     private readonly StationStatusService _stationStatusService;
     private readonly LightTagStatusService _lightTagStatusService;
+    private readonly JobLightBindingService _jobLightBindingService;
 
     public EStationMqttMessageProcessor(
         MqttMessageLogService logService,
         StationStatusService stationStatusService,
-        LightTagStatusService lightTagStatusService)
+        LightTagStatusService lightTagStatusService,
+        JobLightBindingService jobLightBindingService)
     {
         _logService = logService;
         _stationStatusService = stationStatusService;
         _lightTagStatusService = lightTagStatusService;
+        _jobLightBindingService = jobLightBindingService;
     }
 
     public async Task ProcessAsync(string topic, string payload, DateTime receivedAt, CancellationToken ct)
@@ -61,6 +65,7 @@ public sealed class EStationMqttMessageProcessor
                     }
 
                     await _lightTagStatusService.HandleResultAsync(parsed.StationId, result, receivedAt, ct);
+                    await _jobLightBindingService.HandleResultAsync(parsed.StationId, result, receivedAt, ct);
                     await _stationStatusService.UpdateCountsFromResultAsync(parsed.StationId, result.TotalCount, result.SendCount, receivedAt, ct);
                     await _logService.MarkProcessedAsync(log.Id, result.Results.Count == 1 ? result.Results[0].TagID : null, ct);
                     return;
