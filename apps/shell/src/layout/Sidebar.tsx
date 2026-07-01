@@ -70,7 +70,7 @@ export function Sidebar() {
     { to: "/invoice", label: "发票收款", icon: CircleDollarSign },
     { to: "/wof-schedule", label: "WOF 排班表", icon: CalendarClock, badge: wofTodoCount },
     { to: "/po-dashboard-preview", label: "采购预览", icon: Eye, badge: poUnreadSummary.totalUnreadReplies },
-    { to: "/device-communication", label: "设备通信", icon: PackageOpen },
+    { to: "/device-communication", label: "找钥匙", icon: PackageOpen },
     { to: "/shop", label: "内部商城", icon: ShoppingBag },
     { to: "/procurement-admin", label: "采购后台", icon: ShieldCheck },
   ];
