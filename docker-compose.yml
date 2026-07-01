@@ -14,6 +14,16 @@ services:
       - db_data:/var/lib/postgresql/data
       - /www/wwwroot/NZAT.NET/db/init:/docker-entrypoint-initdb.d:ro
 
+  emqx:
+    image: emqx/emqx:latest
+    restart: unless-stopped
+    environment:
+      EMQX_DASHBOARD__DEFAULT_USERNAME: ${EMQX_DASHBOARD_USERNAME:-admin}
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: ${EMQX_DASHBOARD_PASSWORD:-change-me}
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+      - "${EMQX_DASHBOARD_PORT:-18083}:18083"
+
   api:
     image: ghcr.io/lynn61liu/nzat-api:latest
     restart: unless-stopped
@@ -23,8 +33,15 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ConnectionStrings__Default: ${DB_CONN_STRING}
       ConnectionStrings__Carjam: ${DB_CONN_STRING}
+      EStationMqtt__Enabled: ${ESTATION_MQTT_ENABLED:-false}
+      EStationMqtt__BrokerHost: ${ESTATION_MQTT_BROKER_HOST:-emqx}
+      EStationMqtt__BrokerPort: ${ESTATION_MQTT_BROKER_PORT:-1883}
+      EStationMqtt__Username: ${ESTATION_MQTT_USERNAME:-}
+      EStationMqtt__Password: ${ESTATION_MQTT_PASSWORD:-}
+      EStationMqtt__UseTls: ${ESTATION_MQTT_USE_TLS:-false}
     depends_on:
       - db
+      - emqx
     ports:
       - "${API_PORT:-8080}:8080"
 

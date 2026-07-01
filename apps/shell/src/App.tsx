@@ -26,6 +26,7 @@ import { CourtesyCarAgreementPage } from "./pages/courtesyCarAgreements/Courtesy
 import { CourtesyCarAgreementMessagePage } from "./pages/courtesyCarAgreements/CourtesyCarAgreementMessagePage";
 import { AgreementHistoryPage } from "./pages/agreementHistory/AgreementHistoryPage";
 import { CourtesyCarEntryPage } from "./pages/courtesyCarEntry/CourtesyCarEntryPage";
+import { DeviceCommunicationPage } from "./pages/deviceCommunication/DeviceCommunicationPage";
 
 // --- [从 Eric 版引入] 采购相关组件 ---
 import Shopfront from "./components/Shopfront";
@@ -52,6 +53,7 @@ const router = createBrowserRouter([
       { path: "courtesy-car-drafts/:agreementId/message", element: <CourtesyCarAgreementMessagePage /> },
       { path: "agreement-history", element: <AgreementHistoryPage /> },
       { path: "po-dashboard-preview", element: <PoDashboardPreviewPage /> },
+      { path: "device-communication", element: <DeviceCommunicationPage /> },
       { path: "worklog", element: <WorklogPage /> },
       { path: "parts-flow", element: <PartFlowPage /> },
       { path: "jobs/:id", element: <JobDetailPage /> },

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Workshop.Api.Features.EStationMonitoring.Models;
 using Workshop.Api.Models;
 using Workshop.Api.Utils;
 
@@ -43,6 +44,9 @@ public class AppDbContext : DbContext
     public DbSet<CourtesyCarVehicle> CourtesyCarVehicles => Set<CourtesyCarVehicle>();
     public DbSet<CourtesyCarAgreement> CourtesyCarAgreements => Set<CourtesyCarAgreement>();
     public DbSet<CourtesyCarAgreementEvent> CourtesyCarAgreementEvents => Set<CourtesyCarAgreementEvent>();
+    public DbSet<LightStation> LightStations => Set<LightStation>();
+    public DbSet<LightTag> LightTags => Set<LightTag>();
+    public DbSet<MqttMessageLog> MqttMessageLogs => Set<MqttMessageLog>();
     
 
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
@@ -730,6 +734,68 @@ public class AppDbContext : DbContext
             .WithMany(x => x.Events)
             .HasForeignKey(x => x.CourtesyCarAgreementId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        var lightStation = modelBuilder.Entity<LightStation>();
+        lightStation.ToTable("light_stations");
+        lightStation.HasKey(x => x.Id);
+        lightStation.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        lightStation.Property(x => x.StationId).HasColumnName("station_id").HasMaxLength(32).IsRequired();
+        lightStation.Property(x => x.Mac).HasColumnName("mac").HasMaxLength(64);
+        lightStation.Property(x => x.Alias).HasColumnName("alias").HasMaxLength(160);
+        lightStation.Property(x => x.IsOnline).HasColumnName("is_online").HasDefaultValue(false);
+        lightStation.Property(x => x.LastHeartbeatAt).HasColumnName("last_heartbeat_at");
+        lightStation.Property(x => x.ServerAddress).HasColumnName("server_address").HasMaxLength(255);
+        lightStation.Property(x => x.FirmwareVersion).HasColumnName("firmware_version").HasMaxLength(80);
+        lightStation.Property(x => x.TotalCount).HasColumnName("total_count");
+        lightStation.Property(x => x.SendCount).HasColumnName("send_count");
+        lightStation.Property(x => x.LastPayloadStatus).HasColumnName("last_payload_status").HasMaxLength(40).HasDefaultValue(EStationProcessingStatus.Processed);
+        lightStation.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        lightStation.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        lightStation.HasIndex(x => x.StationId).IsUnique().HasDatabaseName("ux_light_stations_station_id");
+        lightStation.HasIndex(x => x.LastHeartbeatAt).HasDatabaseName("ix_light_stations_last_heartbeat_at");
+
+        var lightTag = modelBuilder.Entity<LightTag>();
+        lightTag.ToTable("light_tags");
+        lightTag.HasKey(x => x.Id);
+        lightTag.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        lightTag.Property(x => x.TagId).HasColumnName("tag_id").HasMaxLength(32).IsRequired();
+        lightTag.Property(x => x.StationId).HasColumnName("station_id").HasMaxLength(32);
+        lightTag.Property(x => x.CurrentGroup).HasColumnName("current_group");
+        lightTag.Property(x => x.CurrentColor).HasColumnName("current_color").HasMaxLength(40);
+        lightTag.Property(x => x.IsLightOn).HasColumnName("is_light_on").HasDefaultValue(false);
+        lightTag.Property(x => x.IsFlashing).HasColumnName("is_flashing");
+        lightTag.Property(x => x.BatteryRaw).HasColumnName("battery_raw");
+        lightTag.Property(x => x.BatteryVoltage).HasColumnName("battery_voltage").HasColumnType("numeric(4,1)");
+        lightTag.Property(x => x.BatteryPercent).HasColumnName("battery_percent");
+        lightTag.Property(x => x.RfPowerSend).HasColumnName("rf_power_send");
+        lightTag.Property(x => x.RfPowerRecv).HasColumnName("rf_power_recv");
+        lightTag.Property(x => x.FirmwareVersion).HasColumnName("firmware_version").HasMaxLength(80);
+        lightTag.Property(x => x.LastResultType).HasColumnName("last_result_type");
+        lightTag.Property(x => x.LastSeenAt).HasColumnName("last_seen_at");
+        lightTag.Property(x => x.LastPayloadStatus).HasColumnName("last_payload_status").HasMaxLength(40).HasDefaultValue(EStationProcessingStatus.Processed);
+        lightTag.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        lightTag.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        lightTag.HasIndex(x => x.TagId).IsUnique().HasDatabaseName("ux_light_tags_tag_id");
+        lightTag.HasIndex(x => x.StationId).HasDatabaseName("ix_light_tags_station_id");
+        lightTag.HasIndex(x => x.CurrentGroup).HasDatabaseName("ix_light_tags_current_group");
+        lightTag.HasIndex(x => x.LastSeenAt).HasDatabaseName("ix_light_tags_last_seen_at");
+
+        var mqttMessageLog = modelBuilder.Entity<MqttMessageLog>();
+        mqttMessageLog.ToTable("mqtt_message_logs");
+        mqttMessageLog.HasKey(x => x.Id);
+        mqttMessageLog.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        mqttMessageLog.Property(x => x.Topic).HasColumnName("topic").HasMaxLength(512).IsRequired();
+        mqttMessageLog.Property(x => x.Payload).HasColumnName("payload").HasColumnType("text").IsRequired();
+        mqttMessageLog.Property(x => x.MessageType).HasColumnName("message_type").HasMaxLength(40).IsRequired();
+        mqttMessageLog.Property(x => x.StationId).HasColumnName("station_id").HasMaxLength(32);
+        mqttMessageLog.Property(x => x.TagId).HasColumnName("tag_id").HasMaxLength(32);
+        mqttMessageLog.Property(x => x.ReceivedAt).HasColumnName("received_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        mqttMessageLog.Property(x => x.ProcessingStatus).HasColumnName("processing_status").HasMaxLength(40).IsRequired();
+        mqttMessageLog.Property(x => x.ErrorMessage).HasColumnName("error_message");
+        mqttMessageLog.HasIndex(x => x.ReceivedAt).HasDatabaseName("ix_mqtt_message_logs_received_at");
+        mqttMessageLog.HasIndex(x => new { x.StationId, x.ReceivedAt }).HasDatabaseName("ix_mqtt_message_logs_station_received_at");
+        mqttMessageLog.HasIndex(x => new { x.MessageType, x.ReceivedAt }).HasDatabaseName("ix_mqtt_message_logs_type_received_at");
+        mqttMessageLog.HasIndex(x => new { x.ProcessingStatus, x.ReceivedAt }).HasDatabaseName("ix_mqtt_message_logs_status_received_at");
     }
 
     private void NormalizeDateTimes()

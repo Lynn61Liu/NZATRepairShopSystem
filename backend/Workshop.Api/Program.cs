@@ -6,6 +6,9 @@ using CarjamImporter.Persistence;
 using CarjamImporter.Playwright;
 using QuestPDF.Infrastructure;
 using Workshop.Api.Data;
+using Workshop.Api.Features.EStationMonitoring.BackgroundServices;
+using Workshop.Api.Features.EStationMonitoring.Options;
+using Workshop.Api.Features.EStationMonitoring.Services;
 using Workshop.Api.Middleware;
 using Workshop.Api.Models;
 using Workshop.Api.Options;
@@ -44,6 +47,8 @@ builder.Services.Configure<ImageOcrOptions>(builder.Configuration.GetSection(Ima
 builder.Services.Configure<InventoryItemOptions>(builder.Configuration.GetSection(InventoryItemOptions.SectionName));
 builder.Services.Configure<PoFollowUpOptions>(builder.Configuration.GetSection(PoFollowUpOptions.SectionName));
 builder.Services.Configure<XeroPaymentOptions>(builder.Configuration.GetSection(XeroPaymentOptions.SectionName));
+builder.Services.Configure<EStationMqttOptions>(builder.Configuration.GetSection(EStationMqttOptions.SectionName));
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -146,10 +151,15 @@ builder.Services.AddSingleton<SilentPrintCommandExecutor>();
 builder.Services.AddSingleton<SilentPrintService>();
 builder.Services.AddScoped<PoAutoFollowUpService>();
 builder.Services.AddSingleton<AppleVisionImageOcrService>();
+builder.Services.AddScoped<StationStatusService>();
+builder.Services.AddScoped<LightTagStatusService>();
+builder.Services.AddScoped<MqttMessageLogService>();
+builder.Services.AddScoped<EStationMqttMessageProcessor>();
 builder.Services.AddHostedService<PoStateSchemaInitializerService>();
 builder.Services.AddHostedService<InvoiceOutboxBackgroundService>();
 builder.Services.AddHostedService<GmailBackgroundSyncService>();
 builder.Services.AddHostedService<PoAutoFollowUpBackgroundService>();
+builder.Services.AddHostedService<EStationMqttListenerBackgroundService>();
 
 // ========= Carjam Importer DI =========
 

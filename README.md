@@ -85,6 +85,11 @@ Make sure init SQL files exist under `db/init/`.
 - `web`: Frontend (Vite build served by Nginx)
 - `api`: .NET 8 API
 - `db`: PostgreSQL
+- `emqx`: MQTT broker for eStation communication monitoring
+
+## Development Docs
+
+- [Self-hosted Broker and eStation communication verification](docs/self-hosted-broker-estation-communication.md)
 
 To stop services:
 ```bash

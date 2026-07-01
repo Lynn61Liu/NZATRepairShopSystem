@@ -317,6 +317,20 @@ export function JobHeader({
             </div>
           )}
         </div>
+         <div className="flex flex-col items-center gap-2 ml-40">
+          <Button variant="primary" onClick={handlePaintClick}>
+            喷漆打印2
+          </Button>
+          <Button variant="primary" onClick={() => handlePrint("mech")}>
+            机修打印2
+          </Button>
+          {externalInvoiceId ? (
+            <XeroButton
+              onClick={openXero}
+              showIcon={false}
+            />
+          ) : null}
+        </div>
 
         <div className="flex flex-col items-center gap-2 ml-40">
           <Button variant="primary" onClick={handlePaintClick}>
