@@ -38,6 +38,8 @@ import { withApiBase } from "@/utils/api";
 
 const REQUIRED_ROOT_SERVICE_TYPES: ServiceType[] = ["wof", "mech", "paint"];
 
+const normalizeLightTagInput = (value: string) => value.trim().toUpperCase().replace(/\s+/g, "");
+
 export function NewJobPage() {
   type PersonalCustomerOption = CachedPersonalCustomer;
   type CustomerMatchHint = {
@@ -70,6 +72,7 @@ export function NewJobPage() {
     printMode: "preview",
   });
   const [rego, setRego] = useState("");
+  const [lightTagId, setLightTagId] = useState("");
   const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null);
   const [importState, setImportState] = useState<ImportState>("idle");
   const [importError, setImportError] = useState("");
@@ -517,6 +520,48 @@ export function NewJobPage() {
     }
   };
 
+  const bindLightTagAfterJobCreate = async (jobId: string) => {
+    const tagId = normalizeLightTagInput(lightTagId);
+    if (!tagId) {
+      return null;
+    }
+
+    if (!jobId) {
+      return { success: false, message: "工单已创建，但没有返回 Job ID，灯条未绑定。" };
+    }
+
+    try {
+      const res = await fetch(withApiBase(`/api/jobs/${encodeURIComponent(jobId)}/light-bindings`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tagId, overrideExisting: true }),
+      });
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        return { success: false, message: `工单已创建，但灯条绑定失败：${data?.error || "未知错误"}` };
+      }
+
+      setLightTagId("");
+      return { success: true, message: "工单已创建，灯条绑定指令已发送。" };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "网络错误";
+      return { success: false, message: `工单已创建，但灯条绑定失败：${message}` };
+    }
+  };
+
+  const showLightBindingNotice = (result: Awaited<ReturnType<typeof bindLightTagAfterJobCreate>>) => {
+    if (!result) {
+      return;
+    }
+
+    if (result.success) {
+      toast.success(result.message);
+    } else {
+      toast.info(result.message);
+    }
+  };
+
   const fetchVehicleFromDb = async (plate: string) => {
     const res = await fetch(withApiBase(`/api/vehicles/by-plate?plate=${encodeURIComponent(plate)}`));
     const data = await res.json().catch(() => null);
@@ -905,12 +950,14 @@ export function NewJobPage() {
       const invoiceMode = typeof data?.invoiceMode === "string" ? data.invoiceMode : "";
       const invoiceError = typeof data?.invoiceError === "string" ? data.invoiceError : "";
       const createdId = data?.jobId ? String(data.jobId) : "";
+      const lightBindingResult = await bindLightTagAfterJobCreate(createdId);
       const printResult = printAfterSave ? printSavedJobSheetsAfterSave(notesPayload, savedCreatedAt) : null;
 
       if (invoiceCreated || invoiceLinked) {
         const successMessage = invoiceLinked ? "工单已创建，并已关联现有 Invoice！" : "工单和 Invoice 已创建成功！";
         setFormAlert({ variant: "success", message: successMessage });
         toast.success(successMessage);
+        showLightBindingNotice(lightBindingResult);
         showPrintFailureNotice(printResult);
         if (printAfterSave && !printResult?.printedAny && !printResult?.failed) {
           toast.info("已保存，当前未选择可打印的机修/喷漆模板。");
@@ -927,6 +974,7 @@ export function NewJobPage() {
             : "工单已创建，Invoice 正在后台生成。";
         setFormAlert({ variant: "success", message: successMessage });
         toast.success(successMessage);
+        showLightBindingNotice(lightBindingResult);
         showPrintFailureNotice(printResult);
         if (printAfterSave && !printResult?.printedAny && !printResult?.failed) {
           toast.info("已保存，当前未选择可打印的机修/喷漆模板。");
@@ -942,6 +990,7 @@ export function NewJobPage() {
           : `工单已创建（Job ID: ${createdId || "未知"}），但 Invoice 没有创建成功。`;
         setFormAlert({ variant: "warning", message });
         toast.error(message);
+        showLightBindingNotice(lightBindingResult);
         showPrintFailureNotice(printResult);
         if (printAfterSave && !printResult?.printedAny && !printResult?.failed) {
           toast.info("已保存，当前未选择可打印的机修/喷漆模板。");
@@ -1008,6 +1057,25 @@ export function NewJobPage() {
             onRegoChange={handleRegoChange}
             onImport={handleImportClick}
           />
+
+          <SectionCard
+            title="绑定灯条"
+            titleIcon={<ReceiptText size={18} />}
+            titleClassName="text-lg font-semibold"
+          >
+            <div className="mt-3 space-y-2">
+              <label htmlFor="new-job-light-tag" className="block text-base text-[rgba(0,0,0,0.65)]">
+                灯条码
+              </label>
+              <Input
+                id="new-job-light-tag"
+                value={lightTagId}
+                placeholder="扫描或输入灯条码"
+                autoComplete="off"
+                onChange={(event) => setLightTagId(normalizeLightTagInput(event.target.value))}
+              />
+            </div>
+          </SectionCard>
 
           <CustomerSection
             customerType={customerType}
@@ -1216,6 +1284,12 @@ export function NewJobPage() {
                 <div className="text-base text-[rgba(0,0,0,0.50)]">配件信息</div>
                 <div className="text-base font-semibold text-[rgba(0,0,0,0.80)]">
                   {normalizedPartsDescriptions.length} 个配件
+                </div>
+              </div>
+              <div>
+                <div className="text-base text-[rgba(0,0,0,0.50)]">绑定灯条</div>
+                <div className="text-base font-semibold text-[rgba(0,0,0,0.80)]">
+                  {lightTagId || "未绑定"}
                 </div>
               </div>
               <div>

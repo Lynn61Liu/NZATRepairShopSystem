@@ -64,8 +64,9 @@ public sealed class EStationMqttMessageProcessor
                         return;
                     }
 
-                    await _lightTagStatusService.HandleResultAsync(parsed.StationId, result, receivedAt, ct);
+                    // Confirm binding first so a later tag/status validation failure does not hide the bind result.
                     await _jobLightBindingService.HandleResultAsync(parsed.StationId, result, receivedAt, ct);
+                    await _lightTagStatusService.HandleResultAsync(parsed.StationId, result, receivedAt, ct);
                     await _stationStatusService.UpdateCountsFromResultAsync(parsed.StationId, result.TotalCount, result.SendCount, receivedAt, ct);
                     await _logService.MarkProcessedAsync(log.Id, result.Results.Count == 1 ? result.Results[0].TagID : null, ct);
                     return;

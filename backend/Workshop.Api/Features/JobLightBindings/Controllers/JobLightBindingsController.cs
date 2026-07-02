@@ -25,7 +25,7 @@ public sealed class JobLightBindingsController : ControllerBase
         [FromBody] CreateJobLightBindingRequest request,
         CancellationToken ct)
     {
-        var result = await _service.CreateBindingAsync(jobId, request.TagId, ct);
+        var result = await _service.CreateBindingAsync(jobId, request.TagId, request.OverrideExisting, ct);
         if (!result.Success)
         {
             if (result.Binding is not null)

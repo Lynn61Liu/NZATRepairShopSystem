@@ -15,6 +15,7 @@ import {
   lightOnJobLightBinding,
   type JobLightBindingResponse,
 } from "@/features/jobDetail/api/jobDetailApi";
+import { shouldAutoCloseLightBindingDialog } from "@/features/jobDetail/lightBindingDialog";
 
 const LIGHT_TAG_PATTERN = /^AD1[0-9A-F]{9}$/;
 
@@ -143,6 +144,11 @@ export function JobHeader({
     const timer = window.setTimeout(() => bindingInputRef.current?.focus(), 50);
     return () => window.clearTimeout(timer);
   }, [bindDialogOpen]);
+
+  useEffect(() => {
+    if (!shouldAutoCloseLightBindingDialog(bindDialogOpen, currentLightBinding?.status)) return;
+    setBindDialogOpen(false);
+  }, [bindDialogOpen, currentLightBinding?.status]);
 
   const refreshCurrentLightBinding = async () => {
     const res = await fetchJobLightBindings(jobId);
@@ -494,8 +500,7 @@ export function JobHeader({
               <Input value={vehiclePlate || "—"} readOnly className="bg-[rgba(0,0,0,0.03)] font-semibold" />
             </label>
             <label className="block">
-              <span className="mb-1 block text-sm font-medium text-[rgba(0,0,0,0.62)]">灯条码</span>
-              <Input
+             <Input
                 ref={bindingInputRef}
                 value={bindingTagInput}
                 onChange={(event) => {
