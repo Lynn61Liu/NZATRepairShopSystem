@@ -1,5 +1,7 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Workshop.Api.Data;
 using Workshop.Api.Features.EStationMonitoring.DTOs;
 using Workshop.Api.Features.EStationMonitoring.Models;
@@ -16,7 +18,7 @@ public sealed class JobLightBindingTests
     {
         await using var db = CreateDbContext();
         var publisher = new RecordingMqttCommandPublisher();
-        var service = new JobLightBindingService(db, publisher, TimeProvider.System);
+        var service = new JobLightBindingService(db, publisher, TimeProvider.System, NullLogger<JobLightBindingService>.Instance);
         var job = await SeedJobAsync(db, "ABC123");
         await SeedOnlineStationAsync(db, "90A9F73014FC");
 
@@ -39,7 +41,7 @@ public sealed class JobLightBindingTests
     public async Task CreateBindingAsync_RejectsInvalidTagId()
     {
         await using var db = CreateDbContext();
-        var service = new JobLightBindingService(db, new RecordingMqttCommandPublisher(), TimeProvider.System);
+        var service = new JobLightBindingService(db, new RecordingMqttCommandPublisher(), TimeProvider.System, NullLogger<JobLightBindingService>.Instance);
         var job = await SeedJobAsync(db, "ABC123");
         await SeedOnlineStationAsync(db, "90A9F73014FC");
 
@@ -54,7 +56,7 @@ public sealed class JobLightBindingTests
     public async Task CreateBindingAsync_RejectsMissingJob()
     {
         await using var db = CreateDbContext();
-        var service = new JobLightBindingService(db, new RecordingMqttCommandPublisher(), TimeProvider.System);
+        var service = new JobLightBindingService(db, new RecordingMqttCommandPublisher(), TimeProvider.System, NullLogger<JobLightBindingService>.Instance);
         await SeedOnlineStationAsync(db, "90A9F73014FC");
 
         var result = await service.CreateBindingAsync(999, "AD100006D9A0", CancellationToken.None);
@@ -67,7 +69,7 @@ public sealed class JobLightBindingTests
     public async Task CreateBindingAsync_RejectsWhenNoOnlineStationExists()
     {
         await using var db = CreateDbContext();
-        var service = new JobLightBindingService(db, new RecordingMqttCommandPublisher(), TimeProvider.System);
+        var service = new JobLightBindingService(db, new RecordingMqttCommandPublisher(), TimeProvider.System, NullLogger<JobLightBindingService>.Instance);
         var job = await SeedJobAsync(db, "ABC123");
 
         var result = await service.CreateBindingAsync(job.Id, "AD100006D9A0", CancellationToken.None);
@@ -77,10 +79,10 @@ public sealed class JobLightBindingTests
     }
 
     [Fact]
-    public async Task CreateBindingAsync_RejectsDuplicateActiveJobBinding()
+    public async Task CreateBindingAsync_OverridesDuplicateActiveJobBindingByJobId()
     {
         await using var db = CreateDbContext();
-        var service = new JobLightBindingService(db, new RecordingMqttCommandPublisher(), TimeProvider.System);
+        var service = new JobLightBindingService(db, new RecordingMqttCommandPublisher(), TimeProvider.System, NullLogger<JobLightBindingService>.Instance);
         var job = await SeedJobAsync(db, "ABC123");
         await SeedOnlineStationAsync(db, "90A9F73014FC");
         db.JobLightBindings.Add(new JobLightBinding
@@ -98,15 +100,28 @@ public sealed class JobLightBindingTests
 
         var result = await service.CreateBindingAsync(job.Id, "AD100006D9A0", CancellationToken.None);
 
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Be("这个 Job 已经绑定了灯条");
+        result.Success.Should().BeTrue();
+        result.Binding.Should().NotBeNull();
+        result.Binding!.JobId.Should().Be(job.Id);
+        result.Binding.TagId.Should().Be("AD100006D9A0");
+
+        var rows = await db.JobLightBindings.OrderBy(x => x.Id).ToListAsync();
+        rows.Should().Contain(x =>
+            x.JobId == job.Id &&
+            x.Status == LightBindingStatus.PendingBind &&
+            x.TagId == "AD100006D9A0");
+        rows.Should().Contain(x =>
+            x.JobId == job.Id &&
+            x.TagId == "AD1000000001" &&
+            x.Status == LightBindingStatus.Unbound &&
+            x.FailureReason == "已被 Job ABC123 覆盖绑定。");
     }
 
     [Fact]
-    public async Task CreateBindingAsync_RejectsDuplicateActiveTagBinding()
+    public async Task CreateBindingAsync_OverridesDuplicateActiveTagBinding()
     {
         await using var db = CreateDbContext();
-        var service = new JobLightBindingService(db, new RecordingMqttCommandPublisher(), TimeProvider.System);
+        var service = new JobLightBindingService(db, new RecordingMqttCommandPublisher(), TimeProvider.System, NullLogger<JobLightBindingService>.Instance);
         var job = await SeedJobAsync(db, "ABC123");
         var otherJob = await SeedJobAsync(db, "XYZ789");
         await SeedOnlineStationAsync(db, "90A9F73014FC");
@@ -125,15 +140,164 @@ public sealed class JobLightBindingTests
 
         var result = await service.CreateBindingAsync(job.Id, "AD100006D9A0", CancellationToken.None);
 
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Be("这个灯条已经绑定到其他 Job");
+        result.Success.Should().BeTrue();
+        result.Binding.Should().NotBeNull();
+        result.Binding!.JobId.Should().Be(job.Id);
+        result.Binding.TagId.Should().Be("AD100006D9A0");
+
+        var rows = await db.JobLightBindings.OrderBy(x => x.Id).ToListAsync();
+        rows.Should().Contain(x =>
+            x.JobId == otherJob.Id &&
+            x.Status == LightBindingStatus.Unbound &&
+            x.FailureReason == "已被 Job ABC123 覆盖绑定。");
+        rows.Should().Contain(x =>
+            x.JobId == job.Id &&
+            x.Status == LightBindingStatus.PendingBind &&
+            x.TagId == "AD100006D9A0");
+    }
+
+    [Fact]
+    public async Task CreateBindingAsync_WithOverrideExisting_UnboundsOldTagBinding()
+    {
+        await using var db = CreateDbContext();
+        var service = new JobLightBindingService(db, new RecordingMqttCommandPublisher(), TimeProvider.System, NullLogger<JobLightBindingService>.Instance);
+        var job = await SeedJobAsync(db, "ABC123");
+        var otherJob = await SeedJobAsync(db, "XYZ789");
+        await SeedOnlineStationAsync(db, "90A9F73014FC");
+        db.JobLightBindings.Add(new JobLightBinding
+        {
+            JobId = otherJob.Id,
+            Plate = "XYZ789",
+            StationId = "90A9F73014FC",
+            TagId = "AD100006D9A0",
+            GroupNo = 1,
+            Status = LightBindingStatus.Bound,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await service.CreateBindingAsync(job.Id, "AD100006D9A0", true, CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+        var rows = await db.JobLightBindings.OrderBy(x => x.JobId).ToListAsync();
+        rows.Should().Contain(x =>
+            x.JobId == otherJob.Id &&
+            x.Status == LightBindingStatus.Unbound &&
+            x.FailureReason == "已被 Job ABC123 覆盖绑定。");
+        rows.Should().Contain(x =>
+            x.JobId == job.Id &&
+            x.Status == LightBindingStatus.PendingBind &&
+            x.TagId == "AD100006D9A0");
+    }
+
+    [Fact]
+    public async Task CreateBindingAsync_WithOverrideExisting_AllowsScannedCodeWithoutTagPattern()
+    {
+        await using var db = CreateDbContext();
+        var publisher = new RecordingMqttCommandPublisher();
+        var service = new JobLightBindingService(db, publisher, TimeProvider.System, NullLogger<JobLightBindingService>.Instance);
+        var job = await SeedJobAsync(db, "ABC123");
+        await SeedOnlineStationAsync(db, "90A9F73014FC");
+
+        var result = await service.CreateBindingAsync(job.Id, " scan-123 ", true, CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+        result.Binding.Should().NotBeNull();
+        result.Binding!.TagId.Should().Be("SCAN-123");
+        publisher.Commands.Should().ContainSingle(command => command.TagIds.SequenceEqual(new[] { "SCAN-123" }));
+    }
+
+    [Fact]
+    public async Task CreateManualBindingAsync_OverridesExistingActiveTagBinding()
+    {
+        await using var db = CreateDbContext();
+        var publisher = new RecordingMqttCommandPublisher();
+        var service = new JobLightBindingService(db, publisher, TimeProvider.System, NullLogger<JobLightBindingService>.Instance);
+        var oldJob = await SeedJobAsync(db, "XYZ789");
+        await SeedOnlineStationAsync(db, "90A9F73014FC");
+        db.JobLightBindings.Add(new JobLightBinding
+        {
+            JobId = oldJob.Id,
+            Plate = "XYZ789",
+            StationId = "90A9F73014FC",
+            TagId = "SCAN-123",
+            GroupNo = 1,
+            Status = LightBindingStatus.Bound,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await service.CreateManualBindingAsync("钥匙柜 A1", "scan-123", CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+        result.Binding.Should().NotBeNull();
+        result.Binding!.JobId.Should().BeNull();
+        result.Binding.Plate.Should().Be("钥匙柜 A1");
+        result.Binding.TagId.Should().Be("SCAN-123");
+
+        var rows = await db.JobLightBindings.OrderBy(x => x.Id).ToListAsync();
+        rows.Should().Contain(x =>
+            x.JobId == oldJob.Id &&
+            x.Status == LightBindingStatus.Unbound &&
+            x.FailureReason == "已被 钥匙柜 A1 覆盖绑定。");
+        rows.Should().Contain(x =>
+            x.JobId == null &&
+            x.Plate == "钥匙柜 A1" &&
+            x.Status == LightBindingStatus.PendingBind &&
+            x.TagId == "SCAN-123");
+        publisher.Commands.Should().ContainSingle(command => command.TagIds.SequenceEqual(new[] { "SCAN-123" }));
+    }
+
+    [Fact]
+    public async Task CreateManualBindingAsync_OverridesExistingActivePlateBinding()
+    {
+        await using var db = CreateDbContext();
+        var publisher = new RecordingMqttCommandPublisher();
+        var service = new JobLightBindingService(db, publisher, TimeProvider.System, NullLogger<JobLightBindingService>.Instance);
+        await SeedOnlineStationAsync(db, "90A9F73014FC");
+        db.JobLightBindings.Add(new JobLightBinding
+        {
+            JobId = null,
+            Plate = "钥匙柜 A1",
+            StationId = "90A9F73014FC",
+            TagId = "SCAN-222",
+            GroupNo = 7,
+            Status = LightBindingStatus.Bound,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await service.CreateManualBindingAsync("钥匙柜 A1", "scan-123", CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+        result.Binding.Should().NotBeNull();
+        result.Binding!.JobId.Should().BeNull();
+        result.Binding.Plate.Should().Be("钥匙柜 A1");
+        result.Binding.TagId.Should().Be("SCAN-123");
+
+        var rows = await db.JobLightBindings.OrderBy(x => x.Id).ToListAsync();
+        rows.Should().Contain(x =>
+            x.JobId == null &&
+            x.Plate == "钥匙柜 A1" &&
+            x.TagId == "SCAN-222" &&
+            x.Status == LightBindingStatus.Unbound &&
+            x.FailureReason == "已被 钥匙柜 A1 覆盖绑定。");
+        rows.Should().Contain(x =>
+            x.JobId == null &&
+            x.Plate == "钥匙柜 A1" &&
+            x.TagId == "SCAN-123" &&
+            x.Status == LightBindingStatus.PendingBind);
+        publisher.Commands.Should().ContainSingle(command => command.TagIds.SequenceEqual(new[] { "SCAN-123" }));
     }
 
     [Fact]
     public async Task HandleResultAsync_UpdatesPendingBindingToBound()
     {
         await using var db = CreateDbContext();
-        var service = new JobLightBindingService(db, new RecordingMqttCommandPublisher(), TimeProvider.System);
+        var service = new JobLightBindingService(db, new RecordingMqttCommandPublisher(), TimeProvider.System, NullLogger<JobLightBindingService>.Instance);
         var receivedAt = DateTime.UtcNow;
         db.JobLightBindings.Add(new JobLightBinding
         {
@@ -171,6 +335,75 @@ public sealed class JobLightBindingTests
     }
 
     [Fact]
+    public async Task HandleResultAsync_LogsGroupMismatchAndLeavesBindingPending()
+    {
+        await using var db = CreateDbContext();
+        var logger = new CapturingLogger<JobLightBindingService>();
+        var service = new JobLightBindingService(db, new RecordingMqttCommandPublisher(), TimeProvider.System, logger);
+        var receivedAt = DateTime.UtcNow;
+        db.JobLightBindings.Add(new JobLightBinding
+        {
+            JobId = 123,
+            Plate = "ABC123",
+            StationId = "90A9F73014FC",
+            TagId = "AD100006D9A0",
+            GroupNo = 128,
+            Status = LightBindingStatus.PendingBind,
+            CreatedAt = receivedAt.AddSeconds(-5),
+            UpdatedAt = receivedAt.AddSeconds(-5),
+        });
+        await db.SaveChangesAsync();
+
+        await service.HandleResultAsync(
+            "90A9F73014FC",
+            new TaskResultDto
+            {
+                Results =
+                [
+                    new TaskItemResultDto
+                    {
+                        TagID = "AD100006D9A0",
+                        Group = 127,
+                    },
+                ],
+            },
+            receivedAt,
+            CancellationToken.None);
+
+        var binding = await db.JobLightBindings.SingleAsync();
+        binding.Status.Should().Be(LightBindingStatus.PendingBind);
+        logger.Entries.Should().Contain(entry =>
+            entry.Level == LogLevel.Warning &&
+            entry.Message.Contains("group mismatch", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task GetDeviceBindingsAsync_IncludesVehicleModelAndColourForBoundJobBinding()
+    {
+        await using var db = CreateDbContext();
+        var service = new JobLightBindingService(db, new RecordingMqttCommandPublisher(), TimeProvider.System, NullLogger<JobLightBindingService>.Instance);
+        var job = await SeedJobAsync(db, "ABC123", make: "Toyota", model: "Aqua", year: 2020, colour: "Blue");
+        db.JobLightBindings.Add(new JobLightBinding
+        {
+            JobId = job.Id,
+            Plate = "ABC123",
+            StationId = "90A9F73014FC",
+            TagId = "AD100006D9A0",
+            GroupNo = 128,
+            Status = LightBindingStatus.Bound,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        var rows = await service.GetDeviceBindingsAsync(CancellationToken.None);
+
+        rows.Should().ContainSingle();
+        rows[0].VehicleModel.Should().Be("2020 Toyota Aqua");
+        rows[0].VehicleColour.Should().Be("Blue");
+    }
+
+    [Fact]
     public void BuildBindPayload_UsesSupplierJsonShape()
     {
         var payload = EStationMqttCommandPublisher.BuildBindPayload(128, ["AD100006D9A0"]);
@@ -193,6 +426,24 @@ public sealed class JobLightBindingTests
 
         source.Should().Contain("[DbContext(typeof(AppDbContext))]");
         source.Should().Contain("[Migration(\"20260701090000_AddJobLightBindings\")]");
+    }
+
+    [Fact]
+    public void AllowManualLightBindingsMigration_IsDiscoverableByEf()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "Workshop.Api",
+            "Migrations",
+            "20260702090000_AllowManualLightBindings.cs"));
+
+        source.Should().Contain("[DbContext(typeof(AppDbContext))]");
+        source.Should().Contain("[Migration(\"20260702090000_AllowManualLightBindings\")]");
+        source.Should().Contain("ALTER COLUMN job_id DROP NOT NULL");
     }
 
     [Fact]
@@ -220,11 +471,21 @@ public sealed class JobLightBindingTests
         return new TestAppDbContext(options);
     }
 
-    private static async Task<Job> SeedJobAsync(AppDbContext db, string plate)
+    private static async Task<Job> SeedJobAsync(
+        AppDbContext db,
+        string plate,
+        string? make = null,
+        string? model = null,
+        int? year = null,
+        string? colour = null)
     {
         var vehicle = new Vehicle
         {
             Plate = plate,
+            Make = make,
+            Model = model,
+            Year = year,
+            Colour = colour,
             UpdatedAt = DateTime.UtcNow,
         };
         var job = new Job
@@ -270,6 +531,38 @@ public sealed class JobLightBindingTests
     }
 
     private sealed record BindCommand(string StationId, int GroupNo, IReadOnlyList<string> TagIds);
+
+    private sealed record CapturedLogEntry(LogLevel Level, string Message);
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<CapturedLogEntry> Entries { get; } = [];
+
+        public IDisposable BeginScope<TState>(TState state)
+            where TState : notnull
+            => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Entries.Add(new CapturedLogEntry(logLevel, formatter(state, exception)));
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+
+            public void Dispose()
+            {
+            }
+        }
+    }
 
     private sealed class TestAppDbContext : AppDbContext
     {

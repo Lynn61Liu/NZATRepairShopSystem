@@ -3,7 +3,7 @@ namespace Workshop.Api.Features.JobLightBindings.Models;
 public sealed class JobLightBinding
 {
     public long Id { get; set; }
-    public long JobId { get; set; }
+    public long? JobId { get; set; }
     public string Plate { get; set; } = string.Empty;
     public string StationId { get; set; } = string.Empty;
     public string TagId { get; set; } = string.Empty;

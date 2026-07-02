@@ -2,7 +2,7 @@ import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Button, Card, EmptyState, Tabs } from "@/components/ui";
 import { requestJson } from "@/utils/api";
-import { Activity, PackageOpen, RefreshCcw, Search, TriangleAlert } from "lucide-react";
+import { Activity, PackageOpen, Plus, RefreshCcw, Search, TriangleAlert } from "lucide-react";
 
 type ViewKey = "stations" | "tags" | "bindings" | "logs";
 
@@ -59,7 +59,7 @@ type MqttHealth = {
 
 type LightBindingRow = {
   id: number;
-  jobId: number;
+  jobId?: number | null;
   plate: string;
   stationId: string;
   tagId: string;
@@ -79,6 +79,17 @@ const tabs = [
   { key: "bindings", label: "Bindings" },
   { key: "logs", label: "MQTT Logs" },
 ];
+
+const bindingStatusOptions = [
+  { value: "active", label: "Active bindings" },
+  { value: "", label: "All statuses" },
+  { value: "Bound", label: "Bound" },
+  { value: "PendingBind", label: "PendingBind" },
+  { value: "BindFailed", label: "BindFailed" },
+  { value: "Unbound", label: "Unbound" },
+];
+
+const normalizeLightTagInput = (value: string) => value.trim().toUpperCase().replace(/\s+/g, "");
 
 function formatDate(value?: string | null) {
   if (!value) return "-";
@@ -138,7 +149,13 @@ export function DeviceCommunicationPage() {
   const [batteryFilter, setBatteryFilter] = useState("");
   const [logStatusFilter, setLogStatusFilter] = useState("");
   const [logTypeFilter, setLogTypeFilter] = useState("");
+  const [bindingStatusFilter, setBindingStatusFilter] = useState("active");
   const [bindingActionId, setBindingActionId] = useState<number | null>(null);
+  const [manualBindingOpen, setManualBindingOpen] = useState(false);
+  const [manualObjectName, setManualObjectName] = useState("");
+  const [manualTagId, setManualTagId] = useState("");
+  const [manualBindingSaving, setManualBindingSaving] = useState(false);
+  const [manualBindingError, setManualBindingError] = useState<string | null>(null);
 
   const stationSummary = useMemo(() => {
     return {
@@ -147,6 +164,17 @@ export function DeviceCommunicationPage() {
       offline: stations.filter((row) => row.status === "Offline").length,
     };
   }, [stations]);
+  const visibleBindings = useMemo(() => {
+    if (bindingStatusFilter === "active") {
+      return bindings.filter((row) => row.status !== "Unbound");
+    }
+
+    if (!bindingStatusFilter) {
+      return bindings;
+    }
+
+    return bindings.filter((row) => row.status === bindingStatusFilter);
+  }, [bindings, bindingStatusFilter]);
 
   const loadAll = async (silent = false) => {
     if (silent) setRefreshing(true);
@@ -211,6 +239,52 @@ export function DeviceCommunicationPage() {
     }
 
     await loadAll(true);
+  };
+
+  const closeManualBindingDialog = () => {
+    if (manualBindingSaving) return;
+    setManualBindingOpen(false);
+    setManualBindingError(null);
+    setManualObjectName("");
+    setManualTagId("");
+  };
+
+  const submitManualBinding = async () => {
+    const objectName = manualObjectName.trim();
+    const tagId = normalizeLightTagInput(manualTagId);
+    if (!objectName) {
+      setManualBindingError("请输入物体名称。");
+      return;
+    }
+    if (!tagId) {
+      setManualBindingError("请输入灯条码。");
+      return;
+    }
+
+    setManualBindingSaving(true);
+    setManualBindingError(null);
+    try {
+      const res = await requestJson<LightBindingRow>("/api/estation/light-bindings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ objectName, tagId }),
+      });
+
+      if (!res.ok) {
+        setManualBindingError(res.error || "绑定失败。");
+        return;
+      }
+
+      setManualBindingOpen(false);
+      setManualObjectName("");
+      setManualTagId("");
+      setBindingStatusFilter("active");
+      await loadAll(true);
+    } catch (err) {
+      setManualBindingError(err instanceof Error ? err.message : "绑定失败。");
+    } finally {
+      setManualBindingSaving(false);
+    }
   };
 
   return (
@@ -305,6 +379,31 @@ export function DeviceCommunicationPage() {
               <CompactInput value={logStatusFilter} onChange={setLogStatusFilter} placeholder="Processing status" />
             </>
           ) : null}
+          {activeView === "bindings" ? (
+            <>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setManualBindingError(null);
+                  setManualBindingOpen(true);
+                }}
+                leftIcon={<Plus className="h-4 w-4" />}
+              >
+                添加
+              </Button>
+              <select
+                value={bindingStatusFilter}
+                onChange={(event) => setBindingStatusFilter(event.target.value)}
+                className="h-9 rounded-[8px] border border-[var(--ds-border)] bg-white px-3 text-sm"
+              >
+                {bindingStatusOptions.map((option) => (
+                  <option key={option.value || "all"} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </>
+          ) : null}
           <Button onClick={() => void loadAll(true)} leftIcon={<Search className="h-4 w-4" />}>
             Apply
           </Button>
@@ -325,7 +424,7 @@ export function DeviceCommunicationPage() {
             setActiveView("logs");
           }} />
         ) : activeView === "bindings" ? (
-          <BindingsTable rows={bindings} onOpenLogs={(stationId) => {
+          <BindingsTable rows={visibleBindings} onOpenLogs={(stationId) => {
             setStationFilter(stationId);
             setActiveView("logs");
           }} onLightCommand={sendBindingLightCommand} activeActionId={bindingActionId} />
@@ -333,6 +432,91 @@ export function DeviceCommunicationPage() {
           <LogsTable rows={logs} />
         )}
       </Card>
+
+      <ManualBindingDialog
+        open={manualBindingOpen}
+        objectName={manualObjectName}
+        tagId={manualTagId}
+        isSaving={manualBindingSaving}
+        error={manualBindingError}
+        onObjectNameChange={setManualObjectName}
+        onTagIdChange={(value) => setManualTagId(normalizeLightTagInput(value))}
+        onCancel={closeManualBindingDialog}
+        onConfirm={() => void submitManualBinding()}
+      />
+    </div>
+  );
+}
+
+function ManualBindingDialog({
+  open,
+  objectName,
+  tagId,
+  isSaving,
+  error,
+  onObjectNameChange,
+  onTagIdChange,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  objectName: string;
+  tagId: string;
+  isSaving: boolean;
+  error: string | null;
+  onObjectNameChange: (value: string) => void;
+  onTagIdChange: (value: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4">
+      <div className="w-full max-w-lg rounded-[16px] bg-white p-5 shadow-xl">
+        <div className="text-lg font-semibold text-[var(--ds-text)]">添加绑定</div>
+        <div className="mt-4 space-y-4">
+          <div className="space-y-2">
+            <label htmlFor="manual-binding-object-name" className="block text-sm font-medium text-[rgba(0,0,0,0.68)]">
+              物体名称
+            </label>
+            <input
+              id="manual-binding-object-name"
+              value={objectName}
+              onChange={(event) => onObjectNameChange(event.target.value)}
+              disabled={isSaving}
+              className="h-10 w-full rounded-[8px] border border-[var(--ds-border)] bg-white px-3 text-sm outline-none transition focus:border-[var(--ds-primary)]"
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="manual-binding-tag-id" className="block text-sm font-medium text-[rgba(0,0,0,0.68)]">
+              Tag ID
+            </label>
+            <input
+              id="manual-binding-tag-id"
+              value={tagId}
+              onChange={(event) => onTagIdChange(event.target.value)}
+              placeholder="扫描或输入TagId"
+              autoComplete="off"
+              disabled={isSaving}
+              className="h-10 w-full rounded-[8px] border border-[var(--ds-border)] bg-white px-3 font-mono text-sm outline-none transition focus:border-[var(--ds-primary)]"
+            />
+          </div>
+          {error ? (
+            <div className="rounded-[10px] border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error}
+            </div>
+          ) : null}
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button onClick={onCancel} disabled={isSaving}>
+            取消
+          </Button>
+          <Button variant="primary" onClick={onConfirm} disabled={isSaving}>
+            {isSaving ? "绑定中..." : "确认"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -355,7 +539,7 @@ function BindingsTable({
       <table className="min-w-full divide-y divide-[var(--ds-border)] text-left text-sm">
         <thead className="sticky top-0 bg-white text-xs uppercase tracking-[0.06em] text-[rgba(0,0,0,0.45)]">
           <tr>
-            <th className="px-4 py-3">Plate</th>
+            <th className="px-4 py-3">Object / Plate</th>
             <th className="px-4 py-3">Job</th>
             <th className="px-4 py-3">Tag ID</th>
             <th className="px-4 py-3">Station</th>
@@ -372,7 +556,7 @@ function BindingsTable({
           {rows.map((row) => (
             <tr key={row.id} className="hover:bg-[rgba(0,0,0,0.02)]">
               <td className="px-4 py-3 font-semibold">{row.plate}</td>
-              <td className="px-4 py-3">{row.jobId}</td>
+              <td className="px-4 py-3">{row.jobId ?? "-"}</td>
               <td className="px-4 py-3 font-mono text-xs">{row.tagId}</td>
               <td className="px-4 py-3 font-mono text-xs">{row.stationId}</td>
               <td className="px-4 py-3">{row.groupNo}</td>

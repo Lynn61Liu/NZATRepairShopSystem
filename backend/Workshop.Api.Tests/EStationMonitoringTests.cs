@@ -1,9 +1,13 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
+using Microsoft.Extensions.Logging.Abstractions;
 using Workshop.Api.Data;
 using Workshop.Api.Features.EStationMonitoring.DTOs;
 using Workshop.Api.Features.EStationMonitoring.Models;
 using Workshop.Api.Features.EStationMonitoring.Services;
+using Workshop.Api.Features.JobLightBindings.Models;
+using Workshop.Api.Features.JobLightBindings.Services;
 using Workshop.Api.Models;
 
 namespace Workshop.Api.Tests;
@@ -116,6 +120,56 @@ public class EStationMonitoringTests
         tag.LastResultTypeLabel.Should().Be("Communication Result");
     }
 
+    [Fact]
+    public async Task ProcessAsync_ConfirmsBindingEvenWhenTagPayloadIdValidationFails()
+    {
+        await using var db = CreateDbContext();
+        var receivedAt = DateTime.UtcNow;
+        db.JobLightBindings.Add(new JobLightBinding
+        {
+            JobId = 123,
+            Plate = "ABC123",
+            StationId = "90A9F73001B7",
+            TagId = "AD100006D9A0",
+            GroupNo = 128,
+            Status = LightBindingStatus.PendingBind,
+            CreatedAt = receivedAt.AddSeconds(-5),
+            UpdatedAt = receivedAt.AddSeconds(-5),
+        });
+        await db.SaveChangesAsync();
+
+        var processor = new EStationMqttMessageProcessor(
+            new MqttMessageLogService(db),
+            new StationStatusService(db, TimeProvider.System),
+            new LightTagStatusService(db),
+            new JobLightBindingService(db, new RecordingMqttCommandPublisher(), TimeProvider.System, NullLogger<JobLightBindingService>.Instance));
+
+        await processor.ProcessAsync(
+            "/estation/90A9F73001B7/result",
+            JsonSerializer.Serialize(new TaskResultDto
+            {
+                ID = "DIFFERENT-STATION",
+                TotalCount = 1,
+                SendCount = 1,
+                Results =
+                [
+                    new TaskItemResultDto
+                    {
+                        TagID = "AD100006D9A0",
+                        Group = 128,
+                        ResultType = 254,
+                    },
+                ],
+            }),
+            receivedAt,
+            CancellationToken.None);
+
+        var binding = await db.JobLightBindings.SingleAsync();
+        binding.Status.Should().Be(LightBindingStatus.Bound);
+        binding.LastResultAt.Should().BeCloseTo(receivedAt, TimeSpan.FromMilliseconds(1));
+        binding.FailureReason.Should().BeNull();
+    }
+
     [Theory]
     [InlineData(true, true, true, "White")]
     [InlineData(true, true, false, "Yellow")]
@@ -139,6 +193,18 @@ public class EStationMonitoringTests
             .Options;
 
         return new TestAppDbContext(options);
+    }
+
+    private sealed class RecordingMqttCommandPublisher : IEStationMqttCommandPublisher
+    {
+        public Task PublishBindAsync(string stationId, int groupNo, IReadOnlyList<string> tagIds, CancellationToken ct)
+            => Task.CompletedTask;
+
+        public Task PublishLightOnAsync(string stationId, string tagId, CancellationToken ct)
+            => Task.CompletedTask;
+
+        public Task PublishLightOffAsync(string stationId, string tagId, CancellationToken ct)
+            => Task.CompletedTask;
     }
 
     private sealed class TestAppDbContext : AppDbContext

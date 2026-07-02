@@ -1,10 +1,12 @@
 namespace Workshop.Api.Features.JobLightBindings.DTOs;
 
-public sealed record CreateJobLightBindingRequest(string TagId);
+public sealed record CreateJobLightBindingRequest(string TagId, bool OverrideExisting = false);
+
+public sealed record CreateManualLightBindingRequest(string ObjectName, string TagId);
 
 public sealed record JobLightBindingResponse(
     long Id,
-    long JobId,
+    long? JobId,
     string Plate,
     string StationId,
     string TagId,
@@ -15,8 +17,10 @@ public sealed record JobLightBindingResponse(
 
 public sealed record DeviceLightBindingResponse(
     long Id,
-    long JobId,
+    long? JobId,
     string Plate,
+    string? VehicleModel,
+    string? VehicleColour,
     string StationId,
     string TagId,
     int GroupNo,

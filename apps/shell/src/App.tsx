@@ -27,6 +27,7 @@ import { CourtesyCarAgreementMessagePage } from "./pages/courtesyCarAgreements/C
 import { AgreementHistoryPage } from "./pages/agreementHistory/AgreementHistoryPage";
 import { CourtesyCarEntryPage } from "./pages/courtesyCarEntry/CourtesyCarEntryPage";
 import { DeviceCommunicationPage } from "./pages/deviceCommunication/DeviceCommunicationPage";
+import { LightFinderPage } from "./pages/LightFinderPage";
 
 // --- [从 Eric 版引入] 采购相关组件 ---
 import Shopfront from "./components/Shopfront";
@@ -37,6 +38,7 @@ const router = createBrowserRouter([
   { path: "/paint-tech", element: <PaintTechBoardPage /> },
   { path: "/customer/new-job", element: <CustomerSelfServiceNewJobPage /> },
   { path: "/courtesy-car", element: <CourtesyCarEntryPage /> },
+  { path: "/light-finder", element: <LightFinderPage /> },
   { path: "/staff-shop", element: <Shopfront /> },
 
   {

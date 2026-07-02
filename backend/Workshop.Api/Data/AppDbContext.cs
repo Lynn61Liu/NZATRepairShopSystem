@@ -803,8 +803,8 @@ public class AppDbContext : DbContext
         jobLightBinding.ToTable("job_light_bindings");
         jobLightBinding.HasKey(x => x.Id);
         jobLightBinding.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
-        jobLightBinding.Property(x => x.JobId).HasColumnName("job_id").IsRequired();
-        jobLightBinding.Property(x => x.Plate).HasColumnName("plate").HasMaxLength(32).IsRequired();
+        jobLightBinding.Property(x => x.JobId).HasColumnName("job_id");
+        jobLightBinding.Property(x => x.Plate).HasColumnName("plate").HasMaxLength(128).IsRequired();
         jobLightBinding.Property(x => x.StationId).HasColumnName("station_id").HasMaxLength(32).IsRequired();
         jobLightBinding.Property(x => x.TagId).HasColumnName("tag_id").HasMaxLength(32).IsRequired();
         jobLightBinding.Property(x => x.GroupNo).HasColumnName("group_no").IsRequired();

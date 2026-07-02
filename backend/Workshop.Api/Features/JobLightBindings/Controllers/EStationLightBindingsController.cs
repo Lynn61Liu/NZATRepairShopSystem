@@ -19,6 +19,18 @@ public sealed class EStationLightBindingsController : ControllerBase
     public async Task<ActionResult<List<DeviceLightBindingResponse>>> GetBindings(CancellationToken ct)
         => await _service.GetDeviceBindingsAsync(ct);
 
+    [HttpPost]
+    public async Task<ActionResult<JobLightBindingResponse>> CreateManualBinding(
+        [FromBody] CreateManualLightBindingRequest request,
+        CancellationToken ct)
+    {
+        var result = await _service.CreateManualBindingAsync(request.ObjectName, request.TagId, ct);
+        if (!result.Success)
+            return BadRequest(new { error = result.ErrorMessage, binding = result.Binding });
+
+        return Ok(result.Binding);
+    }
+
     [HttpPost("{bindingId:long}/light-on")]
     public async Task<ActionResult<JobLightBindingResponse>> LightOn(long bindingId, CancellationToken ct)
     {

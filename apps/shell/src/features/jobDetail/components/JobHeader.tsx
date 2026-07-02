@@ -494,8 +494,7 @@ export function JobHeader({
               <Input value={vehiclePlate || "—"} readOnly className="bg-[rgba(0,0,0,0.03)] font-semibold" />
             </label>
             <label className="block">
-              <span className="mb-1 block text-sm font-medium text-[rgba(0,0,0,0.62)]">灯条码</span>
-              <Input
+             <Input
                 ref={bindingInputRef}
                 value={bindingTagInput}
                 onChange={(event) => {
