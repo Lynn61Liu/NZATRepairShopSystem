@@ -89,6 +89,7 @@ Make sure init SQL files exist under `db/init/`.
 
 ## Development Docs
 
+- [Light finder migration and deployment guide](docs/light-finder-migration-deploy.md)
 - [Self-hosted Broker and eStation communication verification](docs/self-hosted-broker-estation-communication.md)
 
 To stop services:

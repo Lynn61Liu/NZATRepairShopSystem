@@ -122,7 +122,7 @@ export function LightFinderPage() {
 
   return (
     <main className="min-h-dvh bg-[#f7f7f4] px-8 pb-8 pt-[max(40px,env(safe-area-inset-top))] text-[#202124] ">
-      <div className="mx-auto flex min-h-[calc(100dvh-2rem)] w-full max-w-[520px] flex-col gap-5">
+      <div className="mx-auto flex min-h-[calc(100dvh-2rem)] w-full max-w-[520px] flex-col gap-5 p-6">
         <header className="pt-1">
           <div className="text-sm font-semibold text-[#74746f]">NZ Auto Tech</div>
           <h1 className="mt-1 text-[34px] font-black leading-none text-[#171717]">找钥匙</h1>
@@ -132,10 +132,10 @@ export function LightFinderPage() {
           <Input
             value={plateInput}
             onChange={(event) => setPlateInput(normalizePlate(event.target.value))}
-            placeholder="车牌"
+            placeholder="输入车牌"
             inputMode="search"
             autoCapitalize="characters"
-            className="h-45 rounded-[8px] border-[#d5d1c8] bg-white text-[20px] font-black uppercase tracking-normal text-[#202124]"
+            className="h-55 rounded-[8px] border-[#d5d1c8] bg-white text-[20px] font-black uppercase tracking-normal text-[#202124]"
           />
           <Button type="submit" variant="primary" disabled={loading} className="h-16 w-full justify-center px-5 text-[28px] font-black">
             搜索
@@ -145,8 +145,8 @@ export function LightFinderPage() {
         <Button
           onClick={showAll}
           disabled={loading}
-          leftIcon={<Search className="h-6 w-6" />}
-          className="h-16 w-full justify-center text-[26px] font-black"
+        variant="primary"
+          className="h-16 w-full justify-center text-[20px] font-black"
         >
           显示全部
         </Button>
@@ -242,8 +242,15 @@ function VehicleCard({
 
       <div className="mt-4 flex items-center justify-between gap-3 border-t border-[#ece7dd] pt-3 text-sm">
         <span className="min-w-0 truncate text-[#74746f]">{formatRelativeTime(row.lastSeenAt)}</span>
-        <span className="shrink-0 font-bold text-[#eb3925]">
-          {loading ? "点亮中..." : success ? "已发送点亮" : online ? "点击点亮" : "不可点亮"}
+        <span
+          className={[
+            "inline-flex h-11 shrink-0 items-center justify-center rounded-[8px] px-4 text-base font-black",
+            online ? "bg-[#eb3925] text-white" : "bg-[#eeeeea] text-[#74746f]",
+            loading ? "opacity-75" : "",
+            success ? "bg-emerald-600 text-white" : "",
+          ].join(" ")}
+        >
+          {loading ? "点亮中..." : success ? "已发送点亮" : online ? "点亮响铃" : "不可点亮"}
         </span>
       </div>
     </button>

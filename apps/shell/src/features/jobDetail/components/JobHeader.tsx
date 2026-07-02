@@ -15,6 +15,7 @@ import {
   lightOnJobLightBinding,
   type JobLightBindingResponse,
 } from "@/features/jobDetail/api/jobDetailApi";
+import { shouldAutoCloseLightBindingDialog } from "@/features/jobDetail/lightBindingDialog";
 
 const LIGHT_TAG_PATTERN = /^AD1[0-9A-F]{9}$/;
 
@@ -143,6 +144,11 @@ export function JobHeader({
     const timer = window.setTimeout(() => bindingInputRef.current?.focus(), 50);
     return () => window.clearTimeout(timer);
   }, [bindDialogOpen]);
+
+  useEffect(() => {
+    if (!shouldAutoCloseLightBindingDialog(bindDialogOpen, currentLightBinding?.status)) return;
+    setBindDialogOpen(false);
+  }, [bindDialogOpen, currentLightBinding?.status]);
 
   const refreshCurrentLightBinding = async () => {
     const res = await fetchJobLightBindings(jobId);
