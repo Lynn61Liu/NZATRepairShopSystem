@@ -138,14 +138,6 @@ CREATE INDEX ix_courtesy_car_agreement_events_agreement_id ON courtesy_car_agree
 ALTER TABLE courtesy_car_agreement_events
   ADD CONSTRAINT fk_courtesy_car_agreement_events_agreement FOREIGN KEY (courtesy_car_agreement_id) REFERENCES courtesy_car_agreements(id) ON DELETE CASCADE;
 
-INSERT INTO courtesy_cars (
-  plate, make, model, color, year, mileage, fuel_level, agreed_vehicle_value, status, note, wof_expiry, rego_expiry, loaned_at, borrower_name, borrower_phone, attachments_json, returned_at
-) VALUES
-  ('LCZ123', 'Toyota', 'Corolla', 'Silver', 2021, 48210, '3/4 tank', 22000, 'available', NULL, '2026-07-10', '2026-07-06', NULL, NULL, NULL, '[]'::jsonb, NULL),
-  ('MKP456', 'Honda', 'Civic', 'White', 2020, 56100, 'Half tank', 19500, 'on_loan', NULL, '2026-06-21', '2026-08-12', '2026-06-13 09:15:00+00', 'Alex Chen', '021 555 0101', '[]'::jsonb, NULL),
-  ('NQR789', 'Mazda', 'Demio', 'Blue', 2019, 73880, 'Full tank', 15000, 'available', NULL, '2026-05-10', '2026-07-05', NULL, NULL, NULL, '[]'::jsonb, NULL),
-  ('HBD012', 'Hyundai', 'i30', 'Black', 2022, 22410, 'Half tank', 27000, 'unavailable', 'Minor dent repair in progress at panel shop.', '2026-07-18', '2026-06-20', NULL, NULL, NULL, '[]'::jsonb, NULL),
-  ('TJF345', 'Nissan', 'Tiida', 'Red', 2018, 82215, '1/2 tank', 11000, 'available', NULL, '2026-08-01', '2026-09-11', NULL, NULL, NULL, '[]'::jsonb, '2026-06-12 08:30:00+00');
 
 -- Customers
 CREATE TABLE customers (

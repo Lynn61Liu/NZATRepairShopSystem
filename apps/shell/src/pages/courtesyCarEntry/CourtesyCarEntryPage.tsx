@@ -5,6 +5,7 @@ import { Button, Card, Input, useToast } from "@/components/ui";
 import { fetchCourtesyCarAgreementHistory, returnCourtesyCarAgreement } from "@/features/courtesyCarAgreements/api";
 import { findReturnableCourtesyCarAgreement, normalizeCourtesyCarPlate } from "@/features/courtesyCarAgreements/plateLookup";
 import { CourtesyCarAgreementsPage } from "@/pages/courtesyCarAgreements/CourtesyCarAgreementsPage";
+import { CourtesyCarAgreementPage } from "@/pages/courtesyCarAgreements/CourtesyCarAgreementPage";
 
 type ReturnResult = {
   agreementId: number;
@@ -34,7 +35,8 @@ function formatReturnTime(value?: string | null) {
 
 export function CourtesyCarEntryPage() {
   const toast = useToast();
-  const [view, setView] = useState<"home" | "borrow">("home");
+  const [view, setView] = useState<"home" | "borrowList" | "borrowDetail">("home");
+  const [selectedAgreementId, setSelectedAgreementId] = useState<string | null>(null);
   const [plate, setPlate] = useState("");
   const [returnOpen, setReturnOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -68,8 +70,19 @@ export function CourtesyCarEntryPage() {
     setLoading(false);
   };
 
-  const closeBorrowView = () => {
+  const closeBorrowList = () => {
+    setSelectedAgreementId(null);
     setView("home");
+  };
+
+  const openBorrowDetail = (agreementId: number | string) => {
+    setSelectedAgreementId(String(agreementId));
+    setView("borrowDetail");
+  };
+
+  const closeBorrowDetail = () => {
+    setSelectedAgreementId(null);
+    setView("borrowList");
   };
 
   const handleReturn = async () => {
@@ -115,8 +128,12 @@ export function CourtesyCarEntryPage() {
     setLoading(false);
   };
 
-  if (view === "borrow") {
-    return <CourtesyCarAgreementsPage embedded onClose={closeBorrowView} />;
+  if (view === "borrowList") {
+    return <CourtesyCarAgreementsPage embedded onClose={closeBorrowList} onSelectAgreement={openBorrowDetail} />;
+  }
+
+  if (view === "borrowDetail" && selectedAgreementId) {
+    return <CourtesyCarAgreementPage embedded agreementIdOverride={selectedAgreementId} onClose={closeBorrowDetail} />;
   }
 
   return (
@@ -126,7 +143,7 @@ export function CourtesyCarEntryPage() {
     >
       <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-[1180px] items-center justify-center">
         <div className="grid w-full max-w-5xl gap-5 md:grid-cols-2">
-          <button type="button" onClick={() => setView("borrow")} className="group block text-left">
+          <button type="button" onClick={() => setView("borrowList")} className="group block text-left">
             <Card className="h-full overflow-hidden border-[rgba(40,89,214,0.12)] shadow-[0_18px_50px_rgba(15,23,42,0.05)] transition duration-200 group-hover:-translate-y-1 group-hover:shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
               <div className="flex h-[300px] flex-col items-center justify-center px-8 text-center bg-[linear-gradient(180deg,rgba(40,89,214,0.10),rgba(40,89,214,0.03))]">
                 <div className="flex h-20 w-20 items-center justify-center rounded-full bg-white text-[var(--ds-primary)] shadow-[0_10px_30px_rgba(40,89,214,0.12)]">
@@ -238,7 +255,7 @@ export function CourtesyCarEntryPage() {
                       className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--ds-primary)] hover:opacity-80"
                       onClick={() => {
                         closeReturnModal();
-                        setView("borrow");
+                        setView("borrowList");
                       }}
                     >
                       Open draft view

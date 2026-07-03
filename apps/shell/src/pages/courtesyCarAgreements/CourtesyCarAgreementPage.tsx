@@ -429,8 +429,8 @@ export function CourtesyCarAgreementPage({
       <EmptyState
         title="Agreement not found"
         description={error || "This courtesy car agreement does not exist."}
-        onAction={() => navigate("/courtesy-car-drafts")}
-        actionLabel="Back to drafts"
+        onAction={embedded && onClose ? onClose : () => navigate("/courtesy-car-drafts")}
+        actionLabel={embedded && onClose ? "返回列表" : "Back to drafts"}
       />
     );
   }
@@ -506,7 +506,7 @@ export function CourtesyCarAgreementPage({
             {embedded && onClose ? (
               <Button onClick={onClose} className="!h-9 rounded-[999px] px-4 text-sm font-semibold">
                 <ArrowLeft className="h-4 w-4" />
-                返回首页
+                返回列表
               </Button>
             ) : (
               <Link to="/courtesy-car-drafts" className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--ds-primary)]">
@@ -867,9 +867,14 @@ export function CourtesyCarAgreementPage({
                     const validation = validationRes.data?.validation ?? null;
                     if (!validation?.isValid) {
                       setPreviewing(false);
-                      navigate(`/courtesy-car-drafts/${agreement.id}/message`, {
-                        state: { message: validation?.message || "The agreement is not ready for preview." },
-                      });
+                      const message = validation?.message || "The agreement is not ready for preview.";
+                      if (embedded) {
+                        setActionError(message);
+                      } else {
+                        navigate(`/courtesy-car-drafts/${agreement.id}/message`, {
+                          state: { message },
+                        });
+                      }
                       return;
                     }
 
@@ -1051,7 +1056,11 @@ export function CourtesyCarAgreementPage({
                 The agreement has been submitted successfully. Please ask the customer to check their email for the contract PDF.
               </div>
               <div className="mt-6 flex">
-                <Button variant="primary" onClick={() => navigate("/courtesy-car-drafts")} className={primaryButtonClass}>
+                <Button
+                  variant="primary"
+                  onClick={embedded && onClose ? onClose : () => navigate("/courtesy-car-drafts")}
+                  className={primaryButtonClass}
+                >
                   完成
                 </Button>
               </div>

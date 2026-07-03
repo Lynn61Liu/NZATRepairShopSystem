@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PencilLine } from "lucide-react";
 import { Button } from "@/components/ui";
+import { getCanvasPointFromPointer } from "./signaturePadPointer";
 
 type SignaturePadProps = {
   value: string;
@@ -10,7 +11,9 @@ type SignaturePadProps = {
 export function SignaturePad({ value, onChange }: SignaturePadProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
+  const hasInkRef = useRef(Boolean(value));
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const [hasLocalInk, setHasLocalInk] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -31,30 +34,54 @@ export function SignaturePad({ value, onChange }: SignaturePadProps) {
     ctx.strokeStyle = "#1d4ed8";
 
     if (value) {
+      hasInkRef.current = true;
       const image = new Image();
       image.onload = () => {
         ctx.clearRect(0, 0, width, height);
         ctx.drawImage(image, 0, 0, width, height);
       };
       image.src = value;
+    } else {
+      hasInkRef.current = false;
     }
   }, [value]);
 
-  const drawPoint = (x: number, y: number) => {
+  const getPointerPoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    return getCanvasPointFromPointer(event, canvas.getBoundingClientRect());
+  };
+
+  const commitSignature = () => {
+    const canvas = canvasRef.current;
+    if (!canvas || !hasInkRef.current) return;
+    onChange(canvas.toDataURL("image/png"));
+  };
+
+  const stopDrawing = () => {
+    if (drawingRef.current) {
+      commitSignature();
+    }
+    drawingRef.current = false;
+    lastPointRef.current = null;
+  };
+
+  const drawPoint = (point: { x: number; y: number }) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     if (!lastPointRef.current) {
-      lastPointRef.current = { x, y };
+      lastPointRef.current = point;
       return;
     }
     ctx.beginPath();
     ctx.moveTo(lastPointRef.current.x, lastPointRef.current.y);
-    ctx.lineTo(x, y);
+    ctx.lineTo(point.x, point.y);
     ctx.stroke();
-    lastPointRef.current = { x, y };
-    onChange(canvas.toDataURL("image/png"));
+    lastPointRef.current = point;
+    hasInkRef.current = true;
+    setHasLocalInk(true);
   };
 
   return (
@@ -66,25 +93,27 @@ export function SignaturePad({ value, onChange }: SignaturePadProps) {
           onPointerDown={(event) => {
             const canvas = canvasRef.current;
             if (!canvas) return;
+            event.preventDefault();
             drawingRef.current = true;
-            canvas.setPointerCapture(event.pointerId);
-            const rect = canvas.getBoundingClientRect();
-            lastPointRef.current = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+            try {
+              canvas.setPointerCapture(event.pointerId);
+            } catch {
+              // Some older touch browsers can reject pointer capture while still sending move events.
+            }
+            lastPointRef.current = getPointerPoint(event);
           }}
           onPointerMove={(event) => {
             if (!drawingRef.current) return;
-            drawPoint(event.nativeEvent.offsetX, event.nativeEvent.offsetY);
+            event.preventDefault();
+            const point = getPointerPoint(event);
+            if (!point) return;
+            drawPoint(point);
           }}
-          onPointerUp={() => {
-            drawingRef.current = false;
-            lastPointRef.current = null;
-          }}
-          onPointerLeave={() => {
-            drawingRef.current = false;
-            lastPointRef.current = null;
-          }}
+          onPointerUp={stopDrawing}
+          onPointerCancel={stopDrawing}
+          onPointerLeave={stopDrawing}
         />
-        {value ? null : (
+        {value || hasLocalInk ? null : (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="flex items-center gap-2 text-slate-400">
               <PencilLine className="h-5 w-5" />
@@ -96,6 +125,8 @@ export function SignaturePad({ value, onChange }: SignaturePadProps) {
       <div className="flex items-center gap-2">
         <Button
           onClick={() => {
+            hasInkRef.current = false;
+            setHasLocalInk(false);
             onChange("");
             const canvas = canvasRef.current;
             const ctx = canvas?.getContext("2d");

@@ -38,9 +38,14 @@ function statusLabel(status: CourtesyCarAgreementListItem["status"]) {
 type CourtesyCarAgreementsPageProps = {
   embedded?: boolean;
   onClose?: () => void;
+  onSelectAgreement?: (agreementId: number | string) => void;
 };
 
-export function CourtesyCarAgreementsPage({ embedded = false, onClose }: CourtesyCarAgreementsPageProps = {}) {
+export function CourtesyCarAgreementsPage({
+  embedded = false,
+  onClose,
+  onSelectAgreement,
+}: CourtesyCarAgreementsPageProps = {}) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const highlightAgreementId = searchParams.get("agreementId");
@@ -82,6 +87,15 @@ export function CourtesyCarAgreementsPage({ embedded = false, onClose }: Courtes
     [highlightAgreementId, items]
   );
 
+  const openAgreement = (agreementId: number | string) => {
+    if (embedded && onSelectAgreement) {
+      onSelectAgreement(agreementId);
+      return;
+    }
+
+    navigate(`/courtesy-car-drafts/${agreementId}`);
+  };
+
   return (
     <div className={embedded ? "min-h-screen space-y-6 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] px-4 py-6 sm:px-6 lg:px-8" : "min-h-0 flex-1 space-y-6"}>
       {embedded ? (
@@ -120,8 +134,8 @@ export function CourtesyCarAgreementsPage({ embedded = false, onClose }: Courtes
         <EmptyState
           title="No active drafts"
           description="Ask an admin to create a courtesy car draft from a job detail page."
-          onAction={() => navigate("/")}
-          actionLabel="Back home"
+          onAction={embedded && onClose ? onClose : () => navigate("/")}
+          actionLabel={embedded && onClose ? "返回首页" : "Back home"}
         />
       ) : (
         <>
@@ -141,7 +155,7 @@ export function CourtesyCarAgreementsPage({ embedded = false, onClose }: Courtes
                     "cursor-pointer border-[rgba(0,0,0,0.08)] transition hover:-translate-y-0.5 hover:shadow-md",
                     active ? "ring-2 ring-[var(--ds-primary)]" : "",
                   ].join(" ")}
-                  onClick={() => navigate(`/courtesy-car-drafts/${item.id}`)}
+                  onClick={() => openAgreement(item.id)}
                   role="button"
                 >
                   <div className="p-5">
@@ -187,7 +201,11 @@ export function CourtesyCarAgreementsPage({ embedded = false, onClose }: Courtes
                         <CalendarDays className="h-3.5 w-3.5" />
                         Updated {formatDate(item.updatedAt)}
                       </div>
-                      <Button onClick={() => navigate(`/courtesy-car-drafts/${item.id}`)} variant="primary" className="!h-9">
+                      <Button
+                        onClick={() => openAgreement(item.id)}
+                        variant="primary"
+                        className="!h-9"
+                      >
                         Continue
                       </Button>
                     </div>
