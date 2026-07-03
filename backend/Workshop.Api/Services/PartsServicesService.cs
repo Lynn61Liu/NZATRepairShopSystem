@@ -214,6 +214,7 @@ public class PartsServicesService
         var services = await (
             from ps in _db.JobPartsServices.AsNoTracking()
             join j in _db.Jobs.AsNoTracking() on ps.JobId equals j.Id
+            where j.Status == null || j.Status.ToLower() != "archived"
             orderby ps.UpdatedAt descending, ps.Id descending
             select ps
         ).ToListAsync(ct);

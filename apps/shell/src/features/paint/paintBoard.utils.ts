@@ -69,6 +69,8 @@ export type PaintBoardJob = {
   year?: number;
   make?: string;
   model?: string;
+  jobStatus?: string | null;
+  vehicleStatus?: string | null;
   status?: string | null;
   currentStage?: number | null;
   hasWofService?: boolean;
@@ -78,6 +80,13 @@ export type PaintBoardJob = {
   panels?: number | null;
   notes?: string | null;
 };
+
+const isArchivedStatus = (status?: string | null) => status?.trim().toLowerCase() === "archived";
+
+export const isArchivedPaintJob = (job: PaintBoardJob) =>
+  isArchivedStatus(job.jobStatus) || isArchivedStatus(job.vehicleStatus) || isArchivedStatus(job.status);
+
+export const shouldHidePaintBoardJob = (job: PaintBoardJob) => isArchivedPaintJob(job);
 
 export const normalizeDate = (value: string | Date) => {
   const date = value instanceof Date ? new Date(value) : new Date(value);

@@ -31,6 +31,7 @@ import {
 import { fetchPaintService, updatePaintStage } from "@/features/paint/api/paintApi";
 import { parseTimestamp } from "@/utils/date";
 import type { SilentPrintRouteKey } from "@/features/printing/silentPrint.routes";
+import { notifyPaintBoardRefresh } from "@/utils/refreshSignals";
 
 type JobsListResponse = {
   items?: any[];
@@ -264,6 +265,7 @@ export function JobsPage() {
             : item
         )
       );
+      notifyPaintBoardRefresh();
       toast.success("已归档");
       void loadJobs();
     },

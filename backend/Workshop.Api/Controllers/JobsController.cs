@@ -19,6 +19,7 @@ public class JobsController : ControllerBase
     private const string PoUnreadSummaryCacheKey = "jobs:po-unread-summary:v1";
     private const string PaintBoardCacheKey = "jobs:paint-board:v1";
     private const string WofScheduleCacheKey = "jobs:wof-schedule:v1";
+    private const string PartsFlowCacheKey = "parts-flow:v1";
     private const int MaxJobsPageSize = 200;
     private static readonly TimeSpan JobsListCacheDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan JobsListVersionCacheDuration = TimeSpan.FromDays(30);
@@ -988,6 +989,7 @@ public class JobsController : ControllerBase
                     v.Make,
                     v.Model,
                     v.Year,
+                    JobStatus = j.Status,
                     p.Status,
                     p.CurrentStage,
                     p.Panels,
@@ -1004,6 +1006,7 @@ public class JobsController : ControllerBase
             year = r.Year,
             make = r.Make,
             model = r.Model,
+            jobStatus = r.JobStatus,
             status = r.Status,
             currentStage = r.CurrentStage,
             hasWofService = r.HasWofService,
@@ -2094,6 +2097,7 @@ public class JobsController : ControllerBase
         await InvalidateJobDetailCachesAsync(id, ct);
         await InvalidatePaintBoardCacheAsync(ct);
         await InvalidateWofScheduleCacheAsync(ct);
+        await InvalidatePartsFlowCacheAsync(ct);
         await InvalidatePoUnreadSummaryCacheAsync(ct);
 
         return Ok(new { status = job.Status });
@@ -2276,6 +2280,9 @@ public class JobsController : ControllerBase
 
     private Task InvalidateWofScheduleCacheAsync(CancellationToken ct)
         => _appCache.RemoveAsync(WofScheduleCacheKey, ct);
+
+    private Task InvalidatePartsFlowCacheAsync(CancellationToken ct)
+        => _appCache.RemoveAsync(PartsFlowCacheKey, ct);
 
     private Task InvalidatePoUnreadSummaryCacheAsync(CancellationToken ct)
         => _appCache.RemoveAsync(PoUnreadSummaryCacheKey, ct);

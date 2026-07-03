@@ -710,6 +710,7 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
             }
           : prev
       );
+      notifyPaintBoardRefresh();
       toast.success("已归档");
       return { success: true, message: "已归档" };
     } finally {

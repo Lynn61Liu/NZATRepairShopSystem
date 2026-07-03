@@ -24,3 +24,4 @@ backend/secrets/nzat-wof-f39beb2312a5.json
 .playwright-mcp/console-2026-07-03T01-23-44-714Z.log
 .playwright-mcp/page-2026-07-03T01-23-44-905Z.yml
 /.playwright-mcp
+.gstack/

@@ -20,6 +20,7 @@ import {
   PAINT_STAGE_INDEX_BY_KEY,
   PAINT_STAGE_LABELS,
   PAINT_STAGE_ORDER,
+  shouldHidePaintBoardJob,
   type PaintBoardJob,
   type StageKey,
 } from "@/features/paint/paintBoard.utils";
@@ -183,6 +184,7 @@ export function PaintTechBoardPage() {
   const visibleJobs = useMemo(
     () =>
       jobs.filter((job) => {
+        if (shouldHidePaintBoardJob(job)) return false;
         const stage = mapStageKey(job.status, job.currentStage);
         if (stage === "on_hold" || stage === "delivered") return false;
         if (job.wofStatus === "Recorded") return false;
@@ -195,6 +197,7 @@ export function PaintTechBoardPage() {
   const statsJobs = useMemo(
     () =>
       jobs.filter((job) => {
+        if (shouldHidePaintBoardJob(job)) return false;
         const stage = mapStageKey(job.status, job.currentStage);
         return stage !== "delivered";
       }),
@@ -351,7 +354,7 @@ export function PaintTechBoardPage() {
             </div>
           </div>
           <div className="text-xs text-slate-500">
-            每 5 分钟刷新一次，当前页面不显示 On Hold 和交车完毕订单
+            每 5 分钟刷新一次，当前页面不显示 On Hold、交车完毕和已归档订单
             {lastUpdatedAt ? ` · 上次刷新 ${lastUpdatedAt.toLocaleString("zh-CN", { hour12: false })}` : ""}
           </div>
         </div>
