@@ -1,4 +1,5 @@
 export type Status = "pending_order" | "needs_pt" | "parts_trader" | "pickup_or_transit";
+export type PartFlowColumnStatus = Status | "waiting_quote";
 
 export interface Note {
   id: string;
@@ -33,6 +34,8 @@ export interface WorkCard {
   carInfo: string;
   parts: string[];
   status: Status;
+  tags?: string[];
+  selectedTags?: string[];
   notes: Note[];
   createdAt: string;
   details: CarDetails;

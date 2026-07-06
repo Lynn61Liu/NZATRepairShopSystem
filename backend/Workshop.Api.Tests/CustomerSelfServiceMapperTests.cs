@@ -111,6 +111,25 @@ public class CustomerSelfServiceMapperTests
     }
 
     [Fact]
+    public void MapToNewJobRequest_WithRepairQuoteEmail_StoresQuoteEmailOnCustomer()
+    {
+        var req = new CustomerSelfServiceJobRequest
+        {
+            Plate = "abc123",
+            HasWof = false,
+            Name = "Jane Smith",
+            Phone = "021 123 4567",
+            Email = "old@example.com",
+            RequiresQuote = true,
+            QuoteEmail = " quote@example.com ",
+        };
+
+        var mapped = CustomerSelfServiceJobMapper.MapToNewJobRequest(req, rootServiceCatalogItemId: 20);
+
+        mapped.Customer.Email.Should().Be("quote@example.com");
+    }
+
+    [Fact]
     public void Validate_RequiresAddressWhenWofSelected()
     {
         var req = new CustomerSelfServiceJobRequest

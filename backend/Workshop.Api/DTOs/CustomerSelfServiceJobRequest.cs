@@ -7,6 +7,8 @@ public sealed class CustomerSelfServiceJobRequest
     public string Name { get; set; } = "";
     public string Phone { get; set; } = "";
     public string? Email { get; set; }
+    public bool RequiresQuote { get; set; }
+    public string? QuoteEmail { get; set; }
     public long? ExistingCustomerId { get; set; }
     public bool CustomerEdited { get; set; }
     public string? Notes { get; set; }

@@ -1,11 +1,11 @@
-import { useRef } from "react";
+import { useCallback } from "react";
 import { useDrop } from 'react-dnd';
-import type { ArrivalNotice, WorkCard, Status } from '@/types';
+import type { ArrivalNotice, WorkCard, Status, PartFlowColumnStatus } from '@/types';
 // import { CardItem } from './CardItem';
 import { CardItem } from "@/features/partFlow/components/CardItem";
 
 interface PartFlowColumnProps {
-  status: Status;
+  status: PartFlowColumnStatus;
   cards: WorkCard[];
   onMoveCard: (cardId: string, newStatus: Status) => void;
   onDeleteCard: (cardId: string) => void;
@@ -15,21 +15,24 @@ interface PartFlowColumnProps {
   onArrivalNoticeSent: (cardId: string, arrivalNotice: ArrivalNotice) => void;
 }
 
-const statusLabels: Record<Status, string> = {
+const statusLabels: Record<PartFlowColumnStatus, string> = {
+  waiting_quote: "等报价",
   pending_order: "待下单",
   needs_pt: "需要发PT",
   parts_trader: "PartsTrader",
   pickup_or_transit: "待取/在途",
 };
 
-const statusColors: Record<Status, string> = {
+const statusColors: Record<PartFlowColumnStatus, string> = {
+  waiting_quote: "bg-orange-100 border-orange-300",
   pending_order: "bg-amber-100 border-amber-300",
   needs_pt: "bg-blue-100 border-blue-300",
   parts_trader: "bg-purple-100 border-purple-300",
   pickup_or_transit: "bg-green-100 border-green-300",
 };
 
-const statusTextColors: Record<Status, string> = {
+const statusTextColors: Record<PartFlowColumnStatus, string> = {
+  waiting_quote: "text-orange-800",
   pending_order: "text-amber-800",
   needs_pt: "text-blue-800",
   parts_trader: "text-purple-800",
@@ -46,10 +49,11 @@ export function PartFlowColumn({
   onDeleteNote,
   onArrivalNoticeSent
 }: PartFlowColumnProps) {
-  const dropRef = useRef<HTMLDivElement | null>(null);
   const [{ isOver }, drop] = useDrop<{ id: string; status: Status }, void, { isOver: boolean }>(() => ({
     accept: 'CARD',
+    canDrop: () => status !== "waiting_quote",
     drop: (item) => {
+      if (status === "waiting_quote") return;
         // 只有当卡片被拖动到不同的列时才触发状态更新
         //DEBUG: console.log(`Dropped card ${item.id} with status ${item.status} to column ${status}`);
         console.log(`Dropped card ${item.id} with status ${item.status} to column ${status}`);
@@ -60,11 +64,13 @@ export function PartFlowColumn({
       isOver: !!monitor.isOver()
     })
   }));
-  drop(dropRef);
+  const setDropRef = useCallback((node: HTMLDivElement | null) => {
+    drop(node);
+  }, [drop]);
 
   const column = (
     <div
-      ref={dropRef}
+      ref={setDropRef}
       className={`rounded-lg border-2 transition-colors bg-gray-300 ${
         isOver ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'
       }`}

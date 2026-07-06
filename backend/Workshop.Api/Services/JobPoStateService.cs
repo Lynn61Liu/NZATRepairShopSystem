@@ -26,6 +26,7 @@ public sealed class JobPoStateService
     {
         var jobs = await _db.Jobs
             .Where(x => x.NeedsPo)
+            .Where(x => x.Status == null || x.Status.ToLower() != "archived")
             .Select(x => new
             {
                 x.Id,
@@ -68,9 +69,9 @@ public sealed class JobPoStateService
     public async Task SyncStateForJobAsync(long jobId, CancellationToken ct)
     {
         var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == jobId, ct);
-        if (job is null || !job.NeedsPo)
+        if (job is null || !job.NeedsPo || IsArchivedStatus(job.Status))
         {
-            await _db.JobPoStates.Where(x => x.JobId == jobId).ExecuteDeleteAsync(ct);
+            await RemoveStatesForJobAsync(jobId, ct);
             return;
         }
 
@@ -274,6 +275,19 @@ public sealed class JobPoStateService
     private static bool IsSentOrReminder(string? direction) =>
         string.Equals(direction, "sent", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(direction, "reminder", StringComparison.OrdinalIgnoreCase);
+
+    private async Task RemoveStatesForJobAsync(long jobId, CancellationToken ct)
+    {
+        var states = await _db.JobPoStates.Where(x => x.JobId == jobId).ToListAsync(ct);
+        if (states.Count == 0)
+            return;
+
+        _db.JobPoStates.RemoveRange(states);
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private static bool IsArchivedStatus(string? status)
+        => string.Equals(status?.Trim(), "Archived", StringComparison.OrdinalIgnoreCase);
 
     private static DateTime? NormalizeInternalDate(long? internalDateMs)
     {

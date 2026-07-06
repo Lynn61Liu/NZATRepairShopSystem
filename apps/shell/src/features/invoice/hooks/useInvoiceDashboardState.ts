@@ -1272,6 +1272,7 @@ export function useInvoiceDashboardState({
     unreadReplyCount,
     invoicePdfPreviewUrl: (sourceInvoice ?? persistedInvoice ?? null)?.pdfPreviewUrl ?? "",
     invoicePdfPreviewGeneratedAt: (sourceInvoice ?? persistedInvoice ?? null)?.pdfPreviewGeneratedAt ?? "",
+    subtotal,
     totalAmount,
     manualPoNumber,
     setSelectedDetectionId,

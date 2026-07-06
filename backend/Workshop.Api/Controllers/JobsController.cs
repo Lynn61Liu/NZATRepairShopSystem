@@ -2093,7 +2093,22 @@ public class JobsController : ControllerBase
 
         job.Status = "Archived";
         job.UpdatedAt = DateTime.UtcNow;
+
+        var correlationId = BuildCorrelationId(job.Id);
+        var existingInactive = await _db.InactiveGmailCorrelations
+            .FirstOrDefaultAsync(x => x.CorrelationId == correlationId, ct);
+        if (existingInactive is null)
+        {
+            _db.InactiveGmailCorrelations.Add(new InactiveGmailCorrelation
+            {
+                CorrelationId = correlationId,
+                Reason = $"Job {job.Id} archived",
+                CreatedAt = DateTime.UtcNow,
+            });
+        }
+
         await _db.SaveChangesAsync(ct);
+        await _jobPoStateService.SyncStateForJobAsync(id, ct);
         await InvalidateJobDetailCachesAsync(id, ct);
         await InvalidatePaintBoardCacheAsync(ct);
         await InvalidateWofScheduleCacheAsync(ct);

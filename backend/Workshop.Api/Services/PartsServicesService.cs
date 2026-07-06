@@ -267,6 +267,18 @@ public class PartsServicesService
         ).ToListAsync(ct);
 
         var jobMap = jobInfo.ToDictionary(x => x.Id, x => x);
+        var jobTags = await (
+            from jt in _db.JobTags.AsNoTracking()
+            join t in _db.Tags.AsNoTracking() on jt.TagId equals t.Id
+            where jobIds.Contains(jt.JobId) && t.IsActive
+            orderby t.Name
+            select new { jt.JobId, t.Name }
+        ).ToListAsync(ct);
+        var tagsByJob = jobTags
+            .GroupBy(x => x.JobId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(x => x.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
 
         var payload = services.Select(service =>
         {
@@ -298,6 +310,7 @@ public class PartsServicesService
                 carInfo = BuildCarInfo(vehicle),
                 parts,
                 status = ToStatusValue(service.Status),
+                tags = tagsByJob.TryGetValue(service.JobId, out var tags) ? tags : Array.Empty<string>(),
                 notes = notesPayload,
                 createdAt = FormatDateTime(info?.CreatedAt ?? service.CreatedAt),
                 details = new

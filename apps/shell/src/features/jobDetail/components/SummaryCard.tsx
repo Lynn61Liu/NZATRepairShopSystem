@@ -17,6 +17,7 @@ import {
   type VehicleNztaSyncDialogSteps,
 } from "@/components/common/VehicleNztaSyncDialogState";
 import { loadBusinessCustomersCacheFirst } from "@/features/lookups/lookupCache";
+import { getCustomerContactHref } from "@/features/jobDetail/contactActions";
 import type { VehicleInfo, CustomerInfo } from "@/types";
 
 interface SummaryCardProps {
@@ -64,6 +65,7 @@ export function SummaryCard({
   const [customerUpdateProgressOpen, setCustomerUpdateProgressOpen] = useState(false);
   const [customerUpdateProgressError, setCustomerUpdateProgressError] = useState<string | null>(null);
   const [customerUpdateSteps, setCustomerUpdateSteps] = useState<CustomerUpdateSteps>(createInitialCustomerUpdateSteps);
+  const [contactActionOpen, setContactActionOpen] = useState(false);
   const [vehicleNztaSyncOpen, setVehicleNztaSyncOpen] = useState(false);
   const [vehicleNztaSyncPhase, setVehicleNztaSyncPhase] = useState<"confirm" | "status">("confirm");
   const [vehicleNztaSyncError, setVehicleNztaSyncError] = useState<string | null>(null);
@@ -111,6 +113,7 @@ export function SummaryCard({
     });
     setCustomerSaveError(null);
     setEditingCustomer(false);
+    setContactActionOpen(false);
   }, [customer]);
 
   useEffect(() => {
@@ -315,6 +318,9 @@ export function SummaryCard({
     if (value === null || value === undefined) return "";
     return String(value);
   };
+  const customerTelHref = getCustomerContactHref("tel", customer.phone);
+  const customerSmsHref = getCustomerContactHref("sms", customer.phone);
+  const customerPhoneIsClickable = Boolean(customerTelHref && customerSmsHref);
 
   return (
     <Card className="p-6">
@@ -427,7 +433,18 @@ export function SummaryCard({
               ) : null}
               <div className="flex items-center gap-2 text-sm text-[var(--ds-muted)]">
                 <Phone className="w-3.5 h-3.5" />
-                <span>{customer.phone}</span>
+                {customerPhoneIsClickable ? (
+                  <button
+                    type="button"
+                    className="font-medium text-[var(--ds-primary)] underline underline-offset-2 hover:text-[var(--ds-text)]"
+                    onClick={() => setContactActionOpen(true)}
+                    aria-label={`联系客户 ${customer.phone}`}
+                  >
+                    {customer.phone}
+                  </button>
+                ) : (
+                  <span>{customer.phone}</span>
+                )}
               </div>
               <div className="flex items-center gap-2 text-sm text-[var(--ds-muted)]">
                 <Mail className="w-3.5 h-3.5" />
@@ -494,6 +511,38 @@ export function SummaryCard({
               <Button variant="primary" onClick={handleSaveVehicle} disabled={savingVehicle}>
                 保存
               </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {contactActionOpen && customerTelHref && customerSmsHref ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setContactActionOpen(false);
+          }}
+        >
+          <div className="w-full max-w-sm rounded-[12px] bg-white p-5 shadow-xl" role="dialog" aria-modal="true">
+            <div className="text-lg font-semibold text-[var(--ds-text)]">联系客户</div>
+            <div className="mt-2 text-sm text-[var(--ds-muted)]">{customer.phone}</div>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <a
+                href={customerTelHref}
+                className="inline-flex h-10 items-center justify-center rounded-[8px] bg-[var(--ds-primary)] px-3 text-sm font-medium text-white transition hover:opacity-95"
+                onClick={() => setContactActionOpen(false)}
+              >
+                Tel
+              </a>
+              <a
+                href={customerSmsHref}
+                className="inline-flex h-10 items-center justify-center rounded-[8px] border border-[rgba(0,0,0,0.10)] bg-white px-3 text-sm font-medium text-[rgba(0,0,0,0.72)] transition hover:bg-[rgba(0,0,0,0.03)]"
+                onClick={() => setContactActionOpen(false)}
+              >
+                SMS
+              </a>
+            </div>
+            <div className="mt-3 flex justify-end">
+              <Button onClick={() => setContactActionOpen(false)}>取消</Button>
             </div>
           </div>
         </div>

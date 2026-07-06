@@ -20,19 +20,16 @@ import { useJobSheetPrinter } from "@/features/printing/useJobSheetPrinter";
 import type { SilentPrintRouteKey } from "@/features/printing/silentPrint.routes";
 import { fetchJob } from "@/features/jobDetail/api/jobDetailApi";
 import { withApiBase } from "@/utils/api";
+import {
+  buildSelfServiceJobPayload,
+  getCustomerSelfServiceSteps,
+  type CustomerSelfServiceFormState,
+  type CustomerSelfServiceStep,
+} from "./customerSelfServiceNewJobPage.utils";
 
 type ServicePath = "wof" | "mechPaint";
-type Step = "plate" | "contact" | "address" | "review" | "success";
-
-type FormState = {
-  plate: string;
-  hasWof: boolean;
-  name: string;
-  phone: string;
-  email: string;
-  notes: string;
-  address: string;
-};
+type Step = CustomerSelfServiceStep;
+type FormState = CustomerSelfServiceFormState;
 
 type VehicleInfo = {
   plate?: string | null;
@@ -75,6 +72,29 @@ type SubmitResponse = {
   errors?: string[];
 };
 
+type CustomerSelfPrintJob = {
+  vehicle?: {
+    plate?: string | null;
+    make?: string | null;
+    model?: string | null;
+    year?: number | string | null;
+    nzFirstRegistration?: string | null;
+    vin?: string | null;
+  } | null;
+  customer?: {
+    businessCode?: string | null;
+    name?: string | null;
+    notes?: string | null;
+  } | null;
+  createdAt?: string | null;
+  hasWofService?: boolean | null;
+  notes?: string | null;
+};
+
+type CustomerSelfPrintJobResponse = CustomerSelfPrintJob & {
+  job?: CustomerSelfPrintJob | null;
+};
+
 type PrintStatus =
   | { phase: "idle"; message: string }
   | { phase: "sending"; message: string }
@@ -105,8 +125,10 @@ const initialForm: FormState = {
   name: "",
   phone: "",
   email: "",
+  quoteEmail: "",
   notes: "",
   address: "",
+  requiresQuote: false,
 };
 
 // CHANGED: image paths used by the landing page, WOF path, and Repair path.
@@ -144,7 +166,8 @@ export function CustomerSelfServiceNewJobPage() {
     const res = await fetchJob(jobId);
     if (!res.ok) return null;
 
-    const job = (res.data as any)?.job ?? res.data;
+    const data = res.data as CustomerSelfPrintJobResponse | null | undefined;
+    const job = data?.job ?? data ?? {};
     const row = {
       plate: job?.vehicle?.plate ?? "",
       vehicleModel: [job?.vehicle?.make, job?.vehicle?.model, job?.vehicle?.year]
@@ -181,22 +204,7 @@ export function CustomerSelfServiceNewJobPage() {
     };
   }, []);
 
-  const steps = useMemo(
-    () =>
-      form.hasWof
-        ? [
-          { id: "plate", label: "Plate" },
-          { id: "contact", label: "Contact" },
-          { id: "address", label: "Address" },
-          { id: "review", label: "Review" },
-        ]
-        : [
-          { id: "plate", label: "Plate" },
-          { id: "contact", label: "Contact" },
-          { id: "review", label: "Review" },
-        ],
-    [form.hasWof]
-  );
+  const steps = useMemo(() => getCustomerSelfServiceSteps({ hasWof: form.hasWof }), [form.hasWof]);
   const currentStepIndex = Math.max(
     0,
     steps.findIndex((item) => item.id === step)
@@ -227,8 +235,9 @@ export function CustomerSelfServiceNewJobPage() {
       return;
     }
     if (step === "contact") goTo("plate");
+    if (step === "quote") goTo("contact");
     if (step === "address") goTo("contact");
-    if (step === "review") goTo(form.hasWof ? "address" : "contact");
+    if (step === "review") goTo(form.hasWof ? "address" : "quote");
   };
 
   const applyLinkedCustomer = (linkedCustomer: LinkedCustomer) => {
@@ -243,6 +252,7 @@ export function CustomerSelfServiceNewJobPage() {
       name: String(customer.name || prev.name || ""),
       phone: String(customer.phone || prev.phone || ""),
       email: String(customer.email || prev.email || ""),
+      quoteEmail: String(customer.email || prev.quoteEmail || ""),
       address: String(customer.address || prev.address || ""),
     }));
   };
@@ -278,6 +288,8 @@ export function CustomerSelfServiceNewJobPage() {
           name: "",
           phone: "",
           email: "",
+          quoteEmail: "",
+          requiresQuote: false,
           address: "",
           notes: "",
         }));
@@ -363,17 +375,7 @@ export function CustomerSelfServiceNewJobPage() {
       const res = await fetch(withApiBase("/api/customer-self-service/jobs"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          plate: form.plate,
-          hasWof: form.hasWof,
-          name: form.name,
-          phone: form.phone,
-          email: form.email,
-          existingCustomerId: matchedCustomerId && !customerEdited ? Number(matchedCustomerId) : undefined,
-          customerEdited,
-          notes: form.notes,
-          address: form.address || undefined,
-        }),
+        body: JSON.stringify(buildSelfServiceJobPayload({ form, matchedCustomerId, customerEdited })),
       });
       const data = (await res.json().catch(() => null)) as SubmitResponse | null;
       if (!res.ok) {
@@ -476,9 +478,18 @@ export function CustomerSelfServiceNewJobPage() {
                   onNext={() => {
                     setTouched(true);
                     if (form.name.trim().length >= 2 && countDigits(form.phone) >= 7) {
-                      goTo(form.hasWof ? "address" : "review");
+                      goTo(form.hasWof ? "address" : "quote");
                     }
                   }}
+                />
+              ) : null}
+
+              {selectedPath && !form.hasWof && step === "quote" ? (
+                <QuoteStep
+                  form={form}
+                  onChange={updateForm}
+                  onBack={goBack}
+                  onNext={() => goTo("review")}
                 />
               ) : null}
 
@@ -769,6 +780,45 @@ function ContactStep({
   );
 }
 
+function QuoteStep({
+  form,
+  onChange,
+  onBack,
+  onNext,
+}: {
+  form: FormState;
+  onChange: (updates: Partial<FormState>) => void;
+  onBack: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <StepShell icon={<ClipboardCheck size={34} />} title="Quote / 报价" subtitle="Choose whether this repair job needs a quote first. / 选择这个维修单是否需要先报价。">
+      <div className="flex flex-col gap-4">
+        <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+          <input
+            type="checkbox"
+            checked={form.requiresQuote}
+            onChange={(event) => onChange({ requiresQuote: event.target.checked })}
+            className="h-5 w-5 rounded border-slate-300 text-red-500 focus:ring-red-400"
+          />
+          <span className="text-base font-bold text-slate-800">Need a quote / 是否报价</span>
+        </label>
+        <Field label="Email address" icon={<Mail size={17} />}>
+          <input
+            value={form.quoteEmail}
+            onChange={(event) => onChange({ quoteEmail: event.target.value })}
+            autoComplete="email"
+            inputMode="email"
+            placeholder="name@example.com"
+            className={fieldClass(false)}
+          />
+        </Field>
+        <StepActions onBack={onBack} onNext={onNext} />
+      </div>
+    </StepShell>
+  );
+}
+
 function AddressStep({
   form,
   touched,
@@ -857,6 +907,8 @@ function ReviewStep({
                 : [
                   ["Name", form.name],
                   ["Phone", form.phone],
+                  ["Quote / 报价", form.requiresQuote ? "是" : "否"],
+                  ["Email", valueOrDash(form.quoteEmail)],
                 ]
             }
           />

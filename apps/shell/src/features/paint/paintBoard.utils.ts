@@ -88,6 +88,17 @@ export const isArchivedPaintJob = (job: PaintBoardJob) =>
 
 export const shouldHidePaintBoardJob = (job: PaintBoardJob) => isArchivedPaintJob(job);
 
+export const shouldHidePaintTechBoardJob = (job: PaintBoardJob) => {
+  if (shouldHidePaintBoardJob(job)) return true;
+  const stage = mapStageKey(job.status, job.currentStage);
+  return (
+    stage === "on_hold" ||
+    stage === "done" ||
+    stage === "delivered" ||
+    job.wofStatus === "Recorded"
+  );
+};
+
 export const normalizeDate = (value: string | Date) => {
   const date = value instanceof Date ? new Date(value) : new Date(value);
   date.setHours(0, 0, 0, 0);

@@ -26,7 +26,12 @@ import {
   attachJobXeroInvoice as apiAttachJobXeroInvoice,
   detachJobXeroInvoice as apiDetachJobXeroInvoice,
 } from "../api/jobDetailApi";
-import { notifyPaintBoardRefresh } from "@/utils/refreshSignals";
+import {
+  notifyPaintBoardRefresh,
+  notifyPartsFlowRefresh,
+  notifyPoDashboardRefresh,
+  notifyWofScheduleRefresh,
+} from "@/utils/refreshSignals";
 import {
   fetchPaintService,
   createPaintService,
@@ -711,6 +716,9 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
           : prev
       );
       notifyPaintBoardRefresh();
+      notifyWofScheduleRefresh();
+      notifyPartsFlowRefresh();
+      notifyPoDashboardRefresh();
       toast.success("已归档");
       return { success: true, message: "已归档" };
     } finally {

@@ -20,7 +20,7 @@ import {
   PAINT_STAGE_INDEX_BY_KEY,
   PAINT_STAGE_LABELS,
   PAINT_STAGE_ORDER,
-  shouldHidePaintBoardJob,
+  shouldHidePaintTechBoardJob,
   type PaintBoardJob,
   type StageKey,
 } from "@/features/paint/paintBoard.utils";
@@ -104,8 +104,10 @@ const STAGES: Record<
 };
 
 const STAGE_ORDER = PAINT_STAGE_ORDER;
-const SUMMARY_STAGE_ORDER = STAGE_ORDER.filter((stage) => stage !== "delivered");
-const TECH_STAGE_ORDER = STAGE_ORDER.filter((stage) => stage !== "on_hold" && stage !== "delivered");
+const SUMMARY_STAGE_ORDER = STAGE_ORDER.filter(
+  (stage) => stage !== "on_hold" && stage !== "done" && stage !== "delivered"
+);
+const TECH_STAGE_ORDER = SUMMARY_STAGE_ORDER;
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
 
 const extractServiceNote = (note?: string | null) => {
@@ -184,11 +186,7 @@ export function PaintTechBoardPage() {
   const visibleJobs = useMemo(
     () =>
       jobs.filter((job) => {
-        if (shouldHidePaintBoardJob(job)) return false;
-        const stage = mapStageKey(job.status, job.currentStage);
-        if (stage === "on_hold" || stage === "delivered") return false;
-        if (job.wofStatus === "Recorded") return false;
-        return true;
+        return !shouldHidePaintTechBoardJob(job);
       }),
     [jobs]
   );
@@ -197,9 +195,7 @@ export function PaintTechBoardPage() {
   const statsJobs = useMemo(
     () =>
       jobs.filter((job) => {
-        if (shouldHidePaintBoardJob(job)) return false;
-        const stage = mapStageKey(job.status, job.currentStage);
-        return stage !== "delivered";
+        return !shouldHidePaintTechBoardJob(job);
       }),
     [jobs]
   );
@@ -354,7 +350,7 @@ export function PaintTechBoardPage() {
             </div>
           </div>
           <div className="text-xs text-slate-500">
-            每 5 分钟刷新一次，当前页面不显示 On Hold、交车完毕和已归档订单
+            每 5 分钟刷新一次，当前页面不显示 On Hold、已完成、已归档和交车完毕订单
             {lastUpdatedAt ? ` · 上次刷新 ${lastUpdatedAt.toLocaleString("zh-CN", { hour12: false })}` : ""}
           </div>
         </div>

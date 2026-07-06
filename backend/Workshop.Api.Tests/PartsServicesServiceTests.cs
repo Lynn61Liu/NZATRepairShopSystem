@@ -30,6 +30,27 @@ public sealed class PartsServicesServiceTests
         payload[0].Should().BeEquivalentTo(new { jobId = activeJob.Id.ToString() });
     }
 
+    [Fact]
+    public async Task GetPartFlow_IncludesActiveJobTags()
+    {
+        await using var db = CreateDbContext();
+        var job = SeedJob(db, "Open");
+        SeedPartsService(db, job.Id, "front bumper", PartsServiceStatus.PendingOrder);
+        var quoteTag = SeedTag(db, "报价", isActive: true);
+        var inactiveTag = SeedTag(db, "Hidden", isActive: false);
+        db.JobTags.Add(new JobTag { JobId = job.Id, TagId = quoteTag.Id, CreatedAt = DateTime.UtcNow });
+        db.JobTags.Add(new JobTag { JobId = job.Id, TagId = inactiveTag.Id, CreatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+        var service = CreateService(db);
+
+        var result = await service.GetPartFlow(CancellationToken.None);
+
+        result.StatusCode.Should().Be(200);
+        var payload = result.Payload.Should().BeAssignableTo<IEnumerable<object>>().Subject.ToList();
+        payload.Should().ContainSingle();
+        payload[0].Should().BeEquivalentTo(new { tags = new[] { "报价" } });
+    }
+
     private static AppDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -83,6 +104,20 @@ public sealed class PartsServicesServiceTests
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
         });
+    }
+
+    private static Tag SeedTag(AppDbContext db, string name, bool isActive)
+    {
+        var tag = new Tag
+        {
+            Name = name,
+            IsActive = isActive,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        db.Tags.Add(tag);
+        db.SaveChanges();
+        return tag;
     }
 
     private sealed class ThrowingHttpClientFactory : IHttpClientFactory

@@ -50,7 +50,7 @@ public static class CustomerSelfServiceJobMapper
                 Type = "Personal",
                 Name = req.Name.Trim(),
                 Phone = NullIfBlank(req.Phone),
-                Email = NullIfBlank(req.Email),
+                Email = NullIfBlank(req.QuoteEmail) ?? NullIfBlank(req.Email),
                 Address = string.IsNullOrWhiteSpace(address) ? null : address,
                 Notes = NormalizePlate(req.Plate),
             },

@@ -11,6 +11,8 @@ namespace Workshop.Api.Controllers;
 [Route("api/customer-self-service/jobs")]
 public sealed class CustomerSelfServiceJobsController : ControllerBase
 {
+    private const string QuoteTagName = "报价";
+
     private readonly NewJobCreationService _newJobCreationService;
     private readonly ServiceCatalogService _serviceCatalogService;
     private readonly AppDbContext _db;
@@ -105,6 +107,14 @@ public sealed class CustomerSelfServiceJobsController : ControllerBase
                 ct);
             var newJobRequest = CustomerSelfServiceJobMapper.MapToNewJobRequest(req, rootServiceCatalogItemId);
             var result = await _newJobCreationService.CreateAsync(newJobRequest, ct);
+            if (!req.HasWof)
+            {
+                await ApplyQuoteEmailAsync(_db, result.CustomerId, req.QuoteEmail, ct);
+            }
+            if (!req.HasWof && req.RequiresQuote)
+            {
+                await EnsureQuoteTagAsync(_db, result.JobId, ct);
+            }
 
             return Ok(new
             {
@@ -119,6 +129,53 @@ public sealed class CustomerSelfServiceJobsController : ControllerBase
         {
             return BadRequest(new { error = ex.Message });
         }
+    }
+
+    internal static async Task EnsureQuoteTagAsync(AppDbContext db, long jobId, CancellationToken ct)
+    {
+        var tag = await db.Tags
+            .FirstOrDefaultAsync(x => x.IsActive && x.Name.ToLower() == QuoteTagName.ToLower(), ct);
+        var now = DateTime.UtcNow;
+
+        if (tag is null)
+        {
+            tag = new Tag
+            {
+                Name = QuoteTagName,
+                IsActive = true,
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+            db.Tags.Add(tag);
+            await db.SaveChangesAsync(ct);
+        }
+
+        var exists = await db.JobTags
+            .AnyAsync(x => x.JobId == jobId && x.TagId == tag.Id, ct);
+        if (exists)
+            return;
+
+        db.JobTags.Add(new JobTag
+        {
+            JobId = jobId,
+            TagId = tag.Id,
+            CreatedAt = now,
+        });
+        await db.SaveChangesAsync(ct);
+    }
+
+    internal static async Task ApplyQuoteEmailAsync(AppDbContext db, long? customerId, string? quoteEmail, CancellationToken ct)
+    {
+        var trimmedEmail = quoteEmail?.Trim();
+        if (!customerId.HasValue || string.IsNullOrWhiteSpace(trimmedEmail))
+            return;
+
+        var customer = await db.Customers.FirstOrDefaultAsync(x => x.Id == customerId.Value, ct);
+        if (customer is null)
+            return;
+
+        customer.Email = trimmedEmail;
+        await db.SaveChangesAsync(ct);
     }
 
     private static object? ToVehicleResponse(Vehicle? vehicle)

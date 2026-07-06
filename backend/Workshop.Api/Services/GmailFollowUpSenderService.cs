@@ -48,7 +48,11 @@ public sealed class GmailFollowUpSenderService
             return false;
 
         var jobExists = await _db.Jobs.AsNoTracking()
-            .AnyAsync(x => x.Id == currentState.JobId && x.NeedsPo, ct);
+            .AnyAsync(
+                x => x.Id == currentState.JobId
+                    && x.NeedsPo
+                    && (x.Status == null || x.Status.ToLower() != "archived"),
+                ct);
         if (!jobExists)
             return false;
 

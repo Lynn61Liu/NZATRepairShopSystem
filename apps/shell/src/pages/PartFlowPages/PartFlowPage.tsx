@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/ui";
 import type { ArrivalNotice, WorkCard, Status } from "@/types";
 import { PartFlowColumn } from "./PartFlowColum";
@@ -11,6 +11,7 @@ import {
   deletePartsService,
   updatePartsService,
 } from "@/features/parts/api/partsApi";
+import { subscribePartsFlowRefresh } from "@/utils/refreshSignals";
 
 const STATUSES: Status[] = [
   "pending_order",
@@ -18,6 +19,13 @@ const STATUSES: Status[] = [
   "parts_trader",
   "pickup_or_transit",
 ];
+
+const QUOTE_TAG = "报价";
+
+const hasQuoteTag = (card: WorkCard) => {
+  const tags = card.tags ?? card.selectedTags ?? [];
+  return tags.some((tag) => String(tag).trim() === QUOTE_TAG);
+};
 
 export function PartFlowPage() {
   const [cards, setCards] = useState<WorkCard[]>([]);
@@ -27,7 +35,7 @@ export function PartFlowPage() {
   const [archivedIds, setArchivedIds] = useState<Set<string>>(new Set());
   const toast = useToast();
 
-  const loadCards = async () => {
+  const loadCards = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     const res = await fetchPartFlow();
@@ -43,11 +51,13 @@ export function PartFlowPage() {
     setCards(list);
     cardsRef.current = list;
     setLoading(false);
-  };
+  }, [toast]);
 
   useEffect(() => {
-    void loadCards();
-  }, []);
+    queueMicrotask(() => void loadCards());
+  }, [loadCards]);
+
+  useEffect(() => subscribePartsFlowRefresh(() => void loadCards()), [loadCards]);
 
   useEffect(() => {
     cardsRef.current = cards;
@@ -133,6 +143,8 @@ console.log(`===star fun ===Moving card ${cardId} to status ${newStatus}=====`);
   };
 
   const activeCards = cards.filter((card) => !archivedIds.has(card.id));
+  const waitingQuoteCards = activeCards.filter(hasQuoteTag);
+  const regularCards = activeCards.filter((card) => !hasQuoteTag(card));
 
   return (
     <DndProvider backend={HTML5Backend}>
@@ -151,12 +163,22 @@ console.log(`===star fun ===Moving card ${cardId} to status ${newStatus}=====`);
           <div className="text-sm text-gray-500 mb-3">加载中...</div>
         ) : null}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 ">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 ">
+          <PartFlowColumn
+            status="waiting_quote"
+            cards={waitingQuoteCards}
+            onMoveCard={moveCard}
+            onDeleteCard={deleteCard}
+            onArchiveCard={archiveCard}
+            onAddNote={addNote}
+            onDeleteNote={deleteNote}
+            onArrivalNoticeSent={updateArrivalNotice}
+          />
           {STATUSES.map((status) => (
             <PartFlowColumn
               key={status}
               status={status}
-              cards={activeCards.filter(
+              cards={regularCards.filter(
                 (card) => card.status === status,
               )}
               onMoveCard={moveCard}

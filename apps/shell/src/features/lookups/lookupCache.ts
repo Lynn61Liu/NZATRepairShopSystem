@@ -425,6 +425,49 @@ export async function loadInventoryItemsCacheFirst() {
   });
 }
 
+function getCachedCustomerProfileIds() {
+  if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
+    return [];
+  }
+
+  const ids: string[] = [];
+  try {
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (!key?.startsWith(CUSTOMER_PROFILE_KEY_PREFIX) || !key.endsWith(":v1")) {
+        continue;
+      }
+
+      const id = key.slice(CUSTOMER_PROFILE_KEY_PREFIX.length, -":v1".length);
+      if (id) ids.push(id);
+    }
+  } catch {
+    return [];
+  }
+
+  return Array.from(new Set(ids));
+}
+
+async function refreshCustomerProfileCache(id: string) {
+  const res = await requestJson<unknown>(`/api/customers/${encodeURIComponent(id)}`);
+  if (!res.ok || !res.data) {
+    removeCachedValue(customerProfileKey(id));
+    return;
+  }
+
+  setCachedCustomerProfile(id, mapCustomerProfile(res.data));
+}
+
+export async function refreshAllLookupCaches() {
+  const cachedProfileIds = getCachedCustomerProfileIds();
+  await Promise.all([
+    refreshCustomerListCache(),
+    refreshServiceCatalogCache(),
+    refreshInventoryItemsCache(),
+    ...cachedProfileIds.map((id) => refreshCustomerProfileCache(id)),
+  ]);
+}
+
 export function upsertCustomerCaches(profile: CachedCustomerProfile) {
   setCachedCustomerProfile(profile.id, profile);
 
