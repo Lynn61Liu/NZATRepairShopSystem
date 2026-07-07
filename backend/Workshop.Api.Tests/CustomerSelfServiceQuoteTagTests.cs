@@ -9,7 +9,7 @@ namespace Workshop.Api.Tests;
 public sealed class CustomerSelfServiceQuoteTagTests
 {
     [Fact]
-    public async Task EnsureQuoteTagAsync_CreatesQuoteTagAndJobTagRelationship()
+    public async Task EnsureQuoteTagAsync_CreatesQuoteTagRelationshipAndQuotePartsService()
     {
         await using var db = CreateDbContext();
         var job = new Job
@@ -28,6 +28,35 @@ public sealed class CustomerSelfServiceQuoteTagTests
         tag.Name.Should().Be("报价");
         tag.IsActive.Should().BeTrue();
         (await db.JobTags.AnyAsync(x => x.JobId == job.Id && x.TagId == tag.Id, CancellationToken.None)).Should().BeTrue();
+        var partsService = await db.JobPartsServices.SingleAsync(CancellationToken.None);
+        partsService.JobId.Should().Be(job.Id);
+        partsService.Description.Should().Be("报价");
+        partsService.Status.Should().Be(PartsServiceStatus.Quote);
+    }
+
+    [Fact]
+    public async Task EnsureQuoteTagAsync_UsesQuotePartsContentAsPartsServiceDescription()
+    {
+        await using var db = CreateDbContext();
+        var job = new Job
+        {
+            Status = "InProgress",
+            IsUrgent = false,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        db.Jobs.Add(job);
+        await db.SaveChangesAsync();
+
+        await CustomerSelfServiceJobsController.EnsureQuoteTagAsync(
+            db,
+            job.Id,
+            CancellationToken.None,
+            quotePartsContent: " front bumper ");
+
+        var partsService = await db.JobPartsServices.SingleAsync(CancellationToken.None);
+        partsService.Description.Should().Be("front bumper");
+        partsService.Status.Should().Be(PartsServiceStatus.Quote);
     }
 
     [Fact]
@@ -58,6 +87,7 @@ public sealed class CustomerSelfServiceQuoteTagTests
 
         (await db.Tags.CountAsync(CancellationToken.None)).Should().Be(1);
         (await db.JobTags.CountAsync(x => x.JobId == job.Id && x.TagId == tag.Id, CancellationToken.None)).Should().Be(1);
+        (await db.JobPartsServices.CountAsync(x => x.JobId == job.Id, CancellationToken.None)).Should().Be(1);
     }
 
     [Fact]

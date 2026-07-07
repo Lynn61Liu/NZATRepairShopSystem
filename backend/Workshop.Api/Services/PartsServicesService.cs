@@ -8,6 +8,8 @@ namespace Workshop.Api.Services;
 
 public class PartsServicesService
 {
+    private const string QuoteTagName = "报价";
+
     private readonly AppDbContext _db;
     private readonly GmailMessageSenderService _gmailMessageSenderService;
 
@@ -211,6 +213,8 @@ public class PartsServicesService
 
     public async Task<WofServiceResult> GetPartFlow(CancellationToken ct)
     {
+        await MaterializeQuotePartsServicesAsync(ct);
+
         var services = await (
             from ps in _db.JobPartsServices.AsNoTracking()
             join j in _db.Jobs.AsNoTracking() on ps.JobId equals j.Id
@@ -223,11 +227,13 @@ public class PartsServicesService
             return WofServiceResult.Ok(new List<object>());
 
         var serviceIds = services.Select(x => x.Id).ToList();
-        var notes = await _db.JobPartsNotes.AsNoTracking()
-            .Where(x => serviceIds.Contains(x.PartsServiceId))
-            .OrderBy(x => x.CreatedAt)
-            .ThenBy(x => x.Id)
-            .ToListAsync(ct);
+        var notes = serviceIds.Count == 0
+            ? new List<JobPartsNote>()
+            : await _db.JobPartsNotes.AsNoTracking()
+                .Where(x => serviceIds.Contains(x.PartsServiceId))
+                .OrderBy(x => x.CreatedAt)
+                .ThenBy(x => x.Id)
+                .ToListAsync(ct);
 
         var notesByService = notes
             .GroupBy(x => x.PartsServiceId)
@@ -255,7 +261,10 @@ public class PartsServicesService
                     .ThenByDescending(x => x.Id)
                     .First());
 
-        var jobIds = services.Select(x => x.JobId).Distinct().ToList();
+        var jobIds = services
+            .Select(x => x.JobId)
+            .Distinct()
+            .ToList();
         var jobInfo = await (
             from j in _db.Jobs.AsNoTracking()
             join v in _db.Vehicles.AsNoTracking() on j.VehicleId equals v.Id into vj
@@ -340,6 +349,34 @@ public class PartsServicesService
         return WofServiceResult.Ok(payload);
     }
 
+    private async Task MaterializeQuotePartsServicesAsync(CancellationToken ct)
+    {
+        var jobIds = await (
+            from j in _db.Jobs.AsNoTracking()
+            join jt in _db.JobTags.AsNoTracking() on j.Id equals jt.JobId
+            join t in _db.Tags.AsNoTracking() on jt.TagId equals t.Id
+            where (j.Status == null || j.Status.ToLower() != "archived")
+                && t.IsActive
+                && t.Name == QuoteTagName
+                && !_db.JobPartsServices.AsNoTracking().Any(ps => ps.JobId == j.Id)
+            select j.Id
+        ).Distinct().ToListAsync(ct);
+
+        if (jobIds.Count == 0)
+            return;
+
+        var now = DateTime.UtcNow;
+        _db.JobPartsServices.AddRange(jobIds.Select(jobId => new JobPartsService
+        {
+            JobId = jobId,
+            Description = QuoteTagName,
+            Status = PartsServiceStatus.Quote,
+            CreatedAt = now,
+            UpdatedAt = now,
+        }));
+        await _db.SaveChangesAsync(ct);
+    }
+
     public async Task<WofServiceResult> SendArrivalNotice(
         long jobId,
         long serviceId,
@@ -412,6 +449,7 @@ public class PartsServicesService
         var v = value.Trim().ToLowerInvariant();
         return v switch
         {
+            "quote" or "waiting_quote" or "报价" or "等报价" => PartsServiceStatus.Quote,
             "pending_order" or "pending" or "quote_pending" or "待下单" => PartsServiceStatus.PendingOrder,
             "needs_pt" or "need_pt" or "pt" or "需要发pt" => PartsServiceStatus.NeedsPt,
             "parts_trader" or "partstrader" => PartsServiceStatus.PartsTrader,
@@ -422,6 +460,7 @@ public class PartsServicesService
 
     private static string ToStatusValue(PartsServiceStatus status) => status switch
     {
+        PartsServiceStatus.Quote => "quote",
         PartsServiceStatus.NeedsPt => "needs_pt",
         PartsServiceStatus.PartsTrader => "parts_trader",
         PartsServiceStatus.PickupOrTransit => "pickup_or_transit",

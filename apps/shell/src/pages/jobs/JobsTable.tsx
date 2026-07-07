@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Archive, Trash2 } from "lucide-react";
+import { Archive, Lightbulb, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import { StatusPill, ProgressRing, TagsCell } from "@/features/jobs/components";
@@ -7,6 +7,20 @@ import { XeroButton, getXeroInvoiceUrl } from "@/components/common/XeroButton";
 import { PAINT_STAGE_OPTIONS } from "@/features/paint/paintBoard.utils";
 import { formatNzDate, formatNzDateTime, parseTimestamp } from "@/utils/date";
 import type { JobRow } from "@/types/JobType";
+import {
+  createJobLightBinding,
+  fetchJobLightBindings,
+  lightOnJobLightBinding,
+  type JobLightBindingResponse,
+} from "@/features/jobDetail/api/jobDetailApi";
+import {
+  LIGHT_TAG_PATTERN,
+  normalizeLightTagInput,
+  selectCurrentLightBinding,
+  shouldAutoCloseLightBindingDialog,
+} from "@/features/jobDetail/lightBindingDialog";
+import { requestJson } from "@/utils/api";
+import { JOB_TABLE_COLUMNS } from "./jobsTableLayout";
 export type JobsTableProps = {
   rows: JobRow[];
   onToggleUrgent: (id: string) => void | Promise<void>;
@@ -124,26 +138,6 @@ function PaintStatusSelect({
   );
 }
 
-const JOB_TABLE_COLUMNS: Array<{
-  key: string;
-  label: string;
-  width: number;
-  minWidth: number;
-}> = [
-  { key: "createdAt", label: "创建时间", width: 140, minWidth: 130 },
-  { key: "inShop", label: "在店时间", width: 90, minWidth: 70 },
-  { key: "status", label: "汽车状态", width: 110, minWidth: 90 },
-  { key: "tag", label: "TAG", width: 90, minWidth: 70 },
-  { key: "code", label: "code", width: 90, minWidth: 80 },
-  { key: "plate", label: "车牌", width: 110, minWidth: 90 },
-  { key: "model", label: "汽车型号", width: 180, minWidth: 160 },
-  { key: "note", label: "备注", width: 250, minWidth: 280 },
-  { key: "wof", label: "WOF", width: 70, minWidth: 60 },
-  { key: "mech", label: "机修", width: 70, minWidth: 60 },
-  { key: "paint", label: "喷漆", width: 70, minWidth: 60 },
-  { key: "actions", label: "操作", width: 80, minWidth: 60 },
-];
-
 function parseCreatedAt(value?: string) {
   return parseTimestamp(value);
 }
@@ -181,9 +175,24 @@ export function JobsTable({
 }: JobsTableProps) {
   const [colWidths, setColWidths] = useState(() => JOB_TABLE_COLUMNS.map((col) => col.width));
   const dragRef = useRef<{ index: number; startX: number; startWidth: number } | null>(null);
+  const stopResizeRef = useRef<() => void>(() => {});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDate, setEditDate] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [lightActionId, setLightActionId] = useState<string | null>(null);
+  const [lightActionMessage, setLightActionMessage] = useState<{
+    jobId: string;
+    type: "success" | "error" | "info";
+    text: string;
+  } | null>(null);
+  const [bindDialogRow, setBindDialogRow] = useState<JobRow | null>(null);
+  const [bindingTagInput, setBindingTagInput] = useState("");
+  const [bindingSubmitting, setBindingSubmitting] = useState(false);
+  const [bindingError, setBindingError] = useState<string | null>(null);
+  const [bindingResult, setBindingResult] = useState<JobLightBindingResponse | null>(null);
+  const [lightBindingsByJobId, setLightBindingsByJobId] = useState<Record<string, JobLightBindingResponse | null>>({});
+  const bindingInputRef = useRef<HTMLInputElement | null>(null);
+  const rowIdsKey = useMemo(() => rows.map((row) => row.id).join("|"), [rows]);
 
   const gridTemplateColumns = useMemo(() => {
     if (colWidths.length === 0) return "";
@@ -214,12 +223,57 @@ export function JobsTable({
   const stopResize = useCallback(() => {
     dragRef.current = null;
     window.removeEventListener("pointermove", handlePointerMove);
-    window.removeEventListener("pointerup", stopResize);
+    window.removeEventListener("pointerup", stopResizeRef.current);
     document.body.style.cursor = "";
     document.body.style.userSelect = "";
   }, [handlePointerMove]);
 
-  useEffect(() => () => stopResize(), [stopResize]);
+  useEffect(() => {
+    stopResizeRef.current = stopResize;
+  }, [stopResize]);
+
+  useEffect(() => () => stopResizeRef.current(), []);
+
+  useEffect(() => {
+    if (!bindDialogRow) return;
+    const timer = window.setTimeout(() => bindingInputRef.current?.focus(), 50);
+    return () => window.clearTimeout(timer);
+  }, [bindDialogRow]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadLightBindingStates = async () => {
+      if (rows.length === 0) {
+        if (!cancelled) setLightBindingsByJobId({});
+        return;
+      }
+
+      const res = await requestJson<JobLightBindingResponse[]>("/api/estation/light-bindings", { cache: "no-store" });
+      if (!res.ok || !res.data || cancelled) return;
+
+      const visibleJobIds = new Set(rows.map((row) => row.id));
+      const grouped = new Map<string, JobLightBindingResponse[]>();
+      res.data.forEach((binding) => {
+        if (binding.jobId === null || binding.jobId === undefined) return;
+        const jobId = String(binding.jobId);
+        if (!visibleJobIds.has(jobId)) return;
+        grouped.set(jobId, [...(grouped.get(jobId) ?? []), binding]);
+      });
+
+      const next: Record<string, JobLightBindingResponse | null> = {};
+      rows.forEach((row) => {
+        next[row.id] = selectCurrentLightBinding(grouped.get(row.id));
+      });
+      setLightBindingsByJobId(next);
+    };
+
+    void loadLightBindingStates();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rowIdsKey, rows]);
 
   const startResize = useCallback(
     (index: number) => (event: React.PointerEvent<HTMLSpanElement>) => {
@@ -232,9 +286,9 @@ export function JobsTable({
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
       window.addEventListener("pointermove", handlePointerMove);
-      window.addEventListener("pointerup", stopResize);
+      window.addEventListener("pointerup", stopResizeRef.current);
     },
-    [colWidths, handlePointerMove, stopResize]
+    [colWidths, handlePointerMove]
   );
 
   const startEditCreatedAt = (row: JobRow) => {
@@ -263,7 +317,112 @@ export function JobsTable({
     }
   };
 
+  const openBindDialog = (row: JobRow) => {
+    setBindingTagInput("");
+    setBindingError(null);
+    setBindingResult(null);
+    setBindDialogRow(row);
+  };
+
+  const closeBindDialog = () => {
+    if (bindingSubmitting) return;
+    setBindDialogRow(null);
+  };
+
+  const waitForBindingResult = async (jobId: string, bindingId: number) => {
+    for (let attempt = 0; attempt < 16; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      const res = await fetchJobLightBindings(jobId);
+      if (!res.ok || !res.data) continue;
+
+      const binding = res.data.find((item) => item.id === bindingId);
+      if (!binding) continue;
+
+      setBindingResult(binding);
+      if (binding.status === "Bound") return binding;
+      if (binding.status === "BindFailed") {
+        setBindingError(binding.failureReason || "绑定失败");
+        return binding;
+      }
+    }
+
+    setBindingError("绑定指令已发送，但暂未收到基站确认");
+    return null;
+  };
+
+  const submitLightBinding = async () => {
+    if (!bindDialogRow) return;
+
+    const tagId = normalizeLightTagInput(bindingTagInput);
+    setBindingTagInput(tagId);
+    setBindingError(null);
+    setBindingResult(null);
+
+    if (!LIGHT_TAG_PATTERN.test(tagId)) {
+      setBindingError("灯条码格式不正确");
+      return;
+    }
+
+    setBindingSubmitting(true);
+    const res = await createJobLightBinding(bindDialogRow.id, tagId);
+    if (!res.ok || !res.data) {
+      setBindingSubmitting(false);
+      setBindingError(res.error || "绑定失败");
+      return;
+    }
+
+    const jobId = bindDialogRow.id;
+    setBindingResult(res.data);
+    const finalBinding = await waitForBindingResult(jobId, res.data.id);
+    setBindingSubmitting(false);
+    setLightBindingsByJobId((prev) => ({ ...prev, [jobId]: finalBinding ?? res.data }));
+
+    if (shouldAutoCloseLightBindingDialog(true, finalBinding?.status)) {
+      setLightActionMessage({ jobId, type: "success", text: "灯条已绑定" });
+      setBindDialogRow(null);
+    }
+  };
+
+  const handleLightAction = async (row: JobRow) => {
+    setLightActionId(row.id);
+    setLightActionMessage(null);
+
+    const bindingsRes = await fetchJobLightBindings(row.id);
+    if (!bindingsRes.ok || !bindingsRes.data) {
+      setLightActionId(null);
+      setLightActionMessage({ jobId: row.id, type: "error", text: bindingsRes.error || "读取灯条绑定失败" });
+      return;
+    }
+
+    const currentBinding = selectCurrentLightBinding(bindingsRes.data);
+    setLightBindingsByJobId((prev) => ({ ...prev, [row.id]: currentBinding }));
+    if (!currentBinding) {
+      setLightActionId(null);
+      openBindDialog(row);
+      return;
+    }
+
+    if (currentBinding.status !== "Bound") {
+      setLightActionId(null);
+      setLightActionMessage({ jobId: row.id, type: "info", text: `灯条状态：${currentBinding.status}` });
+      return;
+    }
+
+    const lightRes = await lightOnJobLightBinding(currentBinding.id);
+    setLightActionId(null);
+    if (!lightRes.ok) {
+      setLightActionMessage({ jobId: row.id, type: "error", text: lightRes.error || "点亮失败" });
+      return;
+    }
+
+    if (lightRes.data) {
+      setLightBindingsByJobId((prev) => ({ ...prev, [row.id]: lightRes.data }));
+    }
+    setLightActionMessage({ jobId: row.id, type: "success", text: "点亮命令已发送" });
+  };
+
   return (
+    <>
     <div className="overflow-x-auto">
       <div className="min-w-full">
         {/* header */}
@@ -302,12 +461,27 @@ export function JobsTable({
             : index % 2 === 1
               ? "bg-[rgba(0,0,0,0.02)]"
               : "bg-white";
+          const lightBinding = lightBindingsByJobId[r.id] ?? null;
+          const lightActionLabel = lightActionId === r.id
+            ? "处理中"
+            : lightBinding?.status === "Bound"
+              ? "点亮"
+              : "绑定";
+          const lightActionClassName = [
+            "inline-flex h-7 items-center gap-1 rounded border px-2 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-60",
+            lightActionId === r.id
+              ? "border-slate-200 bg-slate-50 text-slate-500"
+              : lightBinding?.status === "Bound"
+                ? "border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200"
+                : "border-[rgba(37,99,235,0.25)] bg-white text-[rgba(37,99,235,1)] hover:bg-[rgba(37,99,235,0.06)]",
+          ].join(" ");
           return (
-            <div key={r.id}>
+            <div
+              key={r.id}
+              className={`${rowBg} border-b border-[rgba(0,0,0,0.06)] hover:bg-[rgba(0,0,0,0.02)]`}
+            >
               <div
-                className={`grid gap-0 px-4 py-3 items-center border-b border-[rgba(0,0,0,0.06)] text-center
-                  ${rowBg}
-                  hover:bg-[rgba(0,0,0,0.02)]`}
+                className="grid gap-0 px-4 pb-2 pt-3 items-center text-center"
                 style={gridStyle}
               >
                 <div
@@ -380,28 +554,17 @@ export function JobsTable({
                     {r.vehicleModel || "—"}
                   </div>
                 </div>
-                <div className="min-w-0 text-left text-[rgba(0,0,0,0.45)]">
-                  {r.notes ? (
-                    <span className="relative inline-flex max-w-full align-middle group">
-                      <span className="h-10 overflow-hidden leading-5" style={TWO_LINE_CLAMP_STYLE}>
-                        {r.notes}
-                      </span>
-                      <span className="pointer-events-none absolute left-0 top-full z-50 mt-2 w-[260px] rounded-lg border border-[rgba(0,0,0,0.12)] bg-white px-3 py-2 text-xs text-[rgba(0,0,0,0.75)] shadow-lg opacity-0 translate-y-1 transition group-hover:opacity-100 group-hover:translate-y-0">
-                        {r.notes}
-                      </span>
-                    </span>
-                  ) : (
-                    "—"
-                  )}
-                </div>
 
-                <div className="flex justify-center"><WofStatusPill status={r.wofStatus} /></div>
-                <div className="flex justify-center"><ProgressRing value={r.mechPct} /></div>
-                <div className="flex justify-center">
-                  <PaintStatusSelect row={r} onChange={onUpdatePaintStatus ? (stageIndex) => onUpdatePaintStatus(r.id, stageIndex) : undefined} />
-                </div>
-
-                <div className="flex justify-center gap-1 ">
+                <div className="flex flex-wrap justify-center gap-1 ">
+                  <button
+                    className={lightActionClassName}
+                    title="绑定/点亮灯条"
+                    onClick={() => void handleLightAction(r)}
+                    disabled={lightActionId === r.id}
+                  >
+                    <Lightbulb size={14} />
+                    {lightActionLabel}
+                  </button>
                   <button
                     className="rounded border border-[rgba(0,0,0,0.12)] px-2 py-1 text-xs text-[rgba(0,0,0,0.65)] hover:bg-[rgba(0,0,0,0.04)]"
                     onClick={() => onPrintMech(r.id)}
@@ -435,12 +598,134 @@ export function JobsTable({
                   >
                     <Trash2 size={16} />
                   </button>
+                  {lightActionMessage?.jobId === r.id ? (
+                    <div
+                      className={[
+                        "basis-full text-[11px]",
+                        lightActionMessage.type === "error"
+                          ? "text-red-600"
+                          : lightActionMessage.type === "success"
+                            ? "text-green-600"
+                            : "text-[rgba(0,0,0,0.50)]",
+                      ].join(" ")}
+                    >
+                      {lightActionMessage.text}
+                    </div>
+                  ) : null}
                 </div>
               </div>
+              <div
+                className="grid gap-4 px-4 pb-3 text-left text-xs text-[rgba(0,0,0,0.56)]"
+                style={{ gridTemplateColumns: "minmax(320px,1fr) minmax(120px,auto) minmax(110px,auto) minmax(160px,auto)" }}
+              >
+                <div className="flex min-w-0 items-start gap-2">
+                  <span className="shrink-0 pt-0.5 font-semibold text-[rgba(0,0,0,0.40)]">备注</span>
+                  <div className="min-w-0 flex-1 text-[rgba(0,0,0,0.50)]">
+                    {r.notes ? (
+                      <span className="relative inline-flex max-w-full align-middle group">
+                        <span className="h-10 overflow-hidden leading-5" style={TWO_LINE_CLAMP_STYLE}>
+                          {r.notes}
+                        </span>
+                        <span className="pointer-events-none absolute left-0 top-full z-50 mt-2 w-[320px] rounded-lg border border-[rgba(0,0,0,0.12)] bg-white px-3 py-2 text-xs text-[rgba(0,0,0,0.75)] shadow-lg opacity-0 translate-y-1 transition group-hover:opacity-100 group-hover:translate-y-0">
+                          {r.notes}
+                        </span>
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 font-semibold text-[rgba(0,0,0,0.40)]">WOF</span>
+                  <WofStatusPill status={r.wofStatus} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 font-semibold text-[rgba(0,0,0,0.40)]">机修</span>
+                  <ProgressRing value={r.mechPct} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 font-semibold text-[rgba(0,0,0,0.40)]">喷漆</span>
+                  <PaintStatusSelect row={r} onChange={onUpdatePaintStatus ? (stageIndex) => onUpdatePaintStatus(r.id, stageIndex) : undefined} />
+                </div>
+            </div>
             </div>
           );
         })}
       </div>
     </div>
+    {bindDialogRow ? (
+      <div
+        className="fixed inset-0 z-[90] flex items-center justify-center bg-black/35 px-4"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) closeBindDialog();
+        }}
+      >
+        <form
+          className="w-full max-w-[420px] rounded-[8px] border border-[rgba(0,0,0,0.12)] bg-white p-5 shadow-xl"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submitLightBinding();
+          }}
+        >
+          <div className="text-lg font-semibold text-[var(--ds-text)]">绑定灯条</div>
+          <div className="mt-4 space-y-4">
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-[rgba(0,0,0,0.62)]">车牌号</span>
+              <input
+                value={bindDialogRow.plate || "—"}
+                readOnly
+                className="h-10 w-full rounded-[8px] border border-[var(--ds-border)] bg-[rgba(0,0,0,0.03)] px-3 text-sm font-semibold text-[var(--ds-text)] outline-none"
+              />
+            </label>
+            <label className="block">
+              <input
+                ref={bindingInputRef}
+                value={bindingTagInput}
+                onChange={(event) => {
+                  setBindingTagInput(normalizeLightTagInput(event.target.value));
+                  setBindingError(null);
+                }}
+                placeholder="扫描或输入灯条码"
+                disabled={bindingSubmitting}
+                className="h-10 w-full rounded-[8px] border border-[var(--ds-border)] px-3 text-sm text-[var(--ds-text)] outline-none focus:border-[var(--ds-primary)] disabled:bg-[rgba(0,0,0,0.04)]"
+              />
+            </label>
+          </div>
+
+          {bindingResult ? (
+            <div className="mt-4 rounded-[8px] border border-[rgba(0,0,0,0.08)] bg-[rgba(0,0,0,0.025)] px-3 py-2 text-sm text-[var(--ds-text)]">
+              <div>状态：{bindingResult.status}</div>
+              <div>灯条码：{bindingResult.tagId}</div>
+              <div>基站：{bindingResult.stationId}</div>
+              <div>Group：{bindingResult.groupNo}</div>
+            </div>
+          ) : null}
+
+          {bindingError ? <div className="mt-3 text-sm text-red-600">{bindingError}</div> : null}
+          {bindingSubmitting && !bindingError ? (
+            <div className="mt-3 text-sm text-[rgba(0,0,0,0.62)]">绑定指令已发送，等待基站确认...</div>
+          ) : null}
+
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              className="h-9 rounded-[8px] border border-[var(--ds-border)] px-3 text-sm text-[var(--ds-text)] hover:bg-[rgba(0,0,0,0.04)] disabled:opacity-60"
+              onClick={closeBindDialog}
+              disabled={bindingSubmitting}
+            >
+              取消
+            </button>
+            <button
+              type="submit"
+              className="h-9 rounded-[8px] border border-[var(--ds-primary)] bg-[var(--ds-primary)] px-3 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+              disabled={bindingSubmitting}
+            >
+              {bindingSubmitting ? "确认中..." : "确认"}
+            </button>
+          </div>
+        </form>
+      </div>
+    ) : null}
+    </>
   );
 }

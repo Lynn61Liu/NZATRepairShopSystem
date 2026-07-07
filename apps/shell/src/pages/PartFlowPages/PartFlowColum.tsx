@@ -16,6 +16,7 @@ interface PartFlowColumnProps {
 }
 
 const statusLabels: Record<PartFlowColumnStatus, string> = {
+  quote: "等报价",
   waiting_quote: "等报价",
   pending_order: "待下单",
   needs_pt: "需要发PT",
@@ -24,6 +25,7 @@ const statusLabels: Record<PartFlowColumnStatus, string> = {
 };
 
 const statusColors: Record<PartFlowColumnStatus, string> = {
+  quote: "bg-orange-100 border-orange-300",
   waiting_quote: "bg-orange-100 border-orange-300",
   pending_order: "bg-amber-100 border-amber-300",
   needs_pt: "bg-blue-100 border-blue-300",
@@ -32,6 +34,7 @@ const statusColors: Record<PartFlowColumnStatus, string> = {
 };
 
 const statusTextColors: Record<PartFlowColumnStatus, string> = {
+  quote: "text-orange-800",
   waiting_quote: "text-orange-800",
   pending_order: "text-amber-800",
   needs_pt: "text-blue-800",

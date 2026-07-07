@@ -24,7 +24,7 @@ const QUOTE_TAG = "报价";
 
 const hasQuoteTag = (card: WorkCard) => {
   const tags = card.tags ?? card.selectedTags ?? [];
-  return tags.some((tag) => String(tag).trim() === QUOTE_TAG);
+  return card.status === "quote" || tags.some((tag) => String(tag).trim() === QUOTE_TAG);
 };
 
 export function PartFlowPage() {

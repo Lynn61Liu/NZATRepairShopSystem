@@ -8,6 +8,7 @@ interface CarDetailsModalProps {
 
 export function CarDetailsModal({ card, onClose }: CarDetailsModalProps) {
   const statusLabels: Record<Status, string> = {
+    quote: "等报价",
     pending_order: "待下单",
     needs_pt: "需要发PT",
     parts_trader: "PartsTrader",

@@ -1,4 +1,4 @@
-export type Status = "pending_order" | "needs_pt" | "parts_trader" | "pickup_or_transit";
+export type Status = "quote" | "pending_order" | "needs_pt" | "parts_trader" | "pickup_or_transit";
 export type PartFlowColumnStatus = Status | "waiting_quote";
 
 export interface Note {

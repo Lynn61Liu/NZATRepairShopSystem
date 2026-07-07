@@ -51,6 +51,35 @@ public sealed class PartsServicesServiceTests
         payload[0].Should().BeEquivalentTo(new { tags = new[] { "报价" } });
     }
 
+    [Fact]
+    public async Task GetPartFlow_MaterializesQuoteTaggedJobsWithoutPartsServices()
+    {
+        await using var db = CreateDbContext();
+        var job = SeedJob(db, "Open");
+        var quoteTag = SeedTag(db, "报价", isActive: true);
+        db.JobTags.Add(new JobTag { JobId = job.Id, TagId = quoteTag.Id, CreatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+        var service = CreateService(db);
+
+        var result = await service.GetPartFlow(CancellationToken.None);
+
+        result.StatusCode.Should().Be(200);
+        var materializedService = await db.JobPartsServices.SingleAsync(CancellationToken.None);
+        materializedService.JobId.Should().Be(job.Id);
+        materializedService.Description.Should().Be("报价");
+        materializedService.Status.Should().Be(PartsServiceStatus.Quote);
+
+        var payload = result.Payload.Should().BeAssignableTo<IEnumerable<object>>().Subject.ToList();
+        payload.Should().ContainSingle();
+        payload[0].Should().BeEquivalentTo(new
+        {
+            jobId = job.Id.ToString(),
+            status = "quote",
+            parts = new[] { "报价" },
+            tags = new[] { "报价" },
+        });
+    }
+
     private static AppDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()

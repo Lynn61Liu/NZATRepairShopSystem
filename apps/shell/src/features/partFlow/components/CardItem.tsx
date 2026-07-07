@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useDrag } from 'react-dnd';
 import { Link } from 'react-router-dom';
-import { Trash2, Archive, Car, Wrench, MessageSquare, Send, Clock, Mail, X } from 'lucide-react';
+import { Trash2, Archive, Car, Wrench, MessageSquare, Send, Clock, Mail, X, Phone } from 'lucide-react';
 import type { ArrivalNotice, WorkCard } from '@/types';
 import { ArrivalEmailDraftModal } from './ArrivalEmailDraftModal';
+import { getPartFlowContactHref } from '@/features/partFlow/partFlowContactActions';
 
 interface CardItemProps {
   card: WorkCard;
@@ -18,7 +19,6 @@ export function CardItem({ card, onDelete, onArchive, onAddNote, onDeleteNote, o
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [showArrivalEmailDraft, setShowArrivalEmailDraft] = useState(false);
-  const dragRef = useRef<HTMLDivElement | null>(null);
 
   const [{ isDragging }, drag] = useDrag(() => ({
     type: 'CARD',
@@ -26,8 +26,10 @@ export function CardItem({ card, onDelete, onArchive, onAddNote, onDeleteNote, o
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging()
     })
-  }));
-  drag(dragRef);
+  }), [card.id, card.status]);
+  const setDragRef = useCallback((node: HTMLDivElement | null) => {
+    drag(node);
+  }, [drag]);
 
   const handleAddNote = () => {
     if (noteText.trim()) {
@@ -60,10 +62,12 @@ export function CardItem({ card, onDelete, onArchive, onAddNote, onDeleteNote, o
 
   const isPickupOrTransit = card.status === 'pickup_or_transit';
   const arrivalNoticeSentAt = card.arrivalNotice.sentAt;
+  const phoneHref = getPartFlowContactHref("tel", card.details.phone);
+  const emailHref = getPartFlowContactHref("mailto", card.details.email);
 
   const cardContent = (
     <div
-      ref={dragRef}
+      ref={setDragRef}
       className={`bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-all cursor-move ${
         isDragging ? 'opacity-50' : 'opacity-100'
       }`}
@@ -76,6 +80,31 @@ export function CardItem({ card, onDelete, onArchive, onAddNote, onDeleteNote, o
               <div className="font-semibold text-gray-900">{card.carInfo}</div>
             </div>
           </div>
+
+          {(phoneHref || emailHref) && (
+            <div className="mb-3 space-y-1 rounded border border-slate-200 bg-slate-50 px-2 py-2 text-sm">
+              {phoneHref ? (
+                <a
+                  href={phoneHref}
+                  className="flex min-w-0 items-center gap-2 text-slate-700 transition-colors hover:text-blue-700"
+                  title="拨打客户电话"
+                >
+                  <Phone className="h-4 w-4 flex-shrink-0 text-slate-500" />
+                  <span className="truncate">{card.details.phone}</span>
+                </a>
+              ) : null}
+              {emailHref ? (
+                <a
+                  href={emailHref}
+                  className="flex min-w-0 items-center gap-2 text-slate-700 transition-colors hover:text-blue-700"
+                  title="发送客户邮件"
+                >
+                  <Mail className="h-4 w-4 flex-shrink-0 text-slate-500" />
+                  <span className="truncate">{card.details.email}</span>
+                </a>
+              ) : null}
+            </div>
+          )}
 
           {/* 在店时长 */}
           <div className="flex items-center gap-2 mb-3 bg-orange-50 border border-orange-200 rounded px-2 py-1">

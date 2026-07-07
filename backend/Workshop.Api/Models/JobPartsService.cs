@@ -23,6 +23,7 @@ public class JobPartsNote
 
 public enum PartsServiceStatus
 {
+    [PgName("quote")] Quote,
     [PgName("pending_order")] PendingOrder,
     [PgName("needs_pt")] NeedsPt,
     [PgName("parts_trader")] PartsTrader,

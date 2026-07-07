@@ -126,6 +126,7 @@ const initialForm: FormState = {
   phone: "",
   email: "",
   quoteEmail: "",
+  quotePartsContent: "",
   notes: "",
   address: "",
   requiresQuote: false,
@@ -289,6 +290,7 @@ export function CustomerSelfServiceNewJobPage() {
           phone: "",
           email: "",
           quoteEmail: "",
+          quotePartsContent: "",
           requiresQuote: false,
           address: "",
           notes: "",
@@ -803,16 +805,29 @@ function QuoteStep({
           />
           <span className="text-base font-bold text-slate-800">Need a quote / 是否报价</span>
         </label>
-        <Field label="Email address" icon={<Mail size={17} />}>
-          <input
-            value={form.quoteEmail}
-            onChange={(event) => onChange({ quoteEmail: event.target.value })}
-            autoComplete="email"
-            inputMode="email"
-            placeholder="name@example.com"
-            className={fieldClass(false)}
-          />
-        </Field>
+        {form.requiresQuote ? (
+          <>
+            <Field label="报价内容 Quotation Details" icon={<ClipboardCheck size={17} />}>
+              <textarea
+                value={form.quotePartsContent}
+                onChange={(event) => onChange({ quotePartsContent: event.target.value })}
+                placeholder="报价内容（选填）Quotation Details (Optional)"
+                className={`${fieldClass(false)} min-h-24 resize-y`}
+              />
+            </Field>
+            <Field label="Email address" icon={<Mail size={17} />}>
+              <input
+                value={form.quoteEmail}
+                onChange={(event) => onChange({ quoteEmail: event.target.value })}
+                autoComplete="email"
+                inputMode="email"
+                placeholder="name@example.com"
+                className={fieldClass(false)}
+              />
+            </Field>
+          </>
+        ) : null}
+
         <StepActions onBack={onBack} onNext={onNext} />
       </div>
     </StepShell>
@@ -908,7 +923,12 @@ function ReviewStep({
                   ["Name", form.name],
                   ["Phone", form.phone],
                   ["Quote / 报价", form.requiresQuote ? "是" : "否"],
-                  ["Email", valueOrDash(form.quoteEmail)],
+                  ...(form.requiresQuote
+                    ? [
+                        ["报价内容", valueOrDash(form.quotePartsContent)],
+                        ["Email", valueOrDash(form.quoteEmail)],
+                      ]
+                    : []),
                 ]
             }
           />

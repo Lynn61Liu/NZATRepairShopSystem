@@ -15,13 +15,12 @@ import {
   lightOnJobLightBinding,
   type JobLightBindingResponse,
 } from "@/features/jobDetail/api/jobDetailApi";
-import { shouldAutoCloseLightBindingDialog } from "@/features/jobDetail/lightBindingDialog";
-
-const LIGHT_TAG_PATTERN = /^AD1[0-9A-F]{9}$/;
-
-function normalizeLightTagInput(value: string) {
-  return value.trim().toUpperCase().replace(/\s+/g, "");
-}
+import {
+  LIGHT_TAG_PATTERN,
+  normalizeLightTagInput,
+  selectCurrentLightBinding,
+  shouldAutoCloseLightBindingDialog,
+} from "@/features/jobDetail/lightBindingDialog";
 
 interface JobHeaderProps {
   jobId: string;
@@ -154,10 +153,7 @@ export function JobHeader({
     const res = await fetchJobLightBindings(jobId);
     if (!res.ok || !res.data) return;
 
-    const active = res.data.find((item) => item.status === "Bound")
-      ?? res.data.find((item) => item.status === "PendingBind")
-      ?? null;
-    setCurrentLightBinding(active);
+    setCurrentLightBinding(selectCurrentLightBinding(res.data));
   };
 
   useEffect(() => {

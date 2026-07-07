@@ -2068,11 +2068,26 @@ public class JobsController : ControllerBase
             .Select(x => x.Name)
             .ToArrayAsync(ct);
 
+        if (tagNameList.Any(name => string.Equals(name, "报价", StringComparison.OrdinalIgnoreCase))
+            && !await _db.JobPartsServices.AnyAsync(x => x.JobId == id, ct))
+        {
+            var now = DateTime.UtcNow;
+            _db.JobPartsServices.Add(new JobPartsService
+            {
+                JobId = id,
+                Description = "报价",
+                Status = PartsServiceStatus.Quote,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+        }
+
         job.IsUrgent = tagNameList.Any(name => string.Equals(name, "Urgent", StringComparison.OrdinalIgnoreCase));
         job.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync(ct);
         await InvalidateJobDetailCachesAsync(id, ct);
+        await InvalidatePartsFlowCacheAsync(ct);
 
         return Ok(new { tags = tagNameList });
     }

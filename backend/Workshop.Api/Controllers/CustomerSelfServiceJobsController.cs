@@ -12,22 +12,26 @@ namespace Workshop.Api.Controllers;
 public sealed class CustomerSelfServiceJobsController : ControllerBase
 {
     private const string QuoteTagName = "报价";
+    private const string PartsFlowCacheKey = "parts-flow:v1";
 
     private readonly NewJobCreationService _newJobCreationService;
     private readonly ServiceCatalogService _serviceCatalogService;
     private readonly AppDbContext _db;
     private readonly CarjamAsyncImportService _carjamAsyncImportService;
+    private readonly IAppCache _cache;
 
     public CustomerSelfServiceJobsController(
         NewJobCreationService newJobCreationService,
         ServiceCatalogService serviceCatalogService,
         AppDbContext db,
-        CarjamAsyncImportService carjamAsyncImportService)
+        CarjamAsyncImportService carjamAsyncImportService,
+        IAppCache cache)
     {
         _newJobCreationService = newJobCreationService;
         _serviceCatalogService = serviceCatalogService;
         _db = db;
         _carjamAsyncImportService = carjamAsyncImportService;
+        _cache = cache;
     }
 
     [HttpGet("plate-lookup")]
@@ -113,7 +117,8 @@ public sealed class CustomerSelfServiceJobsController : ControllerBase
             }
             if (!req.HasWof && req.RequiresQuote)
             {
-                await EnsureQuoteTagAsync(_db, result.JobId, ct);
+                await EnsureQuoteTagAsync(_db, result.JobId, ct, req.QuotePartsContent);
+                await _cache.RemoveAsync(PartsFlowCacheKey, ct);
             }
 
             return Ok(new
@@ -131,11 +136,14 @@ public sealed class CustomerSelfServiceJobsController : ControllerBase
         }
     }
 
-    internal static async Task EnsureQuoteTagAsync(AppDbContext db, long jobId, CancellationToken ct)
+    internal static async Task EnsureQuoteTagAsync(AppDbContext db, long jobId, CancellationToken ct, string? quotePartsContent = null)
     {
         var tag = await db.Tags
             .FirstOrDefaultAsync(x => x.IsActive && x.Name.ToLower() == QuoteTagName.ToLower(), ct);
         var now = DateTime.UtcNow;
+        var partsDescription = string.IsNullOrWhiteSpace(quotePartsContent)
+            ? QuoteTagName
+            : quotePartsContent.Trim();
 
         if (tag is null)
         {
@@ -152,15 +160,28 @@ public sealed class CustomerSelfServiceJobsController : ControllerBase
 
         var exists = await db.JobTags
             .AnyAsync(x => x.JobId == jobId && x.TagId == tag.Id, ct);
-        if (exists)
-            return;
 
-        db.JobTags.Add(new JobTag
+        if (!exists)
         {
-            JobId = jobId,
-            TagId = tag.Id,
-            CreatedAt = now,
-        });
+            db.JobTags.Add(new JobTag
+            {
+                JobId = jobId,
+                TagId = tag.Id,
+                CreatedAt = now,
+            });
+        }
+
+        if (!await db.JobPartsServices.AnyAsync(x => x.JobId == jobId, ct))
+        {
+            db.JobPartsServices.Add(new JobPartsService
+            {
+                JobId = jobId,
+                Description = partsDescription,
+                Status = PartsServiceStatus.Quote,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+        }
         await db.SaveChangesAsync(ct);
     }
 

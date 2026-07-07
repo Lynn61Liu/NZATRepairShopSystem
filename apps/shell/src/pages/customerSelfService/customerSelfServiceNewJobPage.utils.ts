@@ -7,6 +7,7 @@ export type CustomerSelfServiceFormState = {
   phone: string;
   email: string;
   quoteEmail: string;
+  quotePartsContent: string;
   notes: string;
   address: string;
   requiresQuote: boolean;
@@ -39,8 +40,8 @@ export function buildSelfServiceJobPayload({
   matchedCustomerId: string;
   customerEdited: boolean;
 }) {
-  const repairQuoteEmail = form.hasWof ? "" : form.quoteEmail;
-
+  const requiresQuote = !form.hasWof && form.requiresQuote;
+  const repairQuoteEmail = requiresQuote ? form.quoteEmail : "";
   return {
     plate: form.plate,
     hasWof: form.hasWof,
@@ -48,7 +49,8 @@ export function buildSelfServiceJobPayload({
     phone: form.phone,
     email: repairQuoteEmail || form.email,
     quoteEmail: repairQuoteEmail || undefined,
-    requiresQuote: !form.hasWof && form.requiresQuote,
+    requiresQuote,
+    quotePartsContent: requiresQuote ? form.quotePartsContent : undefined,
     existingCustomerId: matchedCustomerId && !customerEdited ? Number(matchedCustomerId) : undefined,
     customerEdited,
     notes: form.notes,
