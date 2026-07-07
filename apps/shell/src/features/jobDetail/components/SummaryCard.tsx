@@ -320,6 +320,7 @@ export function SummaryCard({
   };
   const customerTelHref = getCustomerContactHref("tel", customer.phone);
   const customerSmsHref = getCustomerContactHref("sms", customer.phone);
+  const customerEmailHref = getCustomerContactHref("email", customer.email);
   const customerPhoneIsClickable = Boolean(customerTelHref && customerSmsHref);
 
   return (
@@ -448,7 +449,17 @@ export function SummaryCard({
               </div>
               <div className="flex items-center gap-2 text-sm text-[var(--ds-muted)]">
                 <Mail className="w-3.5 h-3.5" />
-                <span>{customer.email}</span>
+                {customerEmailHref ? (
+                  <a
+                    href={customerEmailHref}
+                    className="font-medium text-[var(--ds-primary)] underline underline-offset-2 hover:text-[var(--ds-text)]"
+                    aria-label={`发送邮件给客户 ${customer.email}`}
+                  >
+                    {customer.email}
+                  </a>
+                ) : (
+                  <span>{customer.email}</span>
+                )}
               </div>
                <div className="flex items-center gap-2 text-sm text-[var(--ds-muted)]">
                 <Building2 className="w-3.5 h-3.5" />

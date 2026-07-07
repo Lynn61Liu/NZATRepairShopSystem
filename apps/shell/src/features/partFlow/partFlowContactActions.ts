@@ -4,5 +4,5 @@ export function getPartFlowContactHref(action: PartFlowContactAction, value: str
   const trimmed = value?.trim() ?? "";
   if (!trimmed) return null;
   if (action === "tel") return `tel:${trimmed.replace(/\s+/g, "")}`;
-  return `mailto:${trimmed}`;
+  return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(trimmed)}`;
 }
