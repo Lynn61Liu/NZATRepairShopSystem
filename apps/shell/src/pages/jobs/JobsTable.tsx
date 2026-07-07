@@ -46,6 +46,10 @@ const ONE_LINE_CLAMP_STYLE = {
   WebkitLineClamp: 1,
   wordBreak: "break-word",
 } as const;
+const ACTION_TEXT_BUTTON_CLASS =
+  "inline-flex h-7 min-w-10 items-center justify-center rounded-[8px] border px-2 text-xs leading-none";
+const ACTION_ICON_BUTTON_CLASS =
+  "inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-transparent";
 
 function WofStatusPill({ status }: { status?: JobRow["wofStatus"] }) {
   if (!status) {
@@ -468,7 +472,8 @@ export function JobsTable({
               ? "点亮"
               : "绑定";
           const lightActionClassName = [
-            "inline-flex h-7 items-center gap-1 rounded border px-2 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-60",
+            ACTION_TEXT_BUTTON_CLASS,
+            "gap-1 font-medium disabled:cursor-not-allowed disabled:opacity-60",
             lightActionId === r.id
               ? "border-slate-200 bg-slate-50 text-slate-500"
               : lightBinding?.status === "Bound"
@@ -478,7 +483,7 @@ export function JobsTable({
           return (
             <div
               key={r.id}
-              className={`${rowBg} border-b border-[rgba(0,0,0,0.06)] hover:bg-[rgba(0,0,0,0.02)]`}
+              className={`${rowBg} border-b border-[rgba(0,0,0,0.06)] hover:bg-sky-50`}
             >
               <div
                 className="grid gap-0 px-4 pb-2 pt-3 items-center text-center"
@@ -554,8 +559,52 @@ export function JobsTable({
                     {r.vehicleModel || "—"}
                   </div>
                 </div>
+                   {/* LIST 2  */}
+                <div className="flex min-w-0 items-start gap-2">
+                  <span className="shrink-0 pt-0.5 font-semibold text-[rgba(0,0,0,0.40)]">备注</span>
+                  <div className="min-w-0 flex-1 text-[rgba(0,0,0,0.50)]">
+                    {r.notes ? (
+                      <span className="relative inline-flex max-w-full align-middle group">
+                        <span className="h-10 overflow-hidden leading-5" style={TWO_LINE_CLAMP_STYLE}>
+                          {r.notes}
+                        </span>
+                        <span className="pointer-events-none absolute left-0 top-full z-50 mt-2 w-[320px] rounded-lg border border-[rgba(0,0,0,0.12)] bg-white px-3 py-2 text-xs text-[rgba(0,0,0,0.75)] shadow-lg opacity-0 translate-y-1 transition group-hover:opacity-100 group-hover:translate-y-0">
+                          {r.notes}
+                        </span>
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </div>
+                </div>
 
-                <div className="flex flex-wrap justify-center gap-1 ">
+
+              </div>
+              <div
+                className="grid gap-4 px-4 pb-3 text-left text-xs text-[rgba(0,0,0,0.56)]"
+                style={{ gridTemplateColumns: "minmax(320px,1fr)  minmax(160px,auto)" }}
+              >
+
+              
+                {/* server state */}
+                <div className="flex gap-8">
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 font-semibold text-[rgba(0,0,0,0.40)]">WOF</span>
+                  <WofStatusPill status={r.wofStatus} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 font-semibold text-[rgba(0,0,0,0.40)]">机修</span>
+                  <ProgressRing value={r.mechPct} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 font-semibold text-[rgba(0,0,0,0.40)]">喷漆</span>
+                  <PaintStatusSelect row={r} onChange={onUpdatePaintStatus ? (stageIndex) => onUpdatePaintStatus(r.id, stageIndex) : undefined} />
+                </div>
+                </div>
+                   {/* server state end */}
+
+                   {/* action btns */}
+                <div className="flex flex-wrap justify-center gap-1.5">
                   <button
                     className={lightActionClassName}
                     title="绑定/点亮灯条"
@@ -566,33 +615,34 @@ export function JobsTable({
                     {lightActionLabel}
                   </button>
                   <button
-                    className="rounded border border-[rgba(0,0,0,0.12)] px-2 py-1 text-xs text-[rgba(0,0,0,0.65)] hover:bg-[rgba(0,0,0,0.04)]"
+                    className={`${ACTION_TEXT_BUTTON_CLASS} border-[rgba(0,0,0,0.12)] text-[rgba(0,0,0,0.65)] hover:bg-[rgba(0,0,0,0.04)]`}
                     onClick={() => onPrintMech(r.id)}
                   >
                     机修
                   </button>
                   <button
-                    className="rounded border border-[rgba(0,0,0,0.12)] px-2 py-1 text-xs text-[rgba(0,0,0,0.65)] hover:bg-[rgba(0,0,0,0.04)]"
+                    className={`${ACTION_TEXT_BUTTON_CLASS} border-[rgba(0,0,0,0.12)] text-[rgba(0,0,0,0.65)] hover:bg-[rgba(0,0,0,0.04)]`}
                     onClick={() => onPrintPaint(r.id)}
                   >
                     喷漆
                   </button>
                   {r.externalInvoiceId ? (
-                    <XeroButton
-                      className="h-8 min-w-10 rounded-[8px] px-2"
-                      label=""
+                    <button
+                      className={`${ACTION_TEXT_BUTTON_CLASS} border-[rgba(0,0,0,0.12)] text-[rgba(0,0,0,0.65)] hover:bg-[rgba(0,0,0,0.04)]`}
+      
                       onClick={() => window.open(getXeroInvoiceUrl(r.externalInvoiceId), "_blank", "noopener,noreferrer")}
-                    />
+                    >xero
+                  </button>
                   ) : null}
                   <button
-                    className="text-[rgba(0,0,0,0.45)] hover:text-[rgba(0,0,0,0.70)]"
+                    className={`${ACTION_ICON_BUTTON_CLASS} text-[rgba(0,0,0,0.45)] hover:bg-[rgba(0,0,0,0.04)] hover:text-[rgba(0,0,0,0.70)]`}
                     title="Archive"
                     onClick={() => onArchive(r.id)}
                   >
                     <Archive size={16} />
                   </button>
                   <button
-                    className="text-[rgba(239,68,68,1)] hover:opacity-80"
+                    className={`${ACTION_ICON_BUTTON_CLASS} text-[rgba(239,68,68,1)] hover:bg-red-50 hover:opacity-80`}
                     title="Delete"
                     onClick={() => onDelete(r.id)}
                   >
@@ -613,40 +663,7 @@ export function JobsTable({
                     </div>
                   ) : null}
                 </div>
-              </div>
-              <div
-                className="grid gap-4 px-4 pb-3 text-left text-xs text-[rgba(0,0,0,0.56)]"
-                style={{ gridTemplateColumns: "minmax(320px,1fr) minmax(120px,auto) minmax(110px,auto) minmax(160px,auto)" }}
-              >
-                <div className="flex min-w-0 items-start gap-2">
-                  <span className="shrink-0 pt-0.5 font-semibold text-[rgba(0,0,0,0.40)]">备注</span>
-                  <div className="min-w-0 flex-1 text-[rgba(0,0,0,0.50)]">
-                    {r.notes ? (
-                      <span className="relative inline-flex max-w-full align-middle group">
-                        <span className="h-10 overflow-hidden leading-5" style={TWO_LINE_CLAMP_STYLE}>
-                          {r.notes}
-                        </span>
-                        <span className="pointer-events-none absolute left-0 top-full z-50 mt-2 w-[320px] rounded-lg border border-[rgba(0,0,0,0.12)] bg-white px-3 py-2 text-xs text-[rgba(0,0,0,0.75)] shadow-lg opacity-0 translate-y-1 transition group-hover:opacity-100 group-hover:translate-y-0">
-                          {r.notes}
-                        </span>
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="shrink-0 font-semibold text-[rgba(0,0,0,0.40)]">WOF</span>
-                  <WofStatusPill status={r.wofStatus} />
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="shrink-0 font-semibold text-[rgba(0,0,0,0.40)]">机修</span>
-                  <ProgressRing value={r.mechPct} />
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="shrink-0 font-semibold text-[rgba(0,0,0,0.40)]">喷漆</span>
-                  <PaintStatusSelect row={r} onChange={onUpdatePaintStatus ? (stageIndex) => onUpdatePaintStatus(r.id, stageIndex) : undefined} />
-                </div>
+{/* action btns */}
             </div>
             </div>
           );

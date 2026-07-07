@@ -11,14 +11,14 @@ export type JobTableDetailItem = {
 };
 
 export const JOB_TABLE_COLUMNS: JobTableColumn[] = [
-  { key: "createdAt", label: "创建时间", width: 140, minWidth: 130 },
-  { key: "inShop", label: "在店时间", width: 90, minWidth: 70 },
-  { key: "status", label: "汽车状态", width: 110, minWidth: 90 },
-  { key: "tag", label: "TAG", width: 110, minWidth: 80 },
-  { key: "code", label: "code", width: 100, minWidth: 80 },
-  { key: "plate", label: "车牌", width: 120, minWidth: 90 },
-  { key: "model", label: "汽车型号", width: 210, minWidth: 160 },
-  { key: "actions", label: "操作", width: 230, minWidth: 190 },
+  { key: "createdAt", label: "创建时间", width: 128, minWidth: 118 },
+  { key: "inShop", label: "在店时间", width: 74, minWidth: 68 },
+  { key: "status", label: "汽车状态", width: 96, minWidth: 88 },
+  { key: "tag", label: "TAG", width: 92, minWidth: 76 },
+  { key: "code", label: "code", width: 72, minWidth: 68 },
+  { key: "plate", label: "车牌", width: 94, minWidth: 88 },
+  { key: "model", label: "汽车型号", width: 128, minWidth: 120 },
+  { key: "actions", label: "操作", width: 180, minWidth: 170 },
 ];
 
 export const JOB_TABLE_DETAIL_ITEMS: JobTableDetailItem[] = [
