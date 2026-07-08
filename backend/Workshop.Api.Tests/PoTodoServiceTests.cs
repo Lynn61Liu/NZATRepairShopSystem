@@ -37,6 +37,7 @@ public sealed class PoTodoServiceTests
         state.Status.Should().Be(JobPoStateStatus.AwaitingReply);
         state.SentSource.Should().Be("manual");
         state.ManuallyMarkedSentAt.Should().NotBeNull();
+        state.FirstRequestSentAt.Should().Be(state.ManuallyMarkedSentAt);
         state.LastRequestSentAt.Should().Be(state.ManuallyMarkedSentAt);
         state.LastRequestSentAt.Should().NotBe(staleSentAt);
     }
@@ -61,6 +62,127 @@ public sealed class PoTodoServiceTests
         result.Updated.Should().Be(1);
         (await db.JobPoStates.SingleAsync(x => x.JobId == 5201)).Status.Should().Be(JobPoStateStatus.Completed);
         (await db.JobPoStates.SingleAsync(x => x.JobId == 5202)).Status.Should().Be(JobPoStateStatus.AwaitingReply);
+    }
+
+    [Fact]
+    public async Task GetTodoAsync_ExcludesCompletedRows()
+    {
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        db.Jobs.AddRange(
+            new Job { Id = 5301, NeedsPo = true, CreatedAt = now.AddMinutes(-1), UpdatedAt = now },
+            new Job { Id = 5302, NeedsPo = true, CreatedAt = now, UpdatedAt = now });
+        db.JobPoStates.AddRange(
+            new JobPoState { JobId = 5301, CorrelationId = "PO-5301-X", Status = JobPoStateStatus.Completed, CreatedAt = now, UpdatedAt = now },
+            new JobPoState { JobId = 5302, CorrelationId = "PO-5302-X", Status = JobPoStateStatus.Draft, CreatedAt = now, UpdatedAt = now });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+
+        var result = await service.GetTodoAsync(null, CancellationToken.None);
+
+        result.Total.Should().Be(1);
+        result.Items.Select(x => x.JobId).Should().Equal(5302);
+    }
+
+    [Theory]
+    [InlineData("pendingSend", new long[] { 5312, 5311 })]
+    [InlineData("awaitingPo", new long[] { 5315, 5314, 5313 })]
+    [InlineData("invoiced", new long[] { 5316 })]
+    [InlineData(null, new long[] { 5316, 5315, 5314, 5313, 5312, 5311 })]
+    public async Task GetTodoAsync_MapsStatusTabs(string? status, long[] expectedJobIds)
+    {
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        db.Jobs.AddRange(
+            new Job { Id = 5311, NeedsPo = true, CreatedAt = now.AddMinutes(1), UpdatedAt = now },
+            new Job { Id = 5312, NeedsPo = true, CreatedAt = now.AddMinutes(2), UpdatedAt = now },
+            new Job { Id = 5313, NeedsPo = true, CreatedAt = now.AddMinutes(3), UpdatedAt = now },
+            new Job { Id = 5314, NeedsPo = true, CreatedAt = now.AddMinutes(4), UpdatedAt = now },
+            new Job { Id = 5315, NeedsPo = true, CreatedAt = now.AddMinutes(5), UpdatedAt = now },
+            new Job { Id = 5316, NeedsPo = true, CreatedAt = now.AddMinutes(6), UpdatedAt = now },
+            new Job { Id = 5317, NeedsPo = true, CreatedAt = now.AddMinutes(7), UpdatedAt = now });
+        db.JobPoStates.AddRange(
+            new JobPoState { JobId = 5312, CorrelationId = "PO-5312-X", Status = JobPoStateStatus.Draft, CreatedAt = now, UpdatedAt = now },
+            new JobPoState { JobId = 5313, CorrelationId = "PO-5313-X", Status = JobPoStateStatus.AwaitingReply, CreatedAt = now, UpdatedAt = now },
+            new JobPoState { JobId = 5314, CorrelationId = "PO-5314-X", Status = JobPoStateStatus.PendingConfirmation, CreatedAt = now, UpdatedAt = now },
+            new JobPoState { JobId = 5315, CorrelationId = "PO-5315-X", Status = JobPoStateStatus.EscalationRequired, CreatedAt = now, UpdatedAt = now },
+            new JobPoState { JobId = 5316, CorrelationId = "PO-5316-X", Status = JobPoStateStatus.PoConfirmed, CreatedAt = now, UpdatedAt = now },
+            new JobPoState { JobId = 5317, CorrelationId = "PO-5317-X", Status = JobPoStateStatus.Completed, CreatedAt = now, UpdatedAt = now });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+
+        var result = await service.GetTodoAsync(status, CancellationToken.None);
+
+        result.Total.Should().Be(expectedJobIds.Length);
+        result.Items.Select(x => x.JobId).Should().Equal(expectedJobIds);
+    }
+
+    [Fact]
+    public async Task GetTodoAsync_ReturnsCustomerBusinessCodeAndLatestInvoiceDetails()
+    {
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        db.Customers.Add(new Customer { Id = 5401, Name = "Fleet Co", BusinessCode = "FLEET" });
+        db.Vehicles.Add(new Vehicle { Id = 5402, Plate = "ABC123", Make = "Toyota", Model = "Hiace", Year = 2020, UpdatedAt = now });
+        db.Jobs.Add(new Job
+        {
+            Id = 5403,
+            NeedsPo = true,
+            CustomerId = 5401,
+            VehicleId = 5402,
+            Notes = "PO required",
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        db.JobPoStates.Add(new JobPoState
+        {
+            JobId = 5403,
+            CorrelationId = "PO-5403-X",
+            Status = JobPoStateStatus.AwaitingReply,
+            SentSource = "gmail",
+            FirstRequestSentAt = now.AddHours(-2),
+            LastRequestSentAt = now.AddHours(-1),
+            DetectedPoNumber = "PO123",
+            GmailDraftId = "draft-1",
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        db.JobInvoices.AddRange(
+            new JobInvoice { JobId = 5403, ExternalInvoiceId = "old-inv", Reference = "old ref", CreatedAt = now.AddDays(-2), UpdatedAt = now.AddDays(-2) },
+            new JobInvoice { JobId = 5403, ExternalInvoiceId = "new-inv", Reference = "new ref", CreatedAt = now.AddDays(-1), UpdatedAt = now.AddDays(-1) });
+        db.GmailMessageLogs.Add(new GmailMessageLog
+        {
+            GmailMessageId = "msg-1",
+            GmailThreadId = "thread-1",
+            Direction = "sent",
+            CounterpartyEmail = "supplier@example.test",
+            CorrelationId = "PO-5403-X",
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+
+        var result = await service.GetTodoAsync(null, CancellationToken.None);
+        var row = result.Items.Should().ContainSingle().Subject;
+
+        row.Code.Should().Be("FLEET");
+        row.Plate.Should().Be("ABC123");
+        row.Model.Should().Be("2020 Toyota Hiace");
+        row.Notes.Should().Be("PO required");
+        row.Reference.Should().Be("new ref");
+        row.XeroInvoiceId.Should().Be("new-inv");
+        row.Status.Should().Be("awaitingReply");
+        row.SentSource.Should().Be("gmail");
+        row.FirstRequestSentAt.Should().BeCloseTo(now.AddHours(-2), TimeSpan.FromMilliseconds(1));
+        row.LastRequestSentAt.Should().BeCloseTo(now.AddHours(-1), TimeSpan.FromMilliseconds(1));
+        row.DetectedPoNumber.Should().Be("PO123");
+        row.GmailDraftId.Should().Be("draft-1");
+        row.GmailThreadId.Should().Be("thread-1");
+        row.CorrelationId.Should().Be("PO-5403-X");
     }
 
     [Fact]
