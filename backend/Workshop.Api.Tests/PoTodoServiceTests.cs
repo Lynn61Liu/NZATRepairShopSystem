@@ -87,6 +87,7 @@ public sealed class PoTodoServiceTests
 
     [Theory]
     [InlineData("pendingSend", new long[] { 5312, 5311 })]
+    [InlineData("PENDINGSEND", new long[] { 5312, 5311 })]
     [InlineData("awaitingPo", new long[] { 5315, 5314, 5313 })]
     [InlineData("invoiced", new long[] { 5316 })]
     [InlineData(null, new long[] { 5316, 5315, 5314, 5313, 5312, 5311 })]
@@ -117,6 +118,22 @@ public sealed class PoTodoServiceTests
 
         result.Total.Should().Be(expectedJobIds.Length);
         result.Items.Select(x => x.JobId).Should().Equal(expectedJobIds);
+    }
+
+    [Fact]
+    public async Task GetTodoAsync_UnknownStatus_ReturnsNoRows()
+    {
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        db.Jobs.Add(new Job { Id = 5321, NeedsPo = true, CreatedAt = now, UpdatedAt = now });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+
+        var result = await service.GetTodoAsync("awaitingpo-typo", CancellationToken.None);
+
+        result.Total.Should().Be(0);
+        result.Items.Should().BeEmpty();
     }
 
     [Fact]
@@ -162,6 +179,17 @@ public sealed class PoTodoServiceTests
             CreatedAt = now,
             UpdatedAt = now,
         });
+        db.GmailMessageLogs.Add(new GmailMessageLog
+        {
+            GmailMessageId = "msg-old",
+            GmailThreadId = "thread-old",
+            Direction = "sent",
+            CounterpartyEmail = "supplier@example.test",
+            CorrelationId = "PO-5403-X",
+            InternalDateMs = new DateTimeOffset(now.AddDays(-30)).ToUnixTimeMilliseconds(),
+            CreatedAt = now.AddDays(-30),
+            UpdatedAt = now.AddDays(-30),
+        });
         await db.SaveChangesAsync();
 
         var service = CreateService(db);
@@ -183,6 +211,19 @@ public sealed class PoTodoServiceTests
         row.GmailDraftId.Should().Be("draft-1");
         row.GmailThreadId.Should().Be("thread-1");
         row.CorrelationId.Should().Be("PO-5403-X");
+    }
+
+    [Fact]
+    public async Task SyncActiveAsync_ReturnsWarning_WhenStateSyncServiceIsUnavailable()
+    {
+        await using var db = CreateDb();
+        var service = CreateService(db);
+
+        var result = await service.SyncActiveAsync(CancellationToken.None);
+
+        result.CheckedJobs.Should().Be(0);
+        result.SyncedMessages.Should().Be(0);
+        result.Warnings.Should().ContainSingle("PO state sync service is unavailable.");
     }
 
     [Fact]

@@ -27,7 +27,7 @@ public sealed class PoTodoService
 
     public async Task<PoTodoListResult> GetTodoAsync(string? status, CancellationToken ct)
     {
-        var normalizedStatus = status?.Trim();
+        var normalizedStatus = NormalizeStatusFilter(status);
         var query =
             from job in _db.Jobs.AsNoTracking()
             join state in _db.JobPoStates.AsNoTracking() on job.Id equals state.JobId into stateJoin
@@ -50,6 +50,7 @@ public sealed class PoTodoService
                  x.State.Status == JobPoStateStatus.PendingConfirmation ||
                  x.State.Status == JobPoStateStatus.EscalationRequired)),
             "invoiced" => query.Where(x => x.State != null && x.State.Status == JobPoStateStatus.PoConfirmed),
+            "unknown" => query.Where(_ => false),
             _ => query,
         };
 
@@ -120,13 +121,16 @@ public sealed class PoTodoService
             : await _db.GmailMessageLogs.AsNoTracking()
                 .Where(x => x.CorrelationId != null && correlationIds.Contains(x.CorrelationId))
                 .Where(x => !string.IsNullOrWhiteSpace(x.GmailThreadId))
-                .OrderByDescending(x => x.InternalDateMs ?? 0)
-                .ThenByDescending(x => x.UpdatedAt)
-                .ThenByDescending(x => x.Id)
                 .ToListAsync(ct);
         var latestThreadByCorrelationId = logs
             .GroupBy(x => x.CorrelationId!)
-            .ToDictionary(x => x.Key, x => x.First().GmailThreadId, StringComparer.Ordinal);
+            .ToDictionary(
+                x => x.Key,
+                x => x
+                    .OrderByDescending(GetLogOccurredAtUtc)
+                    .ThenByDescending(log => log.Id)
+                    .First().GmailThreadId,
+                StringComparer.Ordinal);
 
         var items = rows.Select(row =>
         {
@@ -211,19 +215,20 @@ public sealed class PoTodoService
                 if (_gmailThreadSyncService is null)
                 {
                     warnings.Add($"Gmail thread sync service is unavailable for job {target.Id}.");
-                    continue;
                 }
+                else
+                {
+                    var result = await _gmailThreadSyncService.SyncThreadAsync(
+                        target.CounterpartyEmail,
+                        target.CorrelationId,
+                        _gmailThreadSyncService.BackgroundThreadFetchLimit,
+                        null,
+                        ct);
 
-                var result = await _gmailThreadSyncService.SyncThreadAsync(
-                    target.CounterpartyEmail,
-                    target.CorrelationId,
-                    _gmailThreadSyncService.BackgroundThreadFetchLimit,
-                    null,
-                    ct);
-
-                syncedMessages += result.SyncedCount;
-                if (!string.IsNullOrWhiteSpace(result.Warning))
-                    warnings.Add($"Job {target.Id}: {result.Warning}");
+                    syncedMessages += result.SyncedCount;
+                    if (!string.IsNullOrWhiteSpace(result.Warning))
+                        warnings.Add($"Job {target.Id}: {result.Warning}");
+                }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -234,9 +239,19 @@ public sealed class PoTodoService
                 _logger?.LogWarning(ex, "PO todo Gmail sync failed for job {JobId}.", target.Id);
                 warnings.Add($"Job {target.Id}: {ex.Message}");
             }
-            finally
+
+            try
             {
                 await _jobPoStateService.SyncStateForJobAsync(target.Id, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "PO todo state sync failed for job {JobId}.", target.Id);
+                warnings.Add($"Job {target.Id}: {ex.Message}");
             }
         }
 
@@ -334,6 +349,39 @@ public sealed class PoTodoService
         JobPoStateStatus.Cancelled => "cancelled",
         _ => status.ToString(),
     };
+
+    private static string NormalizeStatusFilter(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+            return "";
+
+        var trimmed = status.Trim();
+        if (string.Equals(trimmed, "pendingSend", StringComparison.OrdinalIgnoreCase))
+            return "pendingSend";
+        if (string.Equals(trimmed, "awaitingPo", StringComparison.OrdinalIgnoreCase))
+            return "awaitingPo";
+        if (string.Equals(trimmed, "invoiced", StringComparison.OrdinalIgnoreCase))
+            return "invoiced";
+
+        return "unknown";
+    }
+
+    private static DateTime GetLogOccurredAtUtc(GmailMessageLog log)
+    {
+        if (log.InternalDateMs.HasValue && log.InternalDateMs.Value > 0)
+        {
+            try
+            {
+                return DateTimeOffset.FromUnixTimeMilliseconds(log.InternalDateMs.Value).UtcDateTime;
+            }
+            catch
+            {
+                // Fall through to persisted timestamps.
+            }
+        }
+
+        return log.UpdatedAt != default ? log.UpdatedAt : log.CreatedAt;
+    }
 
     private sealed record PoTodoQueryRow(
         long JobId,
