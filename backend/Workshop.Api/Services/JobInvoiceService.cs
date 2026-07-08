@@ -244,6 +244,26 @@ public sealed class JobInvoiceService
         }
     }
 
+    public async Task<JobInvoiceCreateResult> UpdateDraftReferenceAsync(long jobId, string reference, CancellationToken ct)
+    {
+        var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (jobInvoice is null)
+            return JobInvoiceCreateResult.Fail(404, "Job invoice not found.");
+
+        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == jobId, ct);
+        if (job is null)
+            return JobInvoiceCreateResult.Fail(404, "Job not found.");
+
+        if (string.IsNullOrWhiteSpace(jobInvoice.ExternalInvoiceId) || !Guid.TryParse(jobInvoice.ExternalInvoiceId, out _))
+            return JobInvoiceCreateResult.Fail(400, "Missing Xero invoice id.");
+
+        if (!string.Equals(jobInvoice.ExternalStatus, "DRAFT", StringComparison.OrdinalIgnoreCase))
+            return JobInvoiceCreateResult.Fail(400, "Only Xero draft invoices can have their reference updated from PO TODO.");
+
+        var request = BuildSyncRequestFromExistingInvoice(jobInvoice, reference);
+        return await SyncDraftForJobAsync(jobId, request, ct);
+    }
+
     public async Task<JobInvoiceCreateResult> SyncDraftForJobAsync(long jobId, SyncJobInvoiceDraftRequest payload, CancellationToken ct)
     {
         var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
@@ -1815,6 +1835,14 @@ public sealed class JobInvoiceService
         };
         ApplyInvoiceUpdate(jobInvoice, request, payload, tenantId);
         return jobInvoice;
+    }
+
+    private static SyncJobInvoiceDraftRequest BuildSyncRequestFromExistingInvoice(JobInvoice invoice, string reference)
+    {
+        var existing = JsonSerializer.Deserialize<SyncJobInvoiceDraftRequest>(invoice.RequestPayloadJson ?? "{}", JsonOptions)
+            ?? new SyncJobInvoiceDraftRequest();
+        existing.Reference = reference;
+        return existing;
     }
 
     private static CreateXeroInvoiceRequest BuildRequestFromPayload(object? payload, JobInvoice existing)
