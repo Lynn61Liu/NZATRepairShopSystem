@@ -147,6 +147,7 @@ builder.Services.AddScoped<GmailDraftService>();
 builder.Services.AddScoped<GmailThreadSyncService>();
 builder.Services.AddScoped<BusinessHoursService>();
 builder.Services.AddScoped<JobPoStateService>();
+builder.Services.AddScoped<PoTodoService>();
 builder.Services.AddScoped<GmailFollowUpSenderService>();
 builder.Services.AddSingleton<SilentPrintHtmlRenderer>();
 builder.Services.AddSingleton<SilentPrintCommandExecutor>();

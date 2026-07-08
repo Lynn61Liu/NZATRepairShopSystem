@@ -11,6 +11,55 @@ namespace Workshop.Api.Tests;
 public sealed class PoTodoServiceTests
 {
     [Fact]
+    public async Task ManualConfirmSentAsync_MovesDraftToAwaitingPoAndRecordsManualSource()
+    {
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        db.Jobs.Add(new Job { Id = 5200, NeedsPo = true, CreatedAt = now, UpdatedAt = now });
+        db.JobPoStates.Add(new JobPoState
+        {
+            JobId = 5200,
+            CorrelationId = JobPoStateService.BuildCorrelationId(5200),
+            Status = JobPoStateStatus.Draft,
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+
+        var result = await service.ManualConfirmSentAsync(5200, CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+        var state = await db.JobPoStates.SingleAsync(x => x.JobId == 5200);
+        state.Status.Should().Be(JobPoStateStatus.AwaitingReply);
+        state.SentSource.Should().Be("manual");
+        state.ManuallyMarkedSentAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task CompleteAsync_OnlyCompletesPoConfirmedRows()
+    {
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        db.Jobs.AddRange(
+            new Job { Id = 5201, NeedsPo = true, CreatedAt = now, UpdatedAt = now },
+            new Job { Id = 5202, NeedsPo = true, CreatedAt = now, UpdatedAt = now });
+        db.JobPoStates.AddRange(
+            new JobPoState { JobId = 5201, CorrelationId = "PO-5201-X", Status = JobPoStateStatus.PoConfirmed, CreatedAt = now, UpdatedAt = now },
+            new JobPoState { JobId = 5202, CorrelationId = "PO-5202-X", Status = JobPoStateStatus.AwaitingReply, CreatedAt = now, UpdatedAt = now });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+
+        var result = await service.CompleteAsync([5201, 5202], CancellationToken.None);
+
+        result.Updated.Should().Be(1);
+        (await db.JobPoStates.SingleAsync(x => x.JobId == 5201)).Status.Should().Be(JobPoStateStatus.Completed);
+        (await db.JobPoStates.SingleAsync(x => x.JobId == 5202)).Status.Should().Be(JobPoStateStatus.AwaitingReply);
+    }
+
+    [Fact]
     public void BuildReference_ReplacesPoPendingReference()
     {
         PoReferenceBuilder.BuildReference("PO Pending ABC123", "12345").Should().Be("PO 12345 ABC123");
@@ -93,5 +142,10 @@ public sealed class PoTodoServiceTests
             .Options;
 
         return new AppDbContext(options);
+    }
+
+    private static PoTodoService CreateService(AppDbContext db)
+    {
+        return new PoTodoService(db, null!, null!, null!, null!, null!);
     }
 }
