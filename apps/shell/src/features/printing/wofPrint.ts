@@ -294,6 +294,22 @@ export const buildWofHtml = (data: WofPrintData) => {
   <title>WOF Print</title>
   <style>
     @page { size: legal portrait; margin: 0; }
+    :root {
+      --wof-reference-grid-width: 50mm;
+      --wof-reference-grid-height: 10mm;
+      --wof-reference-grid-color: rgba(239, 68, 68, 0.55);
+      --wof-reference-corner-color: rgba(220, 38, 38, 0.9);
+      --wof-content-scale: 0.85;
+      --wof-content-gap: 8px;
+      --wof-column-gap: 8px;
+      --wof-section-gap: 8px;
+      --wof-section-gap-tight: 6px;
+      --wof-section-header-size: 10px;
+      --wof-label-size: 9px;
+      --wof-value-size: 9px;
+      --wof-row-padding-y: 4px;
+      --wof-row-gap: 6px;
+    }
     html, body {
       margin: 0;
       padding: 0;
@@ -333,9 +349,9 @@ export const buildWofHtml = (data: WofPrintData) => {
       inset: 0;
       opacity: 0.35;
       background-image:
-        linear-gradient(to right, rgba(148, 163, 184, 0.42) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(148, 163, 184, 0.42) 1px, transparent 1px);
-      background-size: 20mm 20mm;
+        linear-gradient(to right, var(--wof-reference-grid-color) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--wof-reference-grid-color) 1px, transparent 1px);
+      background-size: var(--wof-reference-grid-width) var(--wof-reference-grid-height);
       background-position: 0 0;
       border-radius: 10px;
     }
@@ -343,7 +359,7 @@ export const buildWofHtml = (data: WofPrintData) => {
       position: absolute;
       width: 14mm;
       height: 14mm;
-      border-color: rgba(71, 85, 105, 0.85);
+      border-color: var(--wof-reference-corner-color);
       border-style: solid;
       border-width: 0;
     }
@@ -374,14 +390,14 @@ export const buildWofHtml = (data: WofPrintData) => {
     .content {
       position: relative;
       z-index: 1;
-      width: calc(100% / 0.85);
-      height: calc(100% / 0.85);
+      width: calc(100% / var(--wof-content-scale));
+      height: calc(100% / var(--wof-content-scale));
       transform-origin: top left;
-      transform: scale(0.85);
+      transform: scale(var(--wof-content-scale));
       display: grid;
       grid-template-columns: 1.03fr 0.99fr 0.84fr;
       grid-template-rows: auto 1fr;
-      gap: 8px;
+      gap: var(--wof-content-gap);
       align-content: start;
     }
     .topline {
@@ -411,17 +427,17 @@ export const buildWofHtml = (data: WofPrintData) => {
       display: grid;
       grid-column: 1 / -1;
       grid-template-columns: 1.03fr 0.99fr 0.84fr;
-      gap: 8px;
+      gap: var(--wof-column-gap);
       align-items: start;
     }
     .column {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: var(--wof-section-gap);
       min-width: 0;
     }
     .column-right {
-      gap: 6px;
+      gap: var(--wof-section-gap-tight);
     }
     .section {
       border: 1px solid #dbe1e8;
@@ -434,7 +450,7 @@ export const buildWofHtml = (data: WofPrintData) => {
     .section-header {
       background: rgba(229, 234, 179, 0.68);
       padding: 6px 8px;
-      font-size: 10px;
+      font-size: var(--wof-section-header-size);
       font-weight: 700;
       letter-spacing: 0.04em;
       text-transform: uppercase;
@@ -448,9 +464,9 @@ export const buildWofHtml = (data: WofPrintData) => {
     .row {
       display: grid;
       grid-template-columns: minmax(0, 1fr) 56px;
-      gap: 6px;
+      gap: var(--wof-row-gap);
       align-items: start;
-      padding: 4px 0;
+      padding: var(--wof-row-padding-y) 0;
       border-bottom: 1px solid rgba(148, 163, 184, 0.18);
     }
     .row:last-child {
@@ -458,12 +474,12 @@ export const buildWofHtml = (data: WofPrintData) => {
       padding-bottom: 0;
     }
     .label {
-      font-size: 9px;
+      font-size: var(--wof-label-size);
       line-height: 1.2;
       color: #111827;
     }
     .value {
-      font-size: 9px;
+      font-size: var(--wof-value-size);
       line-height: 1.2;
       color: #111827;
       text-align: right;
@@ -521,6 +537,7 @@ export const buildWofHtml = (data: WofPrintData) => {
   <div class="noprint">
     <button onclick="document.body.classList.toggle('debug')">Debug</button>
     <button onclick="window.print()">Print</button>
+    <button onclick="try { var frame = window.frameElement; if (frame && frame.parentNode) { frame.parentNode.removeChild(frame); } else { window.close(); } } catch {}">Close</button>
   </div>
   <div class="page">
     <div class="sheet">

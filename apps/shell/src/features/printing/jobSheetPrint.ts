@@ -11,6 +11,34 @@ export type JobSheetRow = {
   vin?: string | null;
 };
 
+export type PrintFrameVisibility = "hidden" | "visible";
+
+const HIDDEN_PRINT_FRAME_STYLE = {
+  position: "fixed",
+  right: "0",
+  bottom: "0",
+  width: "0",
+  height: "0",
+  border: "0",
+  opacity: "0",
+} as const;
+
+const VISIBLE_PRINT_FRAME_STYLE = {
+  position: "fixed",
+  right: "20px",
+  bottom: "20px",
+  width: "min(960px, calc(100vw - 40px))",
+  height: "calc(100vh - 40px)",
+  border: "1px solid #cbd5e1",
+  opacity: "1",
+  zIndex: "2147483647",
+  background: "#ffffff",
+  boxShadow: "0 20px 50px rgba(15, 23, 42, 0.22)",
+} as const;
+
+export const getPrintFrameStyle = (visibility: PrintFrameVisibility) =>
+  visibility === "visible" ? VISIBLE_PRINT_FRAME_STYLE : HIDDEN_PRINT_FRAME_STYLE;
+
 const escapeHtml = (value?: string) =>
   String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -196,15 +224,9 @@ export const buildJobSheetHtml = (type: JobSheetType, row: JobSheetRow, notes: s
 </html>`;
 };
 
-export const createJobSheetPrintFrame = (onPopupBlocked?: () => void) => {
+export const createJobSheetPrintFrame = (onPopupBlocked?: () => void, visibility: PrintFrameVisibility = "hidden") => {
   const iframe = document.createElement("iframe");
-  iframe.style.position = "fixed";
-  iframe.style.right = "0";
-  iframe.style.bottom = "0";
-  iframe.style.width = "0";
-  iframe.style.height = "0";
-  iframe.style.border = "0";
-  iframe.style.opacity = "0";
+  Object.assign(iframe.style, getPrintFrameStyle(visibility));
   iframe.setAttribute("aria-hidden", "true");
   iframe.tabIndex = -1;
 
