@@ -13,13 +13,16 @@ public sealed class GmailLabelService
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly GmailTokenService _gmailTokenService;
+    private readonly GmailAccountService _gmailAccountService;
 
     public GmailLabelService(
         IHttpClientFactory httpClientFactory,
-        GmailTokenService gmailTokenService)
+        GmailTokenService gmailTokenService,
+        GmailAccountService gmailAccountService)
     {
         _httpClientFactory = httpClientFactory;
         _gmailTokenService = gmailTokenService;
+        _gmailAccountService = gmailAccountService;
     }
 
     public async Task<GmailLabelResult> AddInvoicedLabelAsync(
@@ -37,7 +40,8 @@ public sealed class GmailLabelService
         if (!tokenResult.Ok)
             return GmailLabelResult.Fail(tokenResult.StatusCode, tokenResult.Error ?? "Failed to refresh Gmail access token.");
 
-        if (!HasModifyScope(tokenResult.Scope))
+        var storedScope = await GetStoredScopeAsync(tokenResult.AccountId ?? gmailAccountId, ct);
+        if (!HasModifyScope(tokenResult.Scope) && !HasModifyScope(storedScope))
         {
             return GmailLabelResult.Fail(
                 403,
@@ -66,6 +70,17 @@ public sealed class GmailLabelService
         !string.IsNullOrWhiteSpace(scopes) &&
         scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Any(scope => string.Equals(scope, GmailModifyScope, StringComparison.OrdinalIgnoreCase));
+
+    private async Task<string?> GetStoredScopeAsync(long? gmailAccountId, CancellationToken ct)
+    {
+        if (gmailAccountId.HasValue)
+        {
+            var account = await _gmailAccountService.GetByIdAsync(gmailAccountId.Value, ct);
+            return account?.Scope;
+        }
+
+        return (await _gmailAccountService.GetEffectiveAccountAsync(ct))?.Scope;
+    }
 
     private async Task<GmailLabelResult> ResolveInvoicedLabelIdAsync(HttpClient client, string accessToken, CancellationToken ct)
     {

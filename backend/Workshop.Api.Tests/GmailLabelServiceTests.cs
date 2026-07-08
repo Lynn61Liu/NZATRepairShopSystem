@@ -55,6 +55,41 @@ public sealed class GmailLabelServiceTests
         handler.ModifyRequested.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task AddInvoicedLabelAsync_UsesStoredScope_WhenRefreshOmitsScope()
+    {
+        await using var db = CreateDb();
+        db.GmailAccounts.Add(CreateAccount(scope: "https://www.googleapis.com/auth/gmail.modify"));
+        await db.SaveChangesAsync();
+
+        var handler = new GmailLabelHandler(scope: null);
+        var service = CreateService(db, new TestHttpClientFactory(handler));
+
+        var result = await service.AddInvoicedLabelAsync(1, "thread-123", null, CancellationToken.None);
+
+        result.Ok.Should().BeTrue();
+        result.LabelId.Should().Be("Label_42");
+        handler.ModifyRequestUri.Should().Be("https://gmail.googleapis.com/gmail/v1/users/me/threads/thread-123/modify");
+    }
+
+    [Fact]
+    public async Task AddInvoicedLabelAsync_LabelsMessage_WhenThreadIdIsBlank()
+    {
+        await using var db = CreateDb();
+        db.GmailAccounts.Add(CreateAccount());
+        await db.SaveChangesAsync();
+
+        var handler = new GmailLabelHandler("https://www.googleapis.com/auth/gmail.modify");
+        var service = CreateService(db, new TestHttpClientFactory(handler));
+
+        var result = await service.AddInvoicedLabelAsync(1, "   ", "message-456", CancellationToken.None);
+
+        result.Ok.Should().BeTrue();
+        result.LabelId.Should().Be("Label_42");
+        handler.ModifyRequestUri.Should().Be("https://gmail.googleapis.com/gmail/v1/users/me/messages/message-456/modify");
+        handler.ModifyRequestBody.Should().Contain("\"addLabelIds\":[\"Label_42\"]");
+    }
+
     private static AppDbContext CreateDb()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -74,15 +109,16 @@ public sealed class GmailLabelServiceTests
 
         var accountService = new GmailAccountService(db);
         var tokenService = new GmailTokenService(httpClientFactory, gmailOptions, accountService);
-        return new GmailLabelService(httpClientFactory, tokenService);
+        return new GmailLabelService(httpClientFactory, tokenService, accountService);
     }
 
-    private static GmailAccount CreateAccount() =>
+    private static GmailAccount CreateAccount(string? scope = "https://www.googleapis.com/auth/gmail.modify") =>
         new()
         {
             Id = 1,
             Email = "team@example.com",
             RefreshToken = "refresh-token",
+            Scope = scope,
             IsActive = true,
             IsDefault = true,
             CreatedAt = DateTime.UtcNow,
@@ -103,9 +139,9 @@ public sealed class GmailLabelServiceTests
 
     private sealed class GmailLabelHandler : HttpMessageHandler
     {
-        private readonly string _scope;
+        private readonly string? _scope;
 
-        public GmailLabelHandler(string scope)
+        public GmailLabelHandler(string? scope)
         {
             _scope = scope;
         }
@@ -122,12 +158,15 @@ public sealed class GmailLabelServiceTests
 
             if (request.Method == HttpMethod.Post && uri.Contains("oauth2.googleapis.com/token", StringComparison.OrdinalIgnoreCase))
             {
-                var tokenPayload = JsonSerializer.Serialize(new
+                var tokenResponse = new Dictionary<string, object?>
                 {
-                    access_token = "access-token",
-                    expires_in = 3600,
-                    scope = _scope,
-                }, JsonOptions);
+                    ["access_token"] = "access-token",
+                    ["expires_in"] = 3600,
+                };
+                if (_scope is not null)
+                    tokenResponse["scope"] = _scope;
+
+                var tokenPayload = JsonSerializer.Serialize(tokenResponse, JsonOptions);
 
                 return JsonResponse(HttpStatusCode.OK, tokenPayload);
             }
@@ -149,7 +188,9 @@ public sealed class GmailLabelServiceTests
                 return JsonResponse(HttpStatusCode.OK, labelsPayload);
             }
 
-            if (request.Method == HttpMethod.Post && uri == "https://gmail.googleapis.com/gmail/v1/users/me/threads/thread-123/modify")
+            if (request.Method == HttpMethod.Post &&
+                (uri == "https://gmail.googleapis.com/gmail/v1/users/me/threads/thread-123/modify" ||
+                 uri == "https://gmail.googleapis.com/gmail/v1/users/me/messages/message-456/modify"))
             {
                 ModifyRequested = true;
                 ModifyRequestUri = uri;
