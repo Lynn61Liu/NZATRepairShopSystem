@@ -175,6 +175,49 @@ public sealed class JobPoStateServiceTests
         state.NextFollowUpDueAt.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task SyncStateForJobAsync_PreservesLaterManualSentTimeWhenOlderGmailLogExists()
+    {
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        var correlationId = JobPoStateService.BuildCorrelationId(5102);
+        var oldGmailSentAt = now.AddDays(-2);
+
+        db.Jobs.Add(new Job
+        {
+            Id = 5102,
+            NeedsPo = true,
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        db.GmailMessageLogs.Add(new GmailMessageLog
+        {
+            GmailMessageId = "sent-5102",
+            Direction = "sent",
+            CorrelationId = correlationId,
+            InternalDateMs = new DateTimeOffset(oldGmailSentAt).ToUnixTimeMilliseconds(),
+            CreatedAt = oldGmailSentAt,
+            UpdatedAt = oldGmailSentAt,
+        });
+        await db.SaveChangesAsync();
+
+        var poTodoService = new PoTodoService(db, null!, null!, null!, null!, null!);
+        var syncService = CreateService(db, enabled: true);
+
+        var result = await poTodoService.ManualConfirmSentAsync(5102, CancellationToken.None);
+        result.Success.Should().BeTrue();
+
+        await syncService.SyncStateForJobAsync(5102, CancellationToken.None);
+
+        var state = await db.JobPoStates.SingleAsync(x => x.JobId == 5102);
+        state.Status.Should().Be(JobPoStateStatus.AwaitingReply);
+        state.SentSource.Should().Be("manual");
+        state.ManuallyMarkedSentAt.Should().BeAfter(oldGmailSentAt);
+        state.FirstRequestSentAt.Should().BeCloseTo(oldGmailSentAt, TimeSpan.FromSeconds(1));
+        state.LastRequestSentAt.Should().Be(state.ManuallyMarkedSentAt);
+        state.NextFollowUpDueAt.Should().NotBeNull();
+    }
+
     private static AppDbContext CreateDb()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()

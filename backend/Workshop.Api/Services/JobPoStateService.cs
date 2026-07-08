@@ -116,7 +116,7 @@ public sealed class JobPoStateService
         var manualSentAt = string.Equals(state.SentSource, "manual", StringComparison.OrdinalIgnoreCase)
             ? state.ManuallyMarkedSentAt
             : null;
-        var latestSentAnchorAt = lastSentAt ?? manualSentAt;
+        var latestSentAnchorAt = MaxUtc(lastSentAt, manualSentAt);
 
         var reminderLogsAfterLatestSent = logs
             .Where(x => string.Equals(x.Direction, "reminder", StringComparison.OrdinalIgnoreCase))
@@ -326,5 +326,15 @@ public sealed class JobPoStateService
             return normalized.Value;
 
         return log.UpdatedAt != default ? log.UpdatedAt : log.CreatedAt;
+    }
+
+    private static DateTime? MaxUtc(DateTime? first, DateTime? second)
+    {
+        if (!first.HasValue)
+            return second;
+        if (!second.HasValue)
+            return first;
+
+        return first.Value >= second.Value ? first : second;
     }
 }
