@@ -112,6 +112,38 @@ public sealed class JobPoStateServiceTests
         state.NextFollowUpDueAt.Should().BeNull();
     }
 
+    [Fact]
+    public async Task SyncStateForJobAsync_DoesNotReopenCompletedPoJobs()
+    {
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        var correlationId = JobPoStateService.BuildCorrelationId(5100);
+
+        db.Jobs.Add(new Job
+        {
+            Id = 5100,
+            NeedsPo = true,
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        db.JobPoStates.Add(new JobPoState
+        {
+            JobId = 5100,
+            CorrelationId = correlationId,
+            Status = JobPoStateStatus.Completed,
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db, enabled: true);
+
+        await service.SyncStateForJobAsync(5100, CancellationToken.None);
+
+        var state = await db.JobPoStates.SingleAsync(x => x.JobId == 5100);
+        state.Status.Should().Be(JobPoStateStatus.Completed);
+    }
+
     private static AppDbContext CreateDb()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()

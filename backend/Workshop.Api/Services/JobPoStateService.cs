@@ -76,12 +76,6 @@ public sealed class JobPoStateService
         }
 
         var correlationId = BuildCorrelationId(job.Id);
-        var logs = await _db.GmailMessageLogs.AsNoTracking()
-            .Where(x => x.CorrelationId == correlationId)
-            .OrderBy(x => x.InternalDateMs ?? 0)
-            .ThenBy(x => x.Id)
-            .ToListAsync(ct);
-
         var state = await _db.JobPoStates.FirstOrDefaultAsync(x => x.JobId == job.Id, ct);
         if (state is null)
         {
@@ -93,6 +87,20 @@ public sealed class JobPoStateService
             };
             _db.JobPoStates.Add(state);
         }
+
+        if (state.Status == JobPoStateStatus.Completed)
+        {
+            state.LastSyncedAt = DateTime.UtcNow;
+            state.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(ct);
+            return;
+        }
+
+        var logs = await _db.GmailMessageLogs.AsNoTracking()
+            .Where(x => x.CorrelationId == correlationId)
+            .OrderBy(x => x.InternalDateMs ?? 0)
+            .ThenBy(x => x.Id)
+            .ToListAsync(ct);
 
         var sentLogs = logs
             .Where(x => string.Equals(x.Direction, "sent", StringComparison.OrdinalIgnoreCase))

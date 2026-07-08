@@ -13,6 +13,9 @@ public class JobPoState
     public string? AdminAttentionReason { get; set; }
     public string? ConfirmedPoNumber { get; set; }
     public string? DetectedPoNumber { get; set; }
+    public string? SentSource { get; set; }
+    public DateTime? ManuallyMarkedSentAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
     public DateTime? FirstRequestSentAt { get; set; }
     public DateTime? LastRequestSentAt { get; set; }
     public DateTime? LastFollowUpSentAt { get; set; }
