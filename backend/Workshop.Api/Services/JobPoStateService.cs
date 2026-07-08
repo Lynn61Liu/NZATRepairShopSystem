@@ -76,12 +76,6 @@ public sealed class JobPoStateService
         }
 
         var correlationId = BuildCorrelationId(job.Id);
-        var logs = await _db.GmailMessageLogs.AsNoTracking()
-            .Where(x => x.CorrelationId == correlationId)
-            .OrderBy(x => x.InternalDateMs ?? 0)
-            .ThenBy(x => x.Id)
-            .ToListAsync(ct);
-
         var state = await _db.JobPoStates.FirstOrDefaultAsync(x => x.JobId == job.Id, ct);
         if (state is null)
         {
@@ -94,6 +88,20 @@ public sealed class JobPoStateService
             _db.JobPoStates.Add(state);
         }
 
+        if (state.Status == JobPoStateStatus.Completed)
+        {
+            state.LastSyncedAt = DateTime.UtcNow;
+            state.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(ct);
+            return;
+        }
+
+        var logs = await _db.GmailMessageLogs.AsNoTracking()
+            .Where(x => x.CorrelationId == correlationId)
+            .OrderBy(x => x.InternalDateMs ?? 0)
+            .ThenBy(x => x.Id)
+            .ToListAsync(ct);
+
         var sentLogs = logs
             .Where(x => string.Equals(x.Direction, "sent", StringComparison.OrdinalIgnoreCase))
             .ToList();
@@ -105,26 +113,30 @@ public sealed class JobPoStateService
         var lastReply = replyLogs.OrderByDescending(GetEventOccurredAtUtc).FirstOrDefault();
         var lastReplyAt = GetEventOccurredAtUtc(lastReply);
         var lastSentAt = GetEventOccurredAtUtc(lastSentLog);
+        var manualSentAt = string.Equals(state.SentSource, "manual", StringComparison.OrdinalIgnoreCase)
+            ? state.ManuallyMarkedSentAt
+            : null;
+        var latestSentAnchorAt = MaxUtc(lastSentAt, manualSentAt);
 
         var reminderLogsAfterLatestSent = logs
             .Where(x => string.Equals(x.Direction, "reminder", StringComparison.OrdinalIgnoreCase))
             .Where(x =>
             {
-                if (!lastSentAt.HasValue)
+                if (!latestSentAnchorAt.HasValue)
                     return false;
 
                 var reminderAt = GetEventOccurredAtUtc(x);
-                return reminderAt.HasValue && reminderAt.Value > lastSentAt.Value;
+                return reminderAt.HasValue && reminderAt.Value > latestSentAnchorAt.Value;
             })
             .ToList();
         var replyAfterLatestSent = replyLogs
             .Where(x =>
             {
-                if (!lastSentAt.HasValue)
+                if (!latestSentAnchorAt.HasValue)
                     return false;
 
                 var replyAt = GetEventOccurredAtUtc(x);
-                return replyAt.HasValue && replyAt.Value > lastSentAt.Value;
+                return replyAt.HasValue && replyAt.Value > latestSentAnchorAt.Value;
             })
             .OrderByDescending(GetEventOccurredAtUtc)
             .FirstOrDefault();
@@ -162,8 +174,8 @@ public sealed class JobPoStateService
         state.CounterpartyEmail = string.IsNullOrWhiteSpace(latestCounterpartyEmail) ? state.CounterpartyEmail : latestCounterpartyEmail;
         state.ConfirmedPoNumber = string.IsNullOrWhiteSpace(job.PoNumber) ? null : job.PoNumber.Trim();
         state.DetectedPoNumber = string.IsNullOrWhiteSpace(latestDetectedPo) ? null : latestDetectedPo;
-        state.FirstRequestSentAt = sentLogs.Count == 0 ? null : sentLogs.Select(GetEventOccurredAtUtc).Where(x => x.HasValue).Min();
-        state.LastRequestSentAt = lastSentAt;
+        state.FirstRequestSentAt = sentLogs.Count == 0 ? manualSentAt : sentLogs.Select(GetEventOccurredAtUtc).Where(x => x.HasValue).Min();
+        state.LastRequestSentAt = latestSentAnchorAt;
         state.LastFollowUpSentAt = GetEventOccurredAtUtc(lastFollowUp);
         state.LastSupplierReplyAt = lastReplyAt;
         state.LastSupplierReplyMessageId = lastReply?.GmailMessageId;
@@ -190,7 +202,7 @@ public sealed class JobPoStateService
             state.LastFollowUpSentAt = null;
             state.NextFollowUpDueAt = null;
         }
-        else if (lastSentAt.HasValue)
+        else if (latestSentAnchorAt.HasValue)
         {
             if (lastReplyAfterLatestSentAt.HasValue)
             {
@@ -212,7 +224,7 @@ public sealed class JobPoStateService
                 state.Status = JobPoStateStatus.AwaitingReply;
                 if (state.FollowUpEnabled)
                 {
-                    var anchorTime = lastReplyAfterLatestSentAt ?? state.LastFollowUpSentAt ?? lastSentAt;
+                    var anchorTime = lastReplyAfterLatestSentAt ?? state.LastFollowUpSentAt ?? latestSentAnchorAt;
                     state.NextFollowUpDueAt = _businessHoursService.CalculateNextFollowUpDueAtUtc(anchorTime.Value);
                 }
             }
@@ -314,5 +326,15 @@ public sealed class JobPoStateService
             return normalized.Value;
 
         return log.UpdatedAt != default ? log.UpdatedAt : log.CreatedAt;
+    }
+
+    private static DateTime? MaxUtc(DateTime? first, DateTime? second)
+    {
+        if (!first.HasValue)
+            return second;
+        if (!second.HasValue)
+            return first;
+
+        return first.Value >= second.Value ? first : second;
     }
 }

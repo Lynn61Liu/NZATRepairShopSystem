@@ -1,5 +1,7 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Workshop.Api.Data;
 
 namespace Workshop.Api.Services;
 
@@ -27,6 +29,14 @@ public sealed class PoStateSchemaInitializerService : IHostedService
         {
             await inventoryItemService.EnsureSeededAsync(cancellationToken);
             await serviceCatalogService.EnsureSeededAsync(cancellationToken);
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await db.Database.ExecuteSqlRawAsync("""
+                ALTER TABLE job_po_state ADD COLUMN IF NOT EXISTS sent_source TEXT;
+                ALTER TABLE job_po_state ADD COLUMN IF NOT EXISTS manually_marked_sent_at TIMESTAMPTZ;
+                ALTER TABLE job_po_state ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+                ALTER TABLE gmail_message_logs ADD COLUMN IF NOT EXISTS source TEXT;
+                """, cancellationToken);
+
             await poStateService.EnsureStatesForNeedsPoJobsAsync(cancellationToken);
         }
         catch (Exception ex)

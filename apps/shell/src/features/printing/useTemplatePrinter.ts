@@ -55,7 +55,7 @@ export function useTemplatePrinter(options: UseTemplatePrinterOptions = {}) {
           const htmlWithBaseUrl = wrapHtmlWithBaseUrl(html, window.location.origin);
 
           if (mode === "preview") {
-            const frame = createJobSheetPrintFrame(onPopupBlocked);
+            const frame = createJobSheetPrintFrame(onPopupBlocked, payload.type === "wof" ? "visible" : "hidden");
             const popup = frame?.contentWindow;
             if (!popup) {
               return { ok: false, mode };

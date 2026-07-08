@@ -216,6 +216,7 @@ public class AppDbContext : DbContext
         gm.Property(x => x.IsRead).HasColumnName("is_read").HasDefaultValue(false);
         gm.Property(x => x.ReadAt).HasColumnName("read_at");
         gm.Property(x => x.DetectedPoNumber).HasColumnName("detected_po_number");
+        gm.Property(x => x.Source).HasColumnName("source");
         gm.Property(x => x.IsSystemInitiated).HasColumnName("is_system_initiated").HasDefaultValue(false);
         gm.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         gm.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
@@ -442,6 +443,9 @@ public class AppDbContext : DbContext
         jp.Property(x => x.AdminAttentionReason).HasColumnName("admin_attention_reason");
         jp.Property(x => x.ConfirmedPoNumber).HasColumnName("confirmed_po_number");
         jp.Property(x => x.DetectedPoNumber).HasColumnName("detected_po_number");
+        jp.Property(x => x.SentSource).HasColumnName("sent_source");
+        jp.Property(x => x.ManuallyMarkedSentAt).HasColumnName("manually_marked_sent_at");
+        jp.Property(x => x.CompletedAt).HasColumnName("completed_at");
         jp.Property(x => x.FirstRequestSentAt).HasColumnName("first_request_sent_at");
         jp.Property(x => x.LastRequestSentAt).HasColumnName("last_request_sent_at");
         jp.Property(x => x.LastFollowUpSentAt).HasColumnName("last_follow_up_sent_at");

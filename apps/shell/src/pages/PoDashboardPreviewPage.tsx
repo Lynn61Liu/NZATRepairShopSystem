@@ -1,435 +1,411 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Button, Card, useToast } from "@/components/ui";
-import { AlertTriangle, Mail, Search, X } from "lucide-react";
-import { requestJson } from "@/utils/api";
-import { subscribePoDashboardRefresh } from "@/utils/refreshSignals";
+import { Check, CheckSquare, ExternalLink, Eye, RefreshCw, Send, Square, X } from "lucide-react";
+import {
+  completePoJobs,
+  confirmPoNumber,
+  fetchPoDraftPreview,
+  fetchPoTodo,
+  manualConfirmPoSent,
+  syncPoTodo,
+} from "@/features/poTodo/poTodoApi";
+import type { ConfirmPoResponse, PoDraftPreview, PoTodoRow, PoTodoTab } from "@/features/poTodo/poTodo.types";
 
-type SummaryFilter = "Needs PO" | "Draft" | "Awaiting Reply" | "Escalation Required" | "Pending Confirmation" | "PO Confirmed";
+const TABS: Array<{ key: PoTodoTab; label: string }> = [
+  { key: "pendingSend", label: "待发邮件" },
+  { key: "awaitingPo", label: "等待 PO" },
+  { key: "invoiced", label: "Invoiced" },
+];
 
-type SummaryCard = {
-  label: SummaryFilter;
-  value: number;
-  note: string;
-};
-
-type PoJob = {
-  id: string;
-  plate: string;
-  customer: string;
-  supplier: string;
-  status: Exclude<SummaryFilter, "All" | "Needs PO">;
-  confirmedPo?: string;
-  detectedPo?: string;
-  unreadReplies: number;
-  followUpCount: number;
-  followUpEnabled: boolean;
-  firstSent?: string;
-  lastSent: string;
-  lastReply?: string;
-  nextFollowUp?: string;
-};
-
-type DashboardSummaryResponse = {
-  summary: {
-    needsPo: number;
-    draft: number;
-    awaitingReply: number;
-    escalationRequired: number;
-    pendingConfirmation: number;
-    poConfirmed: number;
-  };
-  generatedAt: string;
-};
-
-type JobsQueueResponse = {
-  items: PoJob[];
-  total: number;
-};
-
-type SendFollowUpResponse = {
-  success: boolean;
-  jobId: number;
-  status: string;
-  followUpCount: number;
-  lastFollowUpSentAt: string | null;
-  nextFollowUpDueAt: string | null;
-};
-
-type CancelFollowUpResponse = {
-  success: boolean;
-  jobId: number;
-  status: string;
-  followUpEnabled: boolean;
-  followUpCount: number;
-  lastFollowUpSentAt: string | null;
-  nextFollowUpDueAt: string | null;
-};
-
-function kpiCardClasses(isActive: boolean) {
-  return isActive
-    ? "border-[var(--ds-primary)] bg-[var(--ds-primary)] text-white"
-    : "border-[var(--ds-border)] bg-white text-[var(--ds-text)] hover:border-[var(--ds-primary)]";
+function formatDate(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-NZ", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
-function statusClasses(status: PoJob["status"]) {
-  switch (status) {
-    case "Escalation Required":
-      return "bg-[var(--ds-primary)] text-white";
-    case "Awaiting Reply":
-      return "bg-slate-100 text-slate-700";
-    case "Pending Confirmation":
-      return "bg-amber-100 text-amber-700";
-    case "PO Confirmed":
-      return "bg-emerald-100 text-emerald-700";
-    default:
-      return "bg-sky-100 text-sky-700";
-  }
+function xeroInvoiceUrl(invoiceId?: string | null) {
+  return invoiceId ? `https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(invoiceId)}` : "";
 }
 
-function showNextFollowUp(job: PoJob) {
-  return job.followUpEnabled && job.status === "Awaiting Reply" && Boolean(job.nextFollowUp && job.nextFollowUp !== "-");
+function gmailThreadUrl(threadId?: string | null) {
+  return threadId ? `https://mail.google.com/mail/u/0/#inbox/${encodeURIComponent(threadId)}` : "";
+}
+
+function isSent(row: PoTodoRow) {
+  return Boolean(row.lastRequestSentAt || row.firstRequestSentAt || row.sentSource);
+}
+
+function stepSummary(result: ConfirmPoResponse | null) {
+  if (!result) return [];
+  return Object.entries(result.steps);
 }
 
 export function PoDashboardPreviewPage() {
-  const navigate = useNavigate();
   const toast = useToast();
-  const [selectedFilter, setSelectedFilter] = useState<SummaryFilter>("Needs PO");
-  const [searchText, setSearchText] = useState("");
-  const [confirmingJob, setConfirmingJob] = useState<PoJob | null>(null);
-  const [summary, setSummary] = useState<DashboardSummaryResponse["summary"] | null>(null);
-  const [jobs, setJobs] = useState<PoJob[]>([]);
+  const [activeTab, setActiveTab] = useState<PoTodoTab>("pendingSend");
+  const [rows, setRows] = useState<PoTodoRow[]>([]);
+  const [counts, setCounts] = useState<Record<PoTodoTab, number>>({ pendingSend: 0, awaitingPo: 0, invoiced: 0 });
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [sendingFollowUp, setSendingFollowUp] = useState(false);
-  const [cancellingFollowUpJobId, setCancellingFollowUpJobId] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [poInputs, setPoInputs] = useState<Record<number, string>>({});
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [busyJobId, setBusyJobId] = useState<number | null>(null);
+  const [preview, setPreview] = useState<PoDraftPreview | null>(null);
+  const [previewLoadingJobId, setPreviewLoadingJobId] = useState<number | null>(null);
+  const [confirmResult, setConfirmResult] = useState<ConfirmPoResponse | null>(null);
 
-  const summaryCards: SummaryCard[] = useMemo(
-    () => [
-      { label: "Needs PO", value: summary?.needsPo ?? 0, note: "所有仍在跟进的工单" },
-      { label: "Draft", value: summary?.draft ?? 0, note: "未发出 request 邮件" },
-      { label: "Awaiting Reply", value: summary?.awaitingReply ?? 0, note: "已发邮件，等待回复或继续跟进" },
-      { label: "Escalation Required", value: summary?.escalationRequired ?? 0, note: "催发 2 次后仍未回复" },
-      { label: "Pending Confirmation", value: summary?.pendingConfirmation ?? 0, note: "已检测到 PO，待人工确认" },
-      { label: "PO Confirmed", value: summary?.poConfirmed ?? 0, note: "PO 已确认" },
-    ],
-    [summary]
-  );
-
-  const loadSummary = async () => {
-    const res = await requestJson<DashboardSummaryResponse>("/api/po/dashboard");
-    if (!res.ok || !res.data) {
-      setLoadError(res.error || "Failed to load PO dashboard summary");
-      setSummary(null);
-      return;
-    }
-
-    setSummary(res.data.summary);
-  };
-
-  const loadJobs = async () => {
+  const loadTab = useCallback(async (tab: PoTodoTab) => {
     setLoading(true);
-    setLoadError(null);
-    const statusParam = selectedFilter === "Needs PO" ? "" : selectedFilter.replace(/\s+/g, "");
-    const query = new URLSearchParams();
-    if (statusParam) query.set("status", statusParam);
-    if (searchText.trim()) query.set("search", searchText.trim());
-
-    const res = await requestJson<JobsQueueResponse>(`/api/po/jobs${query.toString() ? `?${query.toString()}` : ""}`);
-    if (!res.ok || !res.data) {
-      setLoadError(res.error || "Failed to load PO jobs queue");
-      setJobs([]);
+    setError(null);
+    try {
+      const result = await fetchPoTodo(tab);
+      setRows(result.items);
+      setCounts((prev) => ({ ...prev, [tab]: result.total }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to load PO TODO list";
+      setError(message);
+      setRows([]);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    setJobs(Array.isArray(res.data.items) ? res.data.items : []);
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      await loadSummary();
-      if (cancelled) return;
-    })();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
-  useEffect(() => {
-    return subscribePoDashboardRefresh(() => {
-      void loadSummary();
-      void loadJobs();
+  const refreshAllCounts = useCallback(async () => {
+    const [pendingSend, awaitingPo, invoiced] = await Promise.all(TABS.map((tab) => fetchPoTodo(tab.key)));
+    setCounts({
+      pendingSend: pendingSend.total,
+      awaitingPo: awaitingPo.total,
+      invoiced: invoiced.total,
     });
-  }, [searchText, selectedFilter]);
+  }, []);
+
+  const syncAndReload = useCallback(
+    async (showToast = false) => {
+      setSyncing(true);
+      try {
+        const sync = await syncPoTodo();
+        await refreshAllCounts();
+        await loadTab(activeTab);
+        if (showToast) {
+          toast.success(`同步完成：${sync.checkedJobs} jobs, ${sync.syncedMessages} messages`);
+        }
+        if (sync.warnings.length > 0) {
+          toast.error(sync.warnings[0] ?? "PO sync warning");
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "PO sync failed";
+        setError(message);
+        if (showToast) toast.error(message);
+      } finally {
+        setSyncing(false);
+      }
+    },
+    [activeTab, loadTab, refreshAllCounts, toast]
+  );
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      await loadJobs();
-      if (cancelled) return;
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [searchText, selectedFilter]);
+    void syncAndReload(false);
+    const timer = window.setInterval(() => {
+      void syncAndReload(false);
+    }, 60 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [syncAndReload]);
 
-  const filteredJobs = useMemo(() => {
-    return jobs;
-  }, [jobs]);
+  useEffect(() => {
+    void loadTab(activeTab);
+    setSelectedIds([]);
+  }, [activeTab, loadTab]);
 
-  const canSendFollowUp = (job: PoJob) => job.status === "Awaiting Reply";
+  const allSelected = useMemo(() => rows.length > 0 && rows.every((row) => selectedIds.includes(row.jobId)), [rows, selectedIds]);
 
-  const handleCancelFollowUp = async (jobId: string) => {
-    if (cancellingFollowUpJobId) return;
-
-    const confirmed = window.confirm("确认手动取消这个工单的自动催发吗？");
-    if (!confirmed) return;
-
-    setCancellingFollowUpJobId(jobId);
-    const res = await requestJson<CancelFollowUpResponse>(`/api/po/jobs/${encodeURIComponent(jobId)}/cancel-follow-up`, {
-      method: "POST",
-    });
-
-    if (!res.ok) {
-      toast.error(res.error || "Failed to cancel follow-up");
-      setCancellingFollowUpJobId(null);
-      return;
-    }
-
-    toast.success("自动催发已取消");
-    await loadSummary();
-    await loadJobs();
-    setCancellingFollowUpJobId(null);
+  const toggleAll = () => {
+    setSelectedIds(allSelected ? [] : rows.map((row) => row.jobId));
   };
 
-  const handleConfirmSendFollowUp = async () => {
-    if (!confirmingJob || sendingFollowUp) return;
+  const toggleOne = (jobId: number) => {
+    setSelectedIds((prev) => (prev.includes(jobId) ? prev.filter((id) => id !== jobId) : [...prev, jobId]));
+  };
 
-    setSendingFollowUp(true);
-    const res = await requestJson<SendFollowUpResponse>(`/api/po/jobs/${encodeURIComponent(confirmingJob.id)}/send-follow-up`, {
-      method: "POST",
-    });
+  const handlePreview = async (row: PoTodoRow) => {
+    setPreviewLoadingJobId(row.jobId);
+    try {
+      setPreview(await fetchPoDraftPreview(row.jobId));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to load draft preview");
+    } finally {
+      setPreviewLoadingJobId(null);
+    }
+  };
 
-    if (!res.ok) {
-      toast.error(res.error || "Failed to send follow-up");
-      setSendingFollowUp(false);
+  const handleManualSent = async (row: PoTodoRow) => {
+    setBusyJobId(row.jobId);
+    try {
+      await manualConfirmPoSent(row.jobId);
+      toast.success("已标记发送");
+      await loadTab(activeTab);
+      await refreshAllCounts();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to mark sent");
+    } finally {
+      setBusyJobId(null);
+    }
+  };
+
+  const handleConfirmPo = async (row: PoTodoRow) => {
+    const value = (poInputs[row.jobId] || row.detectedPoNumber || "").trim();
+    if (!value) {
+      toast.error("Please enter PO number");
       return;
     }
 
-    toast.success("Follow-up email sent");
-    setConfirmingJob(null);
-    await loadSummary();
-    await loadJobs();
-    setSendingFollowUp(false);
+    setBusyJobId(row.jobId);
+    setConfirmResult(null);
+    try {
+      const result = await confirmPoNumber(row.jobId, value);
+      setConfirmResult(result);
+      if (result.success) {
+        toast.success("PO 已确认");
+        await loadTab(activeTab);
+        await refreshAllCounts();
+      } else {
+        toast.error("PO 确认未完成");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to confirm PO");
+    } finally {
+      setBusyJobId(null);
+    }
+  };
+
+  const handleCompleteSelected = async () => {
+    if (selectedIds.length === 0) return;
+
+    setBusyJobId(-1);
+    try {
+      const result = await completePoJobs(selectedIds);
+      toast.success(`完成 ${result.updated} 个，跳过 ${result.skipped} 个`);
+      setSelectedIds([]);
+      await loadTab(activeTab);
+      await refreshAllCounts();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to complete selected jobs");
+    } finally {
+      setBusyJobId(null);
+    }
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-
-          <h1 className="text-3xl font-semibold tracking-[-0.04em] text-[var(--ds-text)]">PO Operations Dashboard</h1>
-         
+          <h1 className="text-2xl font-semibold tracking-normal text-[var(--ds-text)]">PO TODO</h1>
         </div>
+        <Button
+          variant="primary"
+          leftIcon={<RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />}
+          onClick={() => void syncAndReload(true)}
+          disabled={syncing}
+        >
+          {syncing ? "同步中" : "同步"}
+        </Button>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-        {summaryCards.map((card) => (
+      <div className="flex flex-wrap gap-2">
+        {TABS.map((tab) => (
           <button
-            key={card.label}
+            key={tab.key}
             type="button"
-            onClick={() => setSelectedFilter(card.label)}
-            className={`rounded-[12px] border p-4 text-left shadow-sm transition ${kpiCardClasses(selectedFilter === card.label)}`}
+            onClick={() => setActiveTab(tab.key)}
+            className={[
+              "inline-flex h-10 items-center gap-2 rounded-[8px] border px-4 text-sm font-semibold transition",
+              activeTab === tab.key
+                ? "border-[var(--ds-primary)] bg-[var(--ds-primary)] text-white"
+                : "border-[var(--ds-border)] bg-white text-[var(--ds-text)] hover:border-[var(--ds-primary)]",
+            ].join(" ")}
           >
-            <div className="text-xs font-semibold uppercase tracking-[0.14em]">{card.label}</div>
-            <div className="mt-3 flex items-center gap-2 text-3xl font-semibold tracking-[-0.04em]">
-              {card.label === "Escalation Required" ? (
-                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-yellow-300">
-                  <AlertTriangle className="h-5 w-5 text-red-600" />
-                </span>
-              ) : null}
-              <span>{card.value}</span>
-            </div>
-            <div className={`mt-2 text-xs ${selectedFilter === card.label ? "text-white/85" : "text-[var(--ds-muted)]"}`}>{card.note}</div>
+            <span>{tab.label}</span>
+            <span className={activeTab === tab.key ? "text-white/80" : "text-[var(--ds-muted)]"}>{counts[tab.key]}</span>
           </button>
         ))}
       </div>
 
-      <Card className="overflow-hidden">
-        <div className="flex flex-col gap-4 border-b border-[var(--ds-border)] px-5 py-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <div className="text-lg font-semibold text-[var(--ds-text)]">PO Jobs Queue</div>
-              <div className="text-sm text-[var(--ds-muted)]">
-                当前 KPI：<span className="font-medium text-[var(--ds-text)]">{selectedFilter}</span>
-              </div>
-            </div>
-            <label className="flex items-center gap-2 rounded-xl border border-[var(--ds-border)] bg-white px-3 py-2 text-sm text-[var(--ds-muted)]">
-              <Search className="h-4 w-4" />
-              <input
-                value={searchText}
-                onChange={(event) => setSearchText(event.target.value)}
-                placeholder="Search plate / supplier / PO"
-                className="min-w-[260px] border-0 bg-transparent text-[var(--ds-text)] outline-none placeholder:text-slate-400"
-              />
-            </label>
-          </div>
-
+      {activeTab === "invoiced" ? (
+        <div className="flex justify-end">
+          <Button
+            leftIcon={allSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+            onClick={toggleAll}
+            disabled={rows.length === 0}
+          >
+            全选
+          </Button>
+          <Button
+            variant="primary"
+            className="ml-2"
+            leftIcon={<Check className="h-4 w-4" />}
+            onClick={() => void handleCompleteSelected()}
+            disabled={selectedIds.length === 0 || busyJobId === -1}
+          >
+            标记完成
+          </Button>
         </div>
+      ) : null}
 
+      <Card className="overflow-hidden">
+        {error ? <div className="border-b border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
         <div className="overflow-x-auto">
-          {loadError ? <div className="px-5 py-4 text-sm text-red-600">{loadError}</div> : null}
-          {loading ? <div className="px-5 py-4 text-sm text-[var(--ds-muted)]">Loading PO queue...</div> : null}
-          <table className="w-full border-collapse">
+          <table className="w-full min-w-[1180px] border-collapse text-sm">
             <thead>
-              <tr className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ds-muted)]">
-                <th className="px-5 py-3">Job</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">PO</th>
-                <th className="px-5 py-3">Unread</th>
-                <th className="px-5 py-3">Timing</th>
-                <th className="px-5 py-3 text-right">Action</th>
+              <tr className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-normal text-[var(--ds-muted)]">
+                {activeTab === "invoiced" ? <th className="w-12 px-3 py-3"></th> : null}
+                <th className="px-3 py-3">创建时间</th>
+                <th className="px-3 py-3">Code</th>
+                <th className="px-3 py-3">车牌</th>
+                <th className="px-3 py-3">型号</th>
+                <th className="px-3 py-3">备注</th>
+                <th className="px-3 py-3">Reference</th>
+                <th className="px-3 py-3">Xero</th>
+                <th className="px-3 py-3">PO草稿</th>
+                <th className="px-3 py-3">是否发送</th>
+                <th className="px-3 py-3">PO</th>
+                {activeTab === "invoiced" ? <th className="px-3 py-3">Gmail</th> : null}
               </tr>
             </thead>
             <tbody>
-              {filteredJobs.map((job) => (
-                <tr
-                  key={job.id}
-                  className="cursor-pointer border-t border-slate-100 bg-white transition hover:bg-slate-50"
-                  onClick={() => navigate(`/jobs/${job.id}?tab=PO`)}
-                >
-                  <td className="px-5 py-4 align-top">
-                    <div className="font-semibold text-[var(--ds-text)]">JOB-{job.id} · {job.plate}</div>
-                    <div className="mt-1 text-sm text-[var(--ds-muted)]">{job.customer}</div>
-                    <div className="mt-1 text-xs text-slate-400">{job.supplier}</div>
-                  </td>
-                  <td className="px-5 py-4 align-top">
-                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusClasses(job.status)}`}>
-                      {job.status}
-                    </span>
-                    <div className="mt-2 text-xs text-slate-400">{job.followUpCount} follow-up sent</div>
-                  </td>
-                  <td className="px-5 py-4 align-top text-sm text-slate-700">
-                    <div>{job.confirmedPo || job.detectedPo || "-"}</div>
-                    <div className="mt-1 text-xs text-slate-400">
-                      {job.confirmedPo ? "Confirmed" : job.detectedPo ? "Detected" : "Pending"}
-                    </div>
-                  </td>
-                  <td className="px-5 py-4 align-top">
-                    {job.unreadReplies > 0 ? (
-                      <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-700">
-                        {job.unreadReplies}
-                      </span>
-                    ) : (
-                      <span className="text-sm text-slate-400">0</span>
-                    )}
-                  </td>
-                  <td className="px-5 py-4 align-top text-sm text-slate-600">
-                    <div>Last sent: {job.lastSent}</div>
-                    <div className="mt-1">Last reply: {job.lastReply || "-"}</div>
-                    {showNextFollowUp(job) ? (
-                      <div className="mt-2">
-                        <span className="inline-flex items-center rounded-full bg-[var(--ds-primary)] px-3 py-1 text-sm font-semibold text-white shadow-sm">
-                          Next follow up: {job.nextFollowUp}
-                        </span>
-                      </div>
+              {rows.map((row) => {
+                const sent = isSent(row);
+                const xeroUrl = xeroInvoiceUrl(row.xeroInvoiceId);
+                const gmailUrl = gmailThreadUrl(row.gmailThreadId);
+                return (
+                  <tr key={row.jobId} className="border-t border-slate-100 align-top">
+                    {activeTab === "invoiced" ? (
+                      <td className="px-3 py-3">
+                        <button type="button" onClick={() => toggleOne(row.jobId)} className="text-slate-500 hover:text-[var(--ds-primary)]">
+                          {selectedIds.includes(row.jobId) ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+                        </button>
+                      </td>
                     ) : null}
-                  </td>
-                  <td className="px-5 py-4 align-top text-right">
-                    {canSendFollowUp(job) ? (
-                      <div
-                        className="inline-flex gap-2"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                        }}
-                      >
-                        <Button
-                          variant="primary"
-                          className="h-10 px-4"
-                          leftIcon={<Mail className="h-4 w-4" />}
-                          onClick={() => setConfirmingJob(job)}
-                        >
-                          发送催发
+                    <td className="whitespace-nowrap px-3 py-3 text-slate-600">{formatDate(row.createdAt)}</td>
+                    <td className="px-3 py-3 font-semibold text-[var(--ds-text)]">{row.code || "-"}</td>
+                    <td className="px-3 py-3">
+                      <Link to={`/jobs/${row.jobId}?tab=PO`} className="font-semibold text-[var(--ds-primary)] hover:underline">
+                        {row.plate || `JOB-${row.jobId}`}
+                      </Link>
+                    </td>
+                    <td className="max-w-[160px] px-3 py-3 text-slate-700">{row.model || "-"}</td>
+                    <td className="max-w-[220px] px-3 py-3 text-slate-600">{row.notes || "-"}</td>
+                    <td className="max-w-[220px] px-3 py-3 text-slate-700">{row.reference || "-"}</td>
+                    <td className="px-3 py-3">
+                      {xeroUrl ? (
+                        <Button href={xeroUrl} target="_blank" rel="noreferrer" rightIcon={<ExternalLink className="h-4 w-4" />}>
+                          Open
                         </Button>
-                        {job.followUpEnabled ? (
-                          <Button
-                            className="h-10 px-4"
-                            onClick={() => void handleCancelFollowUp(job.id)}
-                            disabled={cancellingFollowUpJobId === job.id}
-                          >
-                            {cancellingFollowUpJobId === job.id ? "取消中..." : "取消催发"}
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3">
+                      <Button
+                        leftIcon={<Eye className="h-4 w-4" />}
+                        onClick={() => void handlePreview(row)}
+                        disabled={sent || previewLoadingJobId === row.jobId}
+                      >
+                        预览
+                      </Button>
+                    </td>
+                    <td className="px-3 py-3">
+                      {sent ? (
+                        <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">已发送</span>
+                      ) : (
+                        <Button leftIcon={<Send className="h-4 w-4" />} onClick={() => void handleManualSent(row)} disabled={busyJobId === row.jobId}>
+                          已发送
+                        </Button>
+                      )}
+                    </td>
+                    <td className="px-3 py-3">
+                      {activeTab === "invoiced" ? (
+                        <div className="font-semibold text-slate-700">{row.confirmedPoNumber || row.detectedPoNumber || "-"}</div>
+                      ) : (
+                        <div className="flex min-w-[180px] gap-2">
+                          <input
+                            value={poInputs[row.jobId] ?? row.detectedPoNumber ?? ""}
+                            onChange={(event) => setPoInputs((prev) => ({ ...prev, [row.jobId]: event.target.value }))}
+                            className="h-9 w-28 rounded-[8px] border border-[var(--ds-border)] px-2 text-sm outline-none focus:border-[var(--ds-primary)]"
+                            placeholder="PO #"
+                          />
+                          <Button variant="primary" onClick={() => void handleConfirmPo(row)} disabled={busyJobId === row.jobId}>
+                            确认
+                          </Button>
+                        </div>
+                      )}
+                    </td>
+                    {activeTab === "invoiced" ? (
+                      <td className="px-3 py-3">
+                        {gmailUrl ? (
+                          <Button href={gmailUrl} target="_blank" rel="noreferrer" rightIcon={<ExternalLink className="h-4 w-4" />}>
+                            Thread
                           </Button>
                         ) : (
-                          <Button className="h-10 px-4 border-slate-200 bg-slate-200 text-slate-500 hover:bg-slate-200" disabled>
-                            已取消催发
-                          </Button>
+                          <span className="text-slate-400">-</span>
                         )}
-                      </div>
-                    ) : (
-                      <span className="text-sm text-slate-300">-</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {!loading && !loadError && filteredJobs.length === 0 ? (
+                      </td>
+                    ) : null}
+                  </tr>
+                );
+              })}
+              {!loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-sm text-[var(--ds-muted)]">
-                    No PO jobs matched the current filter.
+                  <td colSpan={activeTab === "invoiced" ? 12 : 10} className="px-4 py-10 text-center text-sm text-[var(--ds-muted)]">
+                    No PO jobs.
                   </td>
                 </tr>
               ) : null}
             </tbody>
           </table>
         </div>
+        {loading ? <div className="border-t border-slate-100 px-4 py-3 text-sm text-[var(--ds-muted)]">Loading...</div> : null}
       </Card>
 
-      {confirmingJob ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
-          <Card className="w-full max-w-lg p-6">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-lg font-semibold text-[var(--ds-text)]">确认发送催发邮件</div>
-                <div className="mt-1 text-sm text-[var(--ds-muted)]">
-                  这只是预览弹层，用来确认手动动作是否合理。
-                </div>
+      {confirmResult ? (
+        <Card className="p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="font-semibold text-[var(--ds-text)]">Confirm PO</div>
+            <button type="button" onClick={() => setConfirmResult(null)} className="rounded-full p-1 text-slate-500 hover:bg-slate-100">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="grid gap-2 md:grid-cols-4">
+            {stepSummary(confirmResult).map(([key, step]) => (
+              <div key={key} className="rounded-[8px] border border-[var(--ds-border)] p-3">
+                <div className="text-xs font-semibold uppercase text-[var(--ds-muted)]">{key}</div>
+                <div className="mt-1 font-semibold text-[var(--ds-text)]">{step.status}</div>
+                <div className="mt-1 text-xs text-[var(--ds-muted)]">{step.message}</div>
               </div>
-              <button
-                type="button"
-                onClick={() => setConfirmingJob(null)}
-                className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-              >
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
+      {preview ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <Card className="max-h-[86vh] w-full max-w-3xl overflow-hidden">
+            <div className="flex items-start justify-between gap-3 border-b border-[var(--ds-border)] p-4">
+              <div>
+                <div className="font-semibold text-[var(--ds-text)]">{preview.subject}</div>
+                <div className="mt-1 text-sm text-[var(--ds-muted)]">{preview.to || "-"}</div>
+              </div>
+              <button type="button" onClick={() => setPreview(null)} className="rounded-full p-2 text-slate-500 hover:bg-slate-100">
                 <X className="h-4 w-4" />
               </button>
             </div>
-
-            <div className="mt-5 rounded-2xl border border-[var(--ds-border)] bg-slate-50 p-4 text-sm text-slate-600">
-              <div className="font-semibold text-[var(--ds-text)]">JOB-{confirmingJob.id} · {confirmingJob.plate}</div>
-              <div className="mt-1">{confirmingJob.customer}</div>
-              <div className="mt-1">{confirmingJob.supplier}</div>
-              <div className="mt-3">当前状态：{confirmingJob.status}</div>
-              <div className="mt-1">第一次发送：{confirmingJob.firstSent || confirmingJob.lastSent}</div>
-              <div className="mt-1">上次发出：{confirmingJob.lastSent}</div>
-              <div className="mt-1">回复时间：{confirmingJob.lastReply || "-"}</div>
-              <div className="mt-1">预计下次催发：{confirmingJob.nextFollowUp || "-"}</div>
-            </div>
-
-            <div className="mt-5 flex justify-end gap-2">
-              <Button className="h-10 px-4" onClick={() => setConfirmingJob(null)}>
-                取消
-              </Button>
-              <Button
-                variant="primary"
-                className="h-10 px-4"
-                leftIcon={<Mail className="h-4 w-4" />}
-                onClick={handleConfirmSendFollowUp}
-                disabled={sendingFollowUp}
-              >
-                {sendingFollowUp ? "发送中..." : "确认发送"}
-              </Button>
-            </div>
+            <div className="max-h-[64vh] overflow-auto bg-white p-5" dangerouslySetInnerHTML={{ __html: preview.htmlBody }} />
           </Card>
         </div>
       ) : null}

@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { AlertCircle, ArrowLeft, Boxes, FileText, Loader2, Plus, ReceiptText, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, Boxes, Car, FileText, Loader2, Plus, ReceiptText, Tag, UserRound, X } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Alert, Button, Input, SectionCard, Textarea, useToast } from "@/components/ui";
 import { useJobSheetPrinter } from "@/features/printing/useJobSheetPrinter";
 import {
   type ChildServiceOption,
-  CustomerSection,
   NotesSection,
   ServicesSection,
-  VehicleSection,
   type ServiceOption,
   extractVehicleInfo,
   normalizePlateInput,
@@ -86,13 +84,14 @@ export function NewJobPage() {
   const [wofOptions, setWofOptions] = useState<string[]>([]);
   const [mechOptionChoices, setMechOptionChoices] = useState<ChildServiceOption[]>([]);
   const [paintOptionChoices, setPaintOptionChoices] = useState<ChildServiceOption[]>([]);
-  const [customerType, setCustomerType] = useState<CustomerType>("personal");
+  const [customerType, setCustomerType] = useState<CustomerType>("business");
   const [personalName, setPersonalName] = useState("");
   const [personalPhone, setPersonalPhone] = useState("");
   // const [personalWechat, setPersonalWechat] = useState("");
   const [personalEmail, setPersonalEmail] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [businessId, setBusinessId] = useState("");
+  const [businessSearch, setBusinessSearch] = useState("");
   const [businessOptions, setBusinessOptions] = useState<BusinessOption[]>([]);
   const [personalCustomerOptions, setPersonalCustomerOptions] = useState<PersonalCustomerOption[]>([]);
   const [customerMatchHint, setCustomerMatchHint] = useState<CustomerMatchHint | null>(null);
@@ -124,6 +123,25 @@ export function NewJobPage() {
   const selectedBusiness = useMemo(
     () => businessOptions.find((biz) => biz.id === businessId),
     [businessOptions, businessId]
+  );
+  const businessOptionLabel = useCallback(
+    (biz: BusinessOption) => [biz.label, biz.businessCode].filter(Boolean).join(" - "),
+    []
+  );
+  const findBusinessBySearchText = useCallback(
+    (value: string) => {
+      const normalized = value.trim().toLowerCase();
+      if (!normalized) return undefined;
+
+      return businessOptions.find((biz) => {
+        const id = String(biz.id ?? "").toLowerCase();
+        const code = String(biz.businessCode ?? "").toLowerCase();
+        const label = String(biz.label ?? "").toLowerCase();
+        const displayLabel = businessOptionLabel(biz).toLowerCase();
+        return normalized === id || normalized === code || normalized === label || normalized === displayLabel;
+      });
+    },
+    [businessOptionLabel, businessOptions]
   );
   const personalNameSuggestions = useMemo(
     () => personalCustomerOptions.map((item) => item.name),
@@ -195,7 +213,7 @@ export function NewJobPage() {
     }
     return rows;
   }, [selectedServices, serviceLabelMap, selectedWofOptionLabels, selectedMechOptionLabels, selectedPaintOptionLabels, paintPanels]);
-  const customerTypeLabel = customerType === "business" ? "商户客户" : "个人客户";
+  const customerTypeLabel = customerType === "business" ? "Dealer" : "WI";
   const customerDisplayName =
     customerType === "business"
       ? selectedBusiness?.label?.trim() || "未填写"
@@ -208,8 +226,8 @@ export function NewJobPage() {
       : personalName.trim() || regoYearModelLabel || rego.trim();
   const missingRequiredFields = useMemo(() => {
     const missing: string[] = [];
-    if (!rego.trim()) missing.push("车牌号码");
-    if (customerType === "business" && !businessId) missing.push("商户名称");
+    if (!rego.trim()) missing.push("Rego / VIN / Chassis");
+    if (customerType === "business" && !businessId) missing.push("Dealer");
     if (showPaintPanels && !paintPanels.trim()) missing.push("喷漆片数");
     return missing;
   }, [rego, customerType, businessId, showPaintPanels, paintPanels]);
@@ -396,6 +414,17 @@ export function NewJobPage() {
   }, [customerType, businessId]);
 
   useEffect(() => {
+    if (customerType !== "business") {
+      setBusinessSearch("");
+      return;
+    }
+
+    if (selectedBusiness) {
+      setBusinessSearch(businessOptionLabel(selectedBusiness));
+    }
+  }, [businessOptionLabel, customerType, selectedBusiness]);
+
+  useEffect(() => {
     if (showNeedsPo) {
       setNeedsPo(true);
     } else {
@@ -527,7 +556,7 @@ export function NewJobPage() {
     }
 
     if (!jobId) {
-      return { success: false, message: "工单已创建，但没有返回 Job ID，灯条未绑定。" };
+      return { success: false, message: "工单已创建，但没有返回 Job ID，Key Tag 未绑定。" };
     }
 
     try {
@@ -539,14 +568,14 @@ export function NewJobPage() {
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        return { success: false, message: `工单已创建，但灯条绑定失败：${data?.error || "未知错误"}` };
+        return { success: false, message: `工单已创建，但 Key Tag 绑定失败：${data?.error || "未知错误"}` };
       }
 
       setLightTagId("");
-      return { success: true, message: "工单已创建，灯条绑定指令已发送。" };
+      return { success: true, message: "工单已创建，Key Tag 绑定指令已发送。" };
     } catch (err) {
       const message = err instanceof Error ? err.message : "网络错误";
-      return { success: false, message: `工单已创建，但灯条绑定失败：${message}` };
+      return { success: false, message: `工单已创建，但 Key Tag 绑定失败：${message}` };
     }
   };
 
@@ -600,8 +629,8 @@ export function NewJobPage() {
       setCustomerMatchHint({
         message:
           payload?.source === "job"
-            ? "已匹配历史工单里的商户客户信息。"
-            : "已匹配这台车之前绑定的商户客户信息。",
+            ? "已匹配历史工单里的 Dealer 信息。"
+            : "已匹配这台车之前绑定的 Dealer 信息。",
       });
       return;
     }
@@ -697,6 +726,52 @@ export function NewJobPage() {
     clearCustomerMatchHint();
   };
 
+  const handleBusinessSearchChange = (value: string) => {
+    clearCustomerMatchHint();
+    setBusinessSearch(value);
+    const matched = findBusinessBySearchText(value);
+    setBusinessId(matched ? String(matched.id) : "");
+  };
+
+  const handleBusinessSearchBlur = () => {
+    const matched = findBusinessBySearchText(businessSearch);
+    if (!matched) return;
+    setBusinessId(String(matched.id));
+    setBusinessSearch(businessOptionLabel(matched));
+  };
+
+  const vehicleInfoSummary = useMemo(() => {
+    if (!vehicleInfo) return null;
+    const info = vehicleInfo as Record<string, unknown>;
+    const read = (...keys: string[]) => {
+      for (const key of keys) {
+        const value = info[key];
+        if (value !== undefined && value !== null && String(value).trim()) {
+          return String(value);
+        }
+      }
+      return "";
+    };
+    const vehicleLine = [
+      read("year"),
+      read("make"),
+      read("model"),
+      read("subModel", "variant", "badge", "trim"),
+      read("colour", "color"),
+      read("bodyStyle", "body", "type"),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toUpperCase();
+
+    return {
+      vehicleLine,
+      vin: read("vin"),
+      fuelType: read("fuelType", "fuel"),
+      nzFirstRegistration: read("nzFirstRegistration"),
+    };
+  }, [vehicleInfo]);
+
   useEffect(() => {
     const prefillKey = searchParams.toString();
     if (appointmentPrefillAppliedRef.current === prefillKey) return;
@@ -730,11 +805,11 @@ export function NewJobPage() {
     if (saving) return;
     setFormAlert(null);
     if (!rego) {
-      setFormAlert({ variant: "error", message: "请输入车牌号" });
+      setFormAlert({ variant: "error", message: "请输入 Rego / VIN / Chassis" });
       return;
     }
     if (customerType === "business" && (!businessId || !selectedBusiness)) {
-      setFormAlert({ variant: "error", message: "请选择有效的商户客户。" });
+      setFormAlert({ variant: "error", message: "请选择有效的 Dealer。" });
       return;
     }
     if (!createNewInvoice && !existingInvoiceNumber.trim()) {
@@ -1049,72 +1124,297 @@ export function NewJobPage() {
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.9fr)_minmax(320px,1fr)]">
         <div className="space-y-4">
-          <VehicleSection
-            rego={rego}
-            importState={importState}
-            importError={importError}
-            vehicleInfo={vehicleInfo}
-            onRegoChange={handleRegoChange}
-            onImport={handleImportClick}
-          />
-
           <SectionCard
-            title="绑定灯条"
-            titleIcon={<ReceiptText size={18} />}
+            title="车辆信息"
+            titleIcon={<Car size={18} />}
             titleClassName="text-lg font-semibold"
           >
-            <div className="mt-3 space-y-2">
-              <label htmlFor="new-job-light-tag" className="block text-base text-[rgba(0,0,0,0.65)]">
-                灯条码
-              </label>
-              <Input
-                id="new-job-light-tag"
-                value={lightTagId}
-                placeholder="扫描或输入灯条码"
-                autoComplete="off"
-                onChange={(event) => setLightTagId(normalizeLightTagInput(event.target.value))}
-              />
+            <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+              <div>
+                <label htmlFor="new-job-rego" className="block text-base text-[rgba(0,0,0,0.65)]">
+                  Rego/ VIN/ Chassis <span className="text-[#dc2626]">*</span>
+                </label>
+                <div className="mt-2 flex gap-2">
+                  <Input
+                    id="new-job-rego"
+                    value={rego}
+                    className="font-semibold tracking-[0.18em] text-[#dc2626]"
+                    placeholder="NZAT"
+                    autoComplete="off"
+                    onChange={handleRegoChange}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleImportClick()}
+                    disabled={importState === "loading" || !rego.trim()}
+                    className="inline-flex h-10 w-[76px] shrink-0 items-center justify-center rounded-[8px] border border-[rgba(220,38,38,0.35)] bg-white text-sm font-semibold text-[#b91c1c] shadow-sm transition hover:bg-[rgba(220,38,38,0.06)] disabled:cursor-not-allowed disabled:border-[rgba(0,0,0,0.12)] disabled:text-[rgba(0,0,0,0.35)] disabled:shadow-none"
+                  >
+                    {importState === "loading" ? "抓取中" : "抓取"}
+                  </button>
+                </div>
+                <div className="mt-2 text-base text-[rgba(0,0,0,0.45)]">长度 {rego.length || 0}</div>
+                <div className="mt-1 text-base text-[rgba(0,0,0,0.45)]">Eg：NRL867</div>
+              </div>
+
+              <div className="min-h-[104px] rounded-[8px] border border-dashed border-[rgba(0,0,0,0.12)] bg-[rgba(0,0,0,0.015)] p-3">
+                {importState === "error" ? (
+                  <div className="text-sm font-medium text-[#dc2626]">{importError || "车辆信息抓取失败"}</div>
+                ) : vehicleInfoSummary ? (
+                  <div className="rounded-[8px] border border-[rgba(34,197,94,0.30)] bg-[rgba(34,197,94,0.07)] p-3">
+                    <div className="mb-2 text-sm font-semibold text-[#16a34a]">已识别车型信息</div>
+                    <div className="space-y-1.5 text-sm text-[rgba(0,0,0,0.70)]">
+                      <div className="break-words font-semibold text-[rgba(0,0,0,0.78)]">
+                        {vehicleInfoSummary.vehicleLine || "车型信息未完整返回"}
+                      </div>
+                      <div className="flex flex-wrap gap-x-5 gap-y-1">
+                        <span>
+                          <span className="text-[rgba(0,0,0,0.48)]">VIN：</span>
+                          {vehicleInfoSummary.vin || "—"}
+                        </span>
+                        <span>
+                          <span className="text-[rgba(0,0,0,0.48)]">燃油类型：</span>
+                          {vehicleInfoSummary.fuelType || "—"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[rgba(0,0,0,0.48)]">NZ First Registration：</span>
+                        {vehicleInfoSummary.nzFirstRegistration || "—"}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex h-full items-center text-sm text-[rgba(0,0,0,0.45)]">
+                    输入 Rego / VIN / Chassis 后点击抓取，车辆信息会显示在这里。
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-[8px] border border-[rgba(0,0,0,0.08)] bg-white p-3">
+                <div className="mb-2 flex items-center gap-2 text-base font-semibold text-[rgba(0,0,0,0.72)]">
+                  <Tag size={16} className="text-[#dc2626]" />
+                  Key Tag
+                </div>
+                <label htmlFor="new-job-light-tag" className="block text-sm text-[rgba(0,0,0,0.60)]">
+                  Key Tag Barcode
+                </label>
+                <Input
+                  id="new-job-light-tag"
+                  value={lightTagId}
+                  placeholder="Scan or enter barcode"
+                  autoComplete="off"
+                  className="mt-2"
+                  onChange={(event) => setLightTagId(normalizeLightTagInput(event.target.value))}
+                />
+              </div>
             </div>
           </SectionCard>
 
-          <CustomerSection
-            customerType={customerType}
-            onCustomerTypeChange={(next) => {
-              clearCustomerMatchHint();
-              setCustomerType(next);
-            }}
-            personalName={personalName}
-            personalPhone={personalPhone}
-            // personalWechat={personalWechat}
-            personalEmail={personalEmail}
-            onPersonalNameChange={(value) => {
-              clearCustomerMatchHint();
-              setPersonalName(value);
-            }}
-            onPersonalPhoneChange={(value) => {
-              clearCustomerMatchHint();
-              setPersonalPhone(value);
-            }}
-            // onPersonalWechatChange={setPersonalWechat}
-            onPersonalEmailChange={(value) => {
-              clearCustomerMatchHint();
-              setPersonalEmail(value);
-            }}
-            customerAddress={customerAddress}
-            onCustomerAddressChange={(value) => {
-              clearCustomerMatchHint();
-              setCustomerAddress(value);
-            }}
-            businessId={businessId}
-            businessOptions={businessOptions}
-            onBusinessChange={(value) => {
-              clearCustomerMatchHint();
-              setBusinessId(value);
-            }}
-            personalNameSuggestions={personalNameSuggestions}
-            onPersonalNameBlur={handlePersonalNameBlur}
-            matchHint={customerMatchHint?.message}
-          />
+          <SectionCard
+            title="客户信息"
+            titleIcon={<UserRound size={18} />}
+            titleClassName="text-lg font-semibold"
+          >
+            <div className="mt-3 space-y-4">
+              <div>
+                <div className="mb-2 text-base text-[rgba(0,0,0,0.65)]">
+                  客户类型 <span className="text-[#dc2626]">*</span>
+                </div>
+                <div className="inline-grid grid-cols-2 rounded-[10px] bg-[rgba(0,0,0,0.06)] p-1">
+                  {[
+                    { value: "business" as const, label: "Dealer" },
+                    { value: "personal" as const, label: "WI" },
+                  ].map((item) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => {
+                        clearCustomerMatchHint();
+                        setCustomerType(item.value);
+                      }}
+                      className={`min-w-[86px] rounded-[8px] px-5 py-2 text-base font-semibold transition ${
+                        customerType === item.value
+                          ? "bg-[#dc2626] text-white shadow-sm"
+                          : "text-[rgba(0,0,0,0.70)] hover:bg-white/70"
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {customerMatchHint?.message ? (
+                <div className="rounded-[8px] border border-[rgba(14,165,233,0.35)] bg-[rgba(14,165,233,0.08)] px-3 py-2 text-sm font-medium text-[#0369a1]">
+                  {customerMatchHint.message}
+                </div>
+              ) : null}
+
+              {customerType === "business" ? (
+                <div>
+                  <label htmlFor="new-job-dealer-search" className="block text-base text-[rgba(0,0,0,0.65)]">
+                    Dealer <span className="text-[#dc2626]">*</span>
+                  </label>
+                  <Input
+                    id="new-job-dealer-search"
+                    list="new-job-dealer-options"
+                    value={businessSearch}
+                    placeholder="Search dealer name or code"
+                    autoComplete="off"
+                    className="mt-2"
+                    onChange={(event) => handleBusinessSearchChange(event.target.value)}
+                    onBlur={handleBusinessSearchBlur}
+                  />
+                  <datalist id="new-job-dealer-options">
+                    {businessOptions.map((biz) => (
+                      <option key={biz.id} value={businessOptionLabel(biz)} />
+                    ))}
+                  </datalist>
+                </div>
+              ) : (
+                <>
+                  <datalist id="new-job-personal-name-options">
+                    {personalNameSuggestions.map((name) => (
+                      <option key={name} value={name} />
+                    ))}
+                  </datalist>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div>
+                      <label htmlFor="new-job-personal-name" className="block text-base text-[rgba(0,0,0,0.65)]">
+                        名字
+                      </label>
+                      <Input
+                        id="new-job-personal-name"
+                        list="new-job-personal-name-options"
+                        value={personalName}
+                        placeholder="输入客户名字"
+                        className="mt-2"
+                        onBlur={handlePersonalNameBlur}
+                        onChange={(event) => {
+                          clearCustomerMatchHint();
+                          setPersonalName(event.target.value);
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="new-job-personal-phone" className="block text-base text-[rgba(0,0,0,0.65)]">
+                        电话
+                      </label>
+                      <Input
+                        id="new-job-personal-phone"
+                        value={personalPhone}
+                        placeholder="输入电话"
+                        className="mt-2"
+                        onChange={(event) => {
+                          clearCustomerMatchHint();
+                          setPersonalPhone(event.target.value);
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="new-job-personal-email" className="block text-base text-[rgba(0,0,0,0.65)]">
+                        邮箱
+                      </label>
+                      <Input
+                        id="new-job-personal-email"
+                        value={personalEmail}
+                        placeholder="输入邮箱"
+                        className="mt-2"
+                        onChange={(event) => {
+                          clearCustomerMatchHint();
+                          setPersonalEmail(event.target.value);
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="new-job-customer-address" className="block text-base text-[rgba(0,0,0,0.65)]">
+                        地址
+                      </label>
+                      <Input
+                        id="new-job-customer-address"
+                        value={customerAddress}
+                        placeholder="输入地址"
+                        className="mt-2"
+                        onChange={(event) => {
+                          clearCustomerMatchHint();
+                          setCustomerAddress(event.target.value);
+                        }}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </SectionCard>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <SectionCard
+              title="PO"
+              titleIcon={<FileText size={18} />}
+              titleClassName="text-lg font-semibold"
+              actions={
+                <label
+                  className={`inline-flex items-center ${
+                    showNeedsPo ? "cursor-pointer" : "cursor-not-allowed opacity-55"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={showNeedsPo && needsPo}
+                    disabled={!showNeedsPo}
+                    onChange={(event) => setNeedsPo(event.target.checked)}
+                    className="peer sr-only"
+                  />
+                  <span className="relative h-7 w-12 rounded-full bg-[rgba(0,0,0,0.20)] transition peer-checked:bg-[#dc2626]">
+                    <span className="absolute left-1 top-1 h-5 w-5 rounded-full bg-white transition peer-checked:translate-x-5" />
+                  </span>
+                </label>
+              }
+            >
+              <div className="mt-2 text-sm text-[rgba(0,0,0,0.55)]">
+                {showNeedsPo ? (needsPo ? "保存后需要跟进 PO。" : "该工单不需要 PO。") : "WI 不适用 PO。"}
+              </div>
+            </SectionCard>
+
+            <SectionCard
+              title="Invoice"
+              titleIcon={<ReceiptText size={18} />}
+              titleClassName="text-lg font-semibold"
+              actions={
+                <label className="inline-flex cursor-pointer items-center gap-3 text-sm text-[rgba(0,0,0,0.70)]">
+                  <span>{createNewInvoice ? "Create New Invoice" : "Use Existing Invoice"}</span>
+                  <input
+                    type="checkbox"
+                    checked={createNewInvoice}
+                    onChange={(event) => setCreateNewInvoice(event.target.checked)}
+                    className="peer sr-only"
+                  />
+                  <span className="relative h-7 w-12 rounded-full bg-[rgba(0,0,0,0.20)] transition peer-checked:bg-[#dc2626]">
+                    <span className="absolute left-1 top-1 h-5 w-5 rounded-full bg-white transition peer-checked:translate-x-5" />
+                  </span>
+                </label>
+              }
+            >
+              <div className="mt-2 space-y-2">
+                {!createNewInvoice ? (
+                  <>
+                    <Input
+                      value={existingInvoiceNumber}
+                      onChange={(event) => setExistingInvoiceNumber(event.target.value)}
+                      placeholder="e.g. INV-00123"
+                    />
+                    <div className="text-sm text-[rgba(0,0,0,0.55)]">
+                      The system will find this invoice in Xero and link it to the new job.
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-sm text-[rgba(0,0,0,0.55)]">
+                    A new draft invoice will be created in Xero after the job is saved.
+                  </div>
+                )}
+              </div>
+            </SectionCard>
+          </div>
+
           <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
             <ServicesSection
               selectedServices={selectedServices}
@@ -1174,68 +1474,6 @@ export function NewJobPage() {
                   ))}
                 </div>
               </SectionCard>
-
-              {showNeedsPo ? (
-                <SectionCard
-                  title="采购订单 (PO)"
-                  titleIcon={<FileText size={18} />}
-                  titleClassName="text-lg font-semibold"
-                  actions={
-                    <label className="inline-flex cursor-pointer items-center">
-                      <input
-                        type="checkbox"
-                        checked={needsPo}
-                        onChange={(event) => setNeedsPo(event.target.checked)}
-                        className="peer sr-only"
-                      />
-                      <span className="relative h-7 w-12 rounded-full bg-[rgba(0,0,0,0.20)] transition peer-checked:bg-[#dc2626]">
-                        <span className="absolute left-1 top-1 h-5 w-5 rounded-full bg-white transition peer-checked:translate-x-5" />
-                      </span>
-                    </label>
-                  }
-                >
-                  {null}
-                </SectionCard>
-              ) : null}
-
-              <SectionCard
-                title="Invoice"
-                titleIcon={<ReceiptText size={18} />}
-                titleClassName="text-lg font-semibold"
-                actions={
-                  <label className="inline-flex cursor-pointer items-center gap-3 text-sm text-[rgba(0,0,0,0.70)]">
-                    <span>{createNewInvoice ? "Create New Invoice" : "Use Existing Invoice"}</span>
-                    <input
-                      type="checkbox"
-                      checked={createNewInvoice}
-                      onChange={(event) => setCreateNewInvoice(event.target.checked)}
-                      className="peer sr-only"
-                    />
-                    <span className="relative h-7 w-12 rounded-full bg-[rgba(0,0,0,0.20)] transition peer-checked:bg-[#dc2626]">
-                      <span className="absolute left-1 top-1 h-5 w-5 rounded-full bg-white transition peer-checked:translate-x-5" />
-                    </span>
-                  </label>
-                }
-              >
-                <div className="mt-3 space-y-3">
-                  {!createNewInvoice ? (
-                    <>
-                      <Input
-                        value={existingInvoiceNumber}
-                        onChange={(event) => setExistingInvoiceNumber(event.target.value)}
-                        placeholder="e.g. INV-00123"
-                      />
-                      <div className="text-sm text-[rgba(0,0,0,0.55)]">
-                        The system will find this invoice in Xero and link it to the new job.
-                      </div>
-                    </>
-                  ) : (
-                    <div className="text-sm text-[rgba(0,0,0,0.55)]">
-                      A new draft invoice will be created in Xero after the job is saved.
-                    </div>
-                  )}
-                </div>
-              </SectionCard>
             </div>
           </div>
 
@@ -1250,7 +1488,7 @@ export function NewJobPage() {
           >
             <div className="mt-4 space-y-5">
               <div>
-                <div className="text-base text-[rgba(0,0,0,0.50)]">车牌号码</div>
+                <div className="text-base text-[rgba(0,0,0,0.50)]">Rego / VIN / Chassis</div>
                 <div className="text-base font-semibold text-[rgba(0,0,0,0.86)]">
                   {rego.trim() || "未填写"}
                 </div>
@@ -1287,7 +1525,7 @@ export function NewJobPage() {
                 </div>
               </div>
               <div>
-                <div className="text-base text-[rgba(0,0,0,0.50)]">绑定灯条</div>
+                <div className="text-base text-[rgba(0,0,0,0.50)]">Key Tag</div>
                 <div className="text-base font-semibold text-[rgba(0,0,0,0.80)]">
                   {lightTagId || "未绑定"}
                 </div>
