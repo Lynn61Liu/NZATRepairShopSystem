@@ -254,14 +254,14 @@ public sealed class JobInvoiceService
         if (job is null)
             return JobInvoiceCreateResult.Fail(404, "Job not found.");
 
-        if (string.IsNullOrWhiteSpace(jobInvoice.ExternalInvoiceId) || !Guid.TryParse(jobInvoice.ExternalInvoiceId, out _))
+        if (string.IsNullOrWhiteSpace(jobInvoice.ExternalInvoiceId) || !Guid.TryParse(jobInvoice.ExternalInvoiceId, out var invoiceId))
             return JobInvoiceCreateResult.Fail(400, "Missing Xero invoice id.");
 
         if (!string.Equals(jobInvoice.ExternalStatus, "DRAFT", StringComparison.OrdinalIgnoreCase))
             return JobInvoiceCreateResult.Fail(400, "Only Xero draft invoices can have their reference updated from PO TODO.");
 
-        var request = BuildSyncRequestFromExistingInvoice(jobInvoice, reference);
-        return await SyncDraftForJobAsync(jobId, request, ct);
+        var request = BuildReferenceUpdateRequestFromExistingInvoice(jobInvoice, invoiceId, reference);
+        return await SyncDraftForJobAsync(jobInvoice, job, request, jobInvoice.InvoiceNote, sanitizeLineItems: false, ct);
     }
 
     public async Task<JobInvoiceCreateResult> SyncDraftForJobAsync(long jobId, SyncJobInvoiceDraftRequest payload, CancellationToken ct)
@@ -276,9 +276,6 @@ public sealed class JobInvoiceService
         var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == jobId, ct);
         if (job is null)
             return JobInvoiceCreateResult.Fail(404, "Job not found.");
-
-        if (payload.LineItems.Count == 0)
-            return JobInvoiceCreateResult.Fail(400, "At least one invoice line item is required.");
 
         var request = new CreateXeroInvoiceRequest
         {
@@ -295,6 +292,23 @@ public sealed class JobInvoiceService
             LineItems = await SanitizeLineItemsAsync(payload.LineItems, ct),
         };
         var normalizedInvoiceNote = string.IsNullOrWhiteSpace(payload.InvoiceNote) ? null : payload.InvoiceNote.Trim();
+
+        return await SyncDraftForJobAsync(jobInvoice, job, request, normalizedInvoiceNote, sanitizeLineItems: true, ct);
+    }
+
+    private async Task<JobInvoiceCreateResult> SyncDraftForJobAsync(
+        JobInvoice jobInvoice,
+        Job job,
+        CreateXeroInvoiceRequest request,
+        string? normalizedInvoiceNote,
+        bool sanitizeLineItems,
+        CancellationToken ct)
+    {
+        if (request.LineItems.Count == 0)
+            return JobInvoiceCreateResult.Fail(400, "At least one invoice line item is required.");
+
+        if (sanitizeLineItems)
+            request.LineItems = await SanitizeLineItemsAsync(request.LineItems, ct);
 
         if (request.LineItems.Count == 0)
             return JobInvoiceCreateResult.Fail(400, "At least one invoice line item is required.");
@@ -1837,12 +1851,29 @@ public sealed class JobInvoiceService
         return jobInvoice;
     }
 
-    private static SyncJobInvoiceDraftRequest BuildSyncRequestFromExistingInvoice(JobInvoice invoice, string reference)
+    internal static CreateXeroInvoiceRequest BuildReferenceUpdateRequestFromExistingInvoice(
+        JobInvoice invoice,
+        Guid invoiceId,
+        string reference)
     {
-        var existing = JsonSerializer.Deserialize<SyncJobInvoiceDraftRequest>(invoice.RequestPayloadJson ?? "{}", JsonOptions)
-            ?? new SyncJobInvoiceDraftRequest();
-        existing.Reference = reference;
-        return existing;
+        var fallback = new CreateXeroInvoiceRequest
+        {
+            InvoiceId = invoiceId,
+            Status = invoice.ExternalStatus ?? "DRAFT",
+            Reference = invoice.Reference,
+            Date = invoice.InvoiceDate,
+            LineAmountTypes = invoice.LineAmountTypes,
+            Contact = new XeroInvoiceContactInput
+            {
+                Name = invoice.ContactName,
+            },
+        };
+
+        var storedRequest = TryDeserializeStoredRequest(invoice.RequestPayloadJson) ?? new CreateXeroInvoiceRequest();
+        var request = MergeRequestWithFallback(storedRequest, fallback);
+        request.InvoiceId = invoiceId;
+        request.Reference = reference.Trim();
+        return request;
     }
 
     private static CreateXeroInvoiceRequest BuildRequestFromPayload(object? payload, JobInvoice existing)
