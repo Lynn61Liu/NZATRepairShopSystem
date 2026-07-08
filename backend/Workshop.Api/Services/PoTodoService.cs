@@ -340,6 +340,10 @@ public sealed class PoTodoService
             .ThenByDescending(x => x.Id)
             .FirstOrDefaultAsync(ct);
         var nextReference = PoReferenceBuilder.BuildReference(invoice?.Reference ?? job.InvoiceReference, normalizedPo);
+        var originalJobPoNumber = job.PoNumber;
+        var originalJobInvoiceReference = job.InvoiceReference;
+        var originalInvoiceId = invoice?.Id;
+        var originalInvoiceReference = invoice?.Reference;
 
         steps["xero"] = PoTodoStepResult.Running("Updating Xero reference.");
         JobInvoiceCreateResult xero;
@@ -377,6 +381,13 @@ public sealed class PoTodoService
         if (string.IsNullOrWhiteSpace(gmailLog?.GmailThreadId) && string.IsNullOrWhiteSpace(gmailLog?.GmailMessageId))
         {
             steps["gmail"] = PoTodoStepResult.Failed("Gmail thread or message was not found.");
+            await RestoreLocalReferencesAsync(
+                jobId,
+                originalInvoiceId,
+                originalJobPoNumber,
+                originalJobInvoiceReference,
+                originalInvoiceReference,
+                ct);
             return new ConfirmPoResult(false, jobId, normalizedPo, nextReference, steps);
         }
 
@@ -393,12 +404,26 @@ public sealed class PoTodoService
         {
             _logger?.LogWarning(ex, "PO confirm Gmail label update failed for job {JobId}.", jobId);
             steps["gmail"] = PoTodoStepResult.Failed(ex.Message);
+            await RestoreLocalReferencesAsync(
+                jobId,
+                originalInvoiceId,
+                originalJobPoNumber,
+                originalJobInvoiceReference,
+                originalInvoiceReference,
+                ct);
             return new ConfirmPoResult(false, jobId, normalizedPo, nextReference, steps);
         }
 
         if (!gmail.Ok)
         {
             steps["gmail"] = PoTodoStepResult.Failed(gmail.Error ?? "Failed to add Gmail label.");
+            await RestoreLocalReferencesAsync(
+                jobId,
+                originalInvoiceId,
+                originalJobPoNumber,
+                originalJobInvoiceReference,
+                originalInvoiceReference,
+                ct);
             return new ConfirmPoResult(false, jobId, normalizedPo, nextReference, steps);
         }
         steps["gmail"] = PoTodoStepResult.Success("Gmail label added.");
@@ -463,6 +488,46 @@ public sealed class PoTodoService
         return _gmailLabelService is null
             ? GmailLabelResult.Fail(500, "Gmail label service is unavailable.")
             : await _gmailLabelService.AddInvoicedLabelAsync(gmailAccountId, gmailThreadId, gmailMessageId, ct);
+    }
+
+    private async Task RestoreLocalReferencesAsync(
+        long jobId,
+        long? invoiceId,
+        string? originalJobPoNumber,
+        string? originalJobInvoiceReference,
+        string? originalInvoiceReference,
+        CancellationToken ct)
+    {
+        try
+        {
+            var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == jobId, ct);
+            if (job is not null)
+            {
+                job.PoNumber = originalJobPoNumber;
+                job.InvoiceReference = originalJobInvoiceReference;
+                job.UpdatedAt = DateTime.UtcNow;
+            }
+
+            if (invoiceId.HasValue)
+            {
+                var invoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.Id == invoiceId.Value, ct);
+                if (invoice is not null)
+                {
+                    invoice.Reference = originalInvoiceReference;
+                    invoice.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "PO confirm local reference restore failed for job {JobId}.", jobId);
+        }
     }
 
     private async Task<JobPoState> EnsureStateAsync(long jobId, DateTime now, CancellationToken ct)

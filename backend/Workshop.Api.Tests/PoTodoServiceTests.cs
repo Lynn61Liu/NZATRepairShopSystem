@@ -371,6 +371,58 @@ public sealed class PoTodoServiceTests
     }
 
     [Fact]
+    public async Task ConfirmPoAsync_RestoresLocalReference_WhenGmailFailsAfterXeroSuccess()
+    {
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        db.Jobs.Add(new Job
+        {
+            Id = 5503,
+            NeedsPo = true,
+            InvoiceReference = "PO stale ABC123",
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        db.JobInvoices.Add(new JobInvoice
+        {
+            JobId = 5503,
+            ExternalInvoiceId = Guid.NewGuid().ToString(),
+            ExternalStatus = "DRAFT",
+            Reference = "PO Pending ABC123",
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(
+            db,
+            updateDraftReferenceAsync: async (jobId, reference, ct) =>
+            {
+                var job = await db.Jobs.SingleAsync(x => x.Id == jobId, ct);
+                var invoice = await db.JobInvoices.SingleAsync(x => x.JobId == jobId, ct);
+                job.InvoiceReference = reference;
+                invoice.Reference = reference;
+                await db.SaveChangesAsync(ct);
+                return JobInvoiceCreateResult.Success(invoice, false);
+            });
+
+        var result = await service.ConfirmPoAsync(5503, "12345", CancellationToken.None);
+
+        result.Success.Should().BeFalse();
+        result.Steps["xero"].Status.Should().Be("success");
+        result.Steps["gmail"].Status.Should().Be("failed");
+        result.Steps["savePo"].Status.Should().Be("pending");
+        result.Steps["poState"].Status.Should().Be("pending");
+
+        var restoredJob = await db.Jobs.SingleAsync(x => x.Id == 5503);
+        restoredJob.PoNumber.Should().BeNull();
+        restoredJob.InvoiceReference.Should().Be("PO stale ABC123");
+
+        var restoredInvoice = await db.JobInvoices.SingleAsync(x => x.JobId == 5503);
+        restoredInvoice.Reference.Should().Be("PO Pending ABC123");
+    }
+
+    [Fact]
     public void BuildReference_ReplacesPoPendingReference()
     {
         PoReferenceBuilder.BuildReference("PO Pending ABC123", "12345").Should().Be("PO 12345 ABC123");
