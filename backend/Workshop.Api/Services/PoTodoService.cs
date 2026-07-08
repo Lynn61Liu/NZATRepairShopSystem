@@ -33,7 +33,7 @@ public sealed class PoTodoService
         state.Status = JobPoStateStatus.AwaitingReply;
         state.SentSource = "manual";
         state.ManuallyMarkedSentAt = now;
-        state.LastRequestSentAt ??= now;
+        state.LastRequestSentAt = now;
         state.UpdatedAt = now;
 
         await _db.SaveChangesAsync(ct);

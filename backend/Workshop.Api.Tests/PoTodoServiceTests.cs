@@ -15,12 +15,14 @@ public sealed class PoTodoServiceTests
     {
         await using var db = CreateDb();
         var now = DateTime.UtcNow;
+        var staleSentAt = now.AddDays(-7);
         db.Jobs.Add(new Job { Id = 5200, NeedsPo = true, CreatedAt = now, UpdatedAt = now });
         db.JobPoStates.Add(new JobPoState
         {
             JobId = 5200,
             CorrelationId = JobPoStateService.BuildCorrelationId(5200),
             Status = JobPoStateStatus.Draft,
+            LastRequestSentAt = staleSentAt,
             CreatedAt = now,
             UpdatedAt = now,
         });
@@ -35,6 +37,8 @@ public sealed class PoTodoServiceTests
         state.Status.Should().Be(JobPoStateStatus.AwaitingReply);
         state.SentSource.Should().Be("manual");
         state.ManuallyMarkedSentAt.Should().NotBeNull();
+        state.LastRequestSentAt.Should().Be(state.ManuallyMarkedSentAt);
+        state.LastRequestSentAt.Should().NotBe(staleSentAt);
     }
 
     [Fact]
