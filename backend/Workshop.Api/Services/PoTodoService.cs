@@ -316,6 +316,54 @@ public sealed class PoTodoService
         return new PoTodoCompleteResult(updated, distinctJobIds.Length - updated);
     }
 
+    public async Task<PoDraftPreviewResult?> GetDraftPreviewAsync(long jobId, CancellationToken ct)
+    {
+        var row = await (
+            from job in _db.Jobs.AsNoTracking()
+            join vehicle in _db.Vehicles.AsNoTracking() on job.VehicleId equals vehicle.Id into vehicleJoin
+            from vehicle in vehicleJoin.DefaultIfEmpty()
+            join state in _db.JobPoStates.AsNoTracking() on job.Id equals state.JobId into stateJoin
+            from state in stateJoin.DefaultIfEmpty()
+            where job.Id == jobId && job.NeedsPo
+            select new
+            {
+                JobId = job.Id,
+                Vehicle = vehicle,
+                State = state,
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (row is null)
+            return null;
+
+        var correlationId = string.IsNullOrWhiteSpace(row.State?.CorrelationId)
+            ? JobPoStateService.BuildCorrelationId(jobId)
+            : row.State.CorrelationId;
+        var vehicleLabel = BuildVehicleLabel(row.Vehicle);
+        var subject = $"PO Request for {vehicleLabel} [{correlationId}]";
+        var encodedRego = System.Net.WebUtility.HtmlEncode(row.Vehicle?.Plate ?? "");
+        var encodedModel = System.Net.WebUtility.HtmlEncode(BuildModelText(row.Vehicle));
+        var encodedCorrelationId = System.Net.WebUtility.HtmlEncode(correlationId);
+        var htmlBody = $"""
+            <div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">
+              <div style="margin-bottom: 20px;">Hi Team,</div>
+              <div style="margin-bottom: 20px;">Could you please issue a PO number for the jobs on the vehicle below? Much appreciated.</div>
+              <div style="margin-bottom: 8px;">
+                <div style="margin-bottom: 6px;"><strong>- Rego:</strong> {encodedRego}</div>
+                <div style="margin-bottom: 6px;"><strong>- Make & Model:</strong> {encodedModel}</div>
+                <div style="margin-bottom: 6px;"><strong>- Reference:</strong> {encodedCorrelationId}</div>
+              </div>
+            </div>
+            """;
+
+        return new PoDraftPreviewResult(
+            row.JobId,
+            row.State?.CounterpartyEmail ?? "",
+            subject,
+            htmlBody,
+            row.State?.GmailDraftId);
+    }
+
     public async Task<ConfirmPoResult> ConfirmPoAsync(long jobId, string? poNumber, CancellationToken ct)
     {
         var steps = CreateConfirmPoSteps();
@@ -562,6 +610,22 @@ public sealed class PoTodoService
             }.Where(x => !string.IsNullOrWhiteSpace(x)));
     }
 
+    private static string BuildVehicleLabel(Vehicle? vehicle)
+    {
+        if (vehicle is null)
+            return "";
+
+        return string.Join(
+            " ",
+            new[]
+            {
+                vehicle.Plate,
+                vehicle.Year?.ToString(),
+                vehicle.Make,
+                vehicle.Model,
+            }.Where(x => !string.IsNullOrWhiteSpace(x)));
+    }
+
     private static string ToPoStatusValue(JobPoStateStatus status) => status switch
     {
         JobPoStateStatus.Draft => "draft",
@@ -643,6 +707,13 @@ public sealed record PoTodoActionResult(bool Success, string? Error)
 }
 
 public sealed record PoTodoCompleteResult(int Updated, int Skipped);
+
+public sealed record PoDraftPreviewResult(
+    long JobId,
+    string To,
+    string Subject,
+    string HtmlBody,
+    string? GmailDraftId);
 
 public sealed record PoTodoStepResult(string Status, string Message)
 {

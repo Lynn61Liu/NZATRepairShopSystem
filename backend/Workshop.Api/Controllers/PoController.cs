@@ -99,6 +99,13 @@ public sealed class PoController : ControllerBase
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
+    [HttpGet("jobs/{jobId:long}/draft-preview")]
+    public async Task<IActionResult> GetDraftPreview(long jobId, CancellationToken ct)
+    {
+        var result = await _poTodoService.GetDraftPreviewAsync(jobId, ct);
+        return result is null ? NotFound(new { error = "PO draft preview is not available." }) : Ok(result);
+    }
+
     [HttpPost("jobs/{jobId:long}/confirm-po")]
     public async Task<IActionResult> ConfirmPo(long jobId, [FromBody] ConfirmPoRequest? request, CancellationToken ct)
     {

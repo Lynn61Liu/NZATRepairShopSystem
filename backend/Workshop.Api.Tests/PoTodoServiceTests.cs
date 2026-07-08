@@ -423,6 +423,53 @@ public sealed class PoTodoServiceTests
     }
 
     [Fact]
+    public async Task GetDraftPreviewAsync_ReturnsPoEmailDraftForNeedsPoJob()
+    {
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        db.Vehicles.Add(new Vehicle
+        {
+            Id = 5601,
+            Plate = "ABC123",
+            Make = "Toyota",
+            Model = "Hiace",
+            Year = 2020,
+            UpdatedAt = now,
+        });
+        db.Jobs.Add(new Job
+        {
+            Id = 5602,
+            NeedsPo = true,
+            VehicleId = 5601,
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        db.JobPoStates.Add(new JobPoState
+        {
+            JobId = 5602,
+            CorrelationId = "PO-5602-XYZ",
+            CounterpartyEmail = "supplier@example.test",
+            GmailDraftId = "draft-5602",
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+
+        var preview = await service.GetDraftPreviewAsync(5602, CancellationToken.None);
+
+        preview.Should().NotBeNull();
+        preview!.JobId.Should().Be(5602);
+        preview.To.Should().Be("supplier@example.test");
+        preview.Subject.Should().Be("PO Request for ABC123 2020 Toyota Hiace [PO-5602-XYZ]");
+        preview.HtmlBody.Should().Contain("ABC123");
+        preview.HtmlBody.Should().Contain("2020 Toyota Hiace");
+        preview.HtmlBody.Should().Contain("PO-5602-XYZ");
+        preview.GmailDraftId.Should().Be("draft-5602");
+    }
+
+    [Fact]
     public void BuildReference_ReplacesPoPendingReference()
     {
         PoReferenceBuilder.BuildReference("PO Pending ABC123", "12345").Should().Be("PO 12345 ABC123");
