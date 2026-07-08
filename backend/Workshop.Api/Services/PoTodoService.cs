@@ -9,6 +9,8 @@ public sealed class PoTodoService
     private readonly AppDbContext _db;
     private readonly GmailThreadSyncService? _gmailThreadSyncService;
     private readonly JobPoStateService? _jobPoStateService;
+    private readonly GmailLabelService? _gmailLabelService;
+    private readonly JobInvoiceService? _jobInvoiceService;
     private readonly ILogger<PoTodoService>? _logger;
 
     public PoTodoService(
@@ -22,6 +24,8 @@ public sealed class PoTodoService
         _db = db;
         _gmailThreadSyncService = gmailThreadSyncService;
         _jobPoStateService = jobPoStateService;
+        _gmailLabelService = gmailLabelService;
+        _jobInvoiceService = jobInvoiceService;
         _logger = logger;
     }
 
@@ -306,6 +310,86 @@ public sealed class PoTodoService
         return new PoTodoCompleteResult(updated, distinctJobIds.Length - updated);
     }
 
+    public async Task<ConfirmPoResult> ConfirmPoAsync(long jobId, string? poNumber, CancellationToken ct)
+    {
+        var steps = CreateConfirmPoSteps();
+        var normalizedPo = poNumber?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(normalizedPo))
+        {
+            steps["savePo"] = PoTodoStepResult.Failed("PO number is required.");
+            return new ConfirmPoResult(false, jobId, "", "", steps);
+        }
+
+        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == jobId && x.NeedsPo, ct);
+        if (job is null)
+        {
+            steps["savePo"] = PoTodoStepResult.Failed("Job not found or does not need PO.");
+            return new ConfirmPoResult(false, jobId, normalizedPo, "", steps);
+        }
+
+        var invoice = await _db.JobInvoices.AsNoTracking()
+            .Where(x => x.JobId == jobId)
+            .OrderByDescending(x => x.UpdatedAt)
+            .ThenByDescending(x => x.CreatedAt)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(ct);
+        var nextReference = PoReferenceBuilder.BuildReference(job.InvoiceReference ?? invoice?.Reference, normalizedPo);
+
+        steps["savePo"] = PoTodoStepResult.Running("Saving PO number.");
+        job.PoNumber = normalizedPo;
+        job.InvoiceReference = nextReference;
+        job.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        steps["savePo"] = PoTodoStepResult.Success("PO saved.");
+
+        if (_jobInvoiceService is null)
+        {
+            steps["xero"] = PoTodoStepResult.Failed("Xero invoice service is unavailable.");
+            return new ConfirmPoResult(false, jobId, normalizedPo, nextReference, steps);
+        }
+
+        steps["xero"] = PoTodoStepResult.Running("Updating Xero reference.");
+        var xero = await _jobInvoiceService.UpdateDraftReferenceAsync(jobId, nextReference, ct);
+        if (!xero.Ok)
+        {
+            steps["xero"] = PoTodoStepResult.Failed(xero.Error ?? "Failed to update Xero reference.");
+            return new ConfirmPoResult(false, jobId, normalizedPo, nextReference, steps);
+        }
+        steps["xero"] = PoTodoStepResult.Success("Xero reference updated.");
+
+        var latestLog = await _db.GmailMessageLogs.AsNoTracking()
+            .Where(x => x.CorrelationId == JobPoStateService.BuildCorrelationId(jobId))
+            .ToListAsync(ct);
+        var gmailLog = latestLog
+            .OrderByDescending(GetLogOccurredAtUtc)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefault();
+
+        steps["gmail"] = PoTodoStepResult.Running("Adding Gmail label.");
+        var gmail = _gmailLabelService is null
+            ? GmailLabelResult.Fail(500, "Gmail label service is unavailable.")
+            : await _gmailLabelService.AddInvoicedLabelAsync(gmailLog?.GmailAccountId, gmailLog?.GmailThreadId, gmailLog?.GmailMessageId, ct);
+        if (!gmail.Ok)
+        {
+            steps["gmail"] = PoTodoStepResult.Failed(gmail.Error ?? "Failed to add Gmail label.");
+            return new ConfirmPoResult(false, jobId, normalizedPo, nextReference, steps);
+        }
+        steps["gmail"] = PoTodoStepResult.Success("Gmail label added.");
+
+        steps["poState"] = PoTodoStepResult.Running("Updating PO state.");
+        var now = DateTime.UtcNow;
+        var state = await EnsureStateAsync(jobId, now, ct);
+        state.Status = JobPoStateStatus.PoConfirmed;
+        state.ConfirmedPoNumber = normalizedPo;
+        state.FollowUpEnabled = false;
+        state.NextFollowUpDueAt = null;
+        state.UpdatedAt = now;
+        await _db.SaveChangesAsync(ct);
+        steps["poState"] = PoTodoStepResult.Success("PO state updated.");
+
+        return new ConfirmPoResult(true, jobId, normalizedPo, nextReference, steps);
+    }
+
     private async Task<JobPoState> EnsureStateAsync(long jobId, DateTime now, CancellationToken ct)
     {
         var state = await _db.JobPoStates.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
@@ -383,6 +467,14 @@ public sealed class PoTodoService
         return log.UpdatedAt != default ? log.UpdatedAt : log.CreatedAt;
     }
 
+    private static Dictionary<string, PoTodoStepResult> CreateConfirmPoSteps() => new()
+    {
+        ["savePo"] = PoTodoStepResult.Pending("Waiting to save PO."),
+        ["xero"] = PoTodoStepResult.Pending("Waiting to update Xero reference."),
+        ["gmail"] = PoTodoStepResult.Pending("Waiting to add Gmail label."),
+        ["poState"] = PoTodoStepResult.Pending("Waiting to update PO state."),
+    };
+
     private sealed record PoTodoQueryRow(
         long JobId,
         DateTime CreatedAt,
@@ -411,6 +503,21 @@ public sealed record PoTodoActionResult(bool Success, string? Error)
 }
 
 public sealed record PoTodoCompleteResult(int Updated, int Skipped);
+
+public sealed record PoTodoStepResult(string Status, string Message)
+{
+    public static PoTodoStepResult Pending(string message) => new("pending", message);
+    public static PoTodoStepResult Running(string message) => new("running", message);
+    public static PoTodoStepResult Success(string message) => new("success", message);
+    public static PoTodoStepResult Failed(string message) => new("failed", message);
+}
+
+public sealed record ConfirmPoResult(
+    bool Success,
+    long JobId,
+    string PoNumber,
+    string InvoiceReference,
+    Dictionary<string, PoTodoStepResult> Steps);
 
 public sealed record PoTodoListResult(int Total, IReadOnlyList<PoTodoRow> Items);
 

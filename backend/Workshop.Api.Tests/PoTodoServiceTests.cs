@@ -227,6 +227,54 @@ public sealed class PoTodoServiceTests
     }
 
     [Fact]
+    public async Task ConfirmPoAsync_FailsSaveStep_WhenPoNumberIsBlank()
+    {
+        await using var db = CreateDb();
+        var service = CreateService(db);
+
+        var result = await service.ConfirmPoAsync(5500, " ", CancellationToken.None);
+
+        result.Success.Should().BeFalse();
+        result.PoNumber.Should().Be("");
+        result.InvoiceReference.Should().Be("");
+        result.Steps["savePo"].Status.Should().Be("failed");
+        result.Steps["xero"].Status.Should().Be("pending");
+        result.Steps["gmail"].Status.Should().Be("pending");
+        result.Steps["poState"].Status.Should().Be("pending");
+    }
+
+    [Fact]
+    public async Task ConfirmPoAsync_ReplacesPendingReferenceAndReportsXeroFailure()
+    {
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        db.Jobs.Add(new Job
+        {
+            Id = 5501,
+            NeedsPo = true,
+            InvoiceReference = "PO Pending ABC123",
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        await db.SaveChangesAsync();
+        var service = CreateService(db);
+
+        var result = await service.ConfirmPoAsync(5501, " 12345 ", CancellationToken.None);
+
+        result.Success.Should().BeFalse();
+        result.PoNumber.Should().Be("12345");
+        result.InvoiceReference.Should().Be("PO 12345 ABC123");
+        result.Steps["savePo"].Status.Should().Be("success");
+        result.Steps["xero"].Status.Should().Be("failed");
+        result.Steps["gmail"].Status.Should().Be("pending");
+        result.Steps["poState"].Status.Should().Be("pending");
+
+        var job = await db.Jobs.SingleAsync(x => x.Id == 5501);
+        job.PoNumber.Should().Be("12345");
+        job.InvoiceReference.Should().Be("PO 12345 ABC123");
+    }
+
+    [Fact]
     public void BuildReference_ReplacesPoPendingReference()
     {
         PoReferenceBuilder.BuildReference("PO Pending ABC123", "12345").Should().Be("PO 12345 ABC123");
