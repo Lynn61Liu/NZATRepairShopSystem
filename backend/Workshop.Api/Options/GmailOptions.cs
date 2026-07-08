@@ -8,5 +8,5 @@ public sealed class GmailOptions
     public string ClientSecret { get; set; } = "";
     public string RedirectUri { get; set; } = "";
     public string Scopes { get; set; } =
-        "openid email https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose";
+        "openid email https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.modify";
 }

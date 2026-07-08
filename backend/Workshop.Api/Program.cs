@@ -139,6 +139,7 @@ builder.Services.AddSingleton<InvoiceOutboxKickService>();
 builder.Services.AddScoped<GmailAccountService>();
 builder.Services.AddScoped<GmailTokenService>();
 builder.Services.AddScoped<GmailMessageSenderService>();
+builder.Services.AddScoped<GmailLabelService>();
 builder.Services.AddSingleton<CourtesyCarAgreementStorageService>();
 builder.Services.AddScoped<CourtesyCarAgreementService>();
 builder.Services.AddHostedService<CourtesyCarSchemaInitializerService>();
