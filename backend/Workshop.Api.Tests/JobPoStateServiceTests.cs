@@ -144,6 +144,37 @@ public sealed class JobPoStateServiceTests
         state.Status.Should().Be(JobPoStateStatus.Completed);
     }
 
+    [Fact]
+    public async Task SyncStateForJobAsync_PreservesManualSentStateWithoutGmailSentLogs()
+    {
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        db.Jobs.Add(new Job
+        {
+            Id = 5101,
+            NeedsPo = true,
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        await db.SaveChangesAsync();
+
+        var poTodoService = new PoTodoService(db, null!, null!, null!, null!, null!);
+        var syncService = CreateService(db, enabled: true);
+
+        var result = await poTodoService.ManualConfirmSentAsync(5101, CancellationToken.None);
+        result.Success.Should().BeTrue();
+
+        await syncService.SyncStateForJobAsync(5101, CancellationToken.None);
+
+        var state = await db.JobPoStates.SingleAsync(x => x.JobId == 5101);
+        state.Status.Should().Be(JobPoStateStatus.AwaitingReply);
+        state.SentSource.Should().Be("manual");
+        state.ManuallyMarkedSentAt.Should().NotBeNull();
+        state.FirstRequestSentAt.Should().Be(state.ManuallyMarkedSentAt);
+        state.LastRequestSentAt.Should().Be(state.ManuallyMarkedSentAt);
+        state.NextFollowUpDueAt.Should().NotBeNull();
+    }
+
     private static AppDbContext CreateDb()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
