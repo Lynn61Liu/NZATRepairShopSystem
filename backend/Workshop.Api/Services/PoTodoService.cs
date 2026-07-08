@@ -11,6 +11,8 @@ public sealed class PoTodoService
     private readonly JobPoStateService? _jobPoStateService;
     private readonly GmailLabelService? _gmailLabelService;
     private readonly JobInvoiceService? _jobInvoiceService;
+    private readonly Func<long, string, CancellationToken, Task<JobInvoiceCreateResult>>? _updateDraftReferenceAsync;
+    private readonly Func<long?, string?, string?, CancellationToken, Task<GmailLabelResult>>? _addInvoicedLabelAsync;
     private readonly ILogger<PoTodoService>? _logger;
 
     public PoTodoService(
@@ -19,13 +21,17 @@ public sealed class PoTodoService
         JobPoStateService? jobPoStateService,
         GmailLabelService? gmailLabelService,
         JobInvoiceService? jobInvoiceService,
-        ILogger<PoTodoService>? logger)
+        ILogger<PoTodoService>? logger,
+        Func<long, string, CancellationToken, Task<JobInvoiceCreateResult>>? updateDraftReferenceAsync = null,
+        Func<long?, string?, string?, CancellationToken, Task<GmailLabelResult>>? addInvoicedLabelAsync = null)
     {
         _db = db;
         _gmailThreadSyncService = gmailThreadSyncService;
         _jobPoStateService = jobPoStateService;
         _gmailLabelService = gmailLabelService;
         _jobInvoiceService = jobInvoiceService;
+        _updateDraftReferenceAsync = updateDraftReferenceAsync;
+        _addInvoicedLabelAsync = addInvoicedLabelAsync;
         _logger = logger;
     }
 
@@ -333,23 +339,25 @@ public sealed class PoTodoService
             .ThenByDescending(x => x.CreatedAt)
             .ThenByDescending(x => x.Id)
             .FirstOrDefaultAsync(ct);
-        var nextReference = PoReferenceBuilder.BuildReference(job.InvoiceReference ?? invoice?.Reference, normalizedPo);
+        var nextReference = PoReferenceBuilder.BuildReference(invoice?.Reference ?? job.InvoiceReference, normalizedPo);
 
-        steps["savePo"] = PoTodoStepResult.Running("Saving PO number.");
-        job.PoNumber = normalizedPo;
-        job.InvoiceReference = nextReference;
-        job.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync(ct);
-        steps["savePo"] = PoTodoStepResult.Success("PO saved.");
-
-        if (_jobInvoiceService is null)
+        steps["xero"] = PoTodoStepResult.Running("Updating Xero reference.");
+        JobInvoiceCreateResult xero;
+        try
         {
-            steps["xero"] = PoTodoStepResult.Failed("Xero invoice service is unavailable.");
+            xero = await UpdateDraftReferenceAsync(jobId, nextReference, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "PO confirm Xero reference update failed for job {JobId}.", jobId);
+            steps["xero"] = PoTodoStepResult.Failed(ex.Message);
             return new ConfirmPoResult(false, jobId, normalizedPo, nextReference, steps);
         }
 
-        steps["xero"] = PoTodoStepResult.Running("Updating Xero reference.");
-        var xero = await _jobInvoiceService.UpdateDraftReferenceAsync(jobId, nextReference, ct);
         if (!xero.Ok)
         {
             steps["xero"] = PoTodoStepResult.Failed(xero.Error ?? "Failed to update Xero reference.");
@@ -366,9 +374,28 @@ public sealed class PoTodoService
             .FirstOrDefault();
 
         steps["gmail"] = PoTodoStepResult.Running("Adding Gmail label.");
-        var gmail = _gmailLabelService is null
-            ? GmailLabelResult.Fail(500, "Gmail label service is unavailable.")
-            : await _gmailLabelService.AddInvoicedLabelAsync(gmailLog?.GmailAccountId, gmailLog?.GmailThreadId, gmailLog?.GmailMessageId, ct);
+        if (string.IsNullOrWhiteSpace(gmailLog?.GmailThreadId) && string.IsNullOrWhiteSpace(gmailLog?.GmailMessageId))
+        {
+            steps["gmail"] = PoTodoStepResult.Failed("Gmail thread or message was not found.");
+            return new ConfirmPoResult(false, jobId, normalizedPo, nextReference, steps);
+        }
+
+        GmailLabelResult gmail;
+        try
+        {
+            gmail = await AddInvoicedLabelAsync(gmailLog.GmailAccountId, gmailLog.GmailThreadId, gmailLog.GmailMessageId, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "PO confirm Gmail label update failed for job {JobId}.", jobId);
+            steps["gmail"] = PoTodoStepResult.Failed(ex.Message);
+            return new ConfirmPoResult(false, jobId, normalizedPo, nextReference, steps);
+        }
+
         if (!gmail.Ok)
         {
             steps["gmail"] = PoTodoStepResult.Failed(gmail.Error ?? "Failed to add Gmail label.");
@@ -376,18 +403,66 @@ public sealed class PoTodoService
         }
         steps["gmail"] = PoTodoStepResult.Success("Gmail label added.");
 
+        steps["savePo"] = PoTodoStepResult.Running("Saving PO number.");
         steps["poState"] = PoTodoStepResult.Running("Updating PO state.");
         var now = DateTime.UtcNow;
         var state = await EnsureStateAsync(jobId, now, ct);
+        job.PoNumber = normalizedPo;
+        job.InvoiceReference = nextReference;
+        job.UpdatedAt = now;
         state.Status = JobPoStateStatus.PoConfirmed;
         state.ConfirmedPoNumber = normalizedPo;
         state.FollowUpEnabled = false;
         state.NextFollowUpDueAt = null;
+        state.RequiresAdminAttention = false;
+        state.AdminAttentionReason = null;
+        state.FollowUpCount = 0;
+        state.LastFollowUpSentAt = null;
         state.UpdatedAt = now;
-        await _db.SaveChangesAsync(ct);
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "PO confirm local save failed for job {JobId}.", jobId);
+            steps["savePo"] = PoTodoStepResult.Failed(ex.Message);
+            steps["poState"] = PoTodoStepResult.Failed(ex.Message);
+            return new ConfirmPoResult(false, jobId, normalizedPo, nextReference, steps);
+        }
+
+        steps["savePo"] = PoTodoStepResult.Success("PO saved.");
         steps["poState"] = PoTodoStepResult.Success("PO state updated.");
 
         return new ConfirmPoResult(true, jobId, normalizedPo, nextReference, steps);
+    }
+
+    private async Task<JobInvoiceCreateResult> UpdateDraftReferenceAsync(long jobId, string reference, CancellationToken ct)
+    {
+        if (_updateDraftReferenceAsync is not null)
+            return await _updateDraftReferenceAsync(jobId, reference, ct);
+
+        return _jobInvoiceService is null
+            ? JobInvoiceCreateResult.Fail(500, "Xero invoice service is unavailable.")
+            : await _jobInvoiceService.UpdateDraftReferenceAsync(jobId, reference, ct);
+    }
+
+    private async Task<GmailLabelResult> AddInvoicedLabelAsync(
+        long? gmailAccountId,
+        string? gmailThreadId,
+        string? gmailMessageId,
+        CancellationToken ct)
+    {
+        if (_addInvoicedLabelAsync is not null)
+            return await _addInvoicedLabelAsync(gmailAccountId, gmailThreadId, gmailMessageId, ct);
+
+        return _gmailLabelService is null
+            ? GmailLabelResult.Fail(500, "Gmail label service is unavailable.")
+            : await _gmailLabelService.AddInvoicedLabelAsync(gmailAccountId, gmailThreadId, gmailMessageId, ct);
     }
 
     private async Task<JobPoState> EnsureStateAsync(long jobId, DateTime now, CancellationToken ct)
