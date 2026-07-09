@@ -27,6 +27,9 @@ export type PoTodoRow = {
 export type PoTodoListResponse = {
   total: number;
   items: PoTodoRow[];
+  currentPage: number;
+  pageSize: number;
+  totalPages: number;
 };
 
 export type PoTodoSyncResponse = {

@@ -20,6 +20,8 @@ const EMPTY_SUMMARY: PoUnreadSummary = {
   items: [],
 };
 
+export const PO_UNREAD_SUMMARY_POLL_MS = 5 * 60 * 1000;
+
 const PoUnreadSummaryContext = createContext<PoUnreadSummary | null>(null);
 
 function normalizeSummary(data: PoUnreadSummary | null | undefined): PoUnreadSummary {
@@ -30,14 +32,11 @@ function normalizeSummary(data: PoUnreadSummary | null | undefined): PoUnreadSum
   };
 }
 
-function usePoUnreadSummaryPolling(pollMs = 60000, enabled = true) {
+function usePoUnreadSummaryPolling(pollMs = PO_UNREAD_SUMMARY_POLL_MS, enabled = true) {
   const [summary, setSummary] = useState<PoUnreadSummary>(EMPTY_SUMMARY);
 
   useEffect(() => {
-    if (!enabled) {
-      setSummary(EMPTY_SUMMARY);
-      return;
-    }
+    if (!enabled) return;
 
     let cancelled = false;
 
@@ -58,12 +57,12 @@ function usePoUnreadSummaryPolling(pollMs = 60000, enabled = true) {
     };
   }, [enabled, pollMs]);
 
-  return summary;
+  return enabled ? summary : EMPTY_SUMMARY;
 }
 
 export function PoUnreadSummaryProvider({
   children,
-  pollMs = 60000,
+  pollMs = PO_UNREAD_SUMMARY_POLL_MS,
 }: {
   children: ReactNode;
   pollMs?: number;
@@ -72,7 +71,7 @@ export function PoUnreadSummaryProvider({
   return createElement(PoUnreadSummaryContext.Provider, { value: summary }, children);
 }
 
-export function usePoUnreadSummary(pollMs = 60000) {
+export function usePoUnreadSummary(pollMs = PO_UNREAD_SUMMARY_POLL_MS) {
   const context = useContext(PoUnreadSummaryContext);
   const fallbackSummary = usePoUnreadSummaryPolling(pollMs, context === null);
   return context ?? fallbackSummary;

@@ -9,8 +9,8 @@ import type {
   PoTodoTab,
 } from "./poTodo.types";
 
-export async function fetchPoTodo(tab: PoTodoTab): Promise<PoTodoListResponse> {
-  const query = new URLSearchParams({ status: tab });
+export async function fetchPoTodo(tab: PoTodoTab, page = 1, pageSize = 15): Promise<PoTodoListResponse> {
+  const query = new URLSearchParams({ status: tab, page: String(page), pageSize: String(pageSize) });
   const res = await requestJson<PoTodoListResponse>(`/api/po/todo?${query.toString()}`);
   if (!res.ok || !res.data) {
     throw new Error(res.error || "Failed to load PO TODO list");
@@ -18,8 +18,9 @@ export async function fetchPoTodo(tab: PoTodoTab): Promise<PoTodoListResponse> {
   return res.data;
 }
 
-export async function syncPoTodo(): Promise<PoTodoSyncResponse> {
-  const res = await requestJson<PoTodoSyncResponse>("/api/po/todo/sync", { method: "POST" });
+export async function syncPoTodo(tab: PoTodoTab, page = 1, pageSize = 15): Promise<PoTodoSyncResponse> {
+  const query = new URLSearchParams({ status: tab, page: String(page), pageSize: String(pageSize) });
+  const res = await requestJson<PoTodoSyncResponse>(`/api/po/todo/sync?${query.toString()}`, { method: "POST" });
   if (!res.ok || !res.data) {
     throw new Error(res.error || "Failed to sync PO TODO list");
   }

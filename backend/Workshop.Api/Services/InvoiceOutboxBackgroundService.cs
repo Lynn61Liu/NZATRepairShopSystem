@@ -4,7 +4,7 @@ namespace Workshop.Api.Services;
 
 public sealed class InvoiceOutboxBackgroundService : BackgroundService
 {
-    private static readonly TimeSpan IdlePollDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan IdlePollDelay = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ErrorPollDelay = TimeSpan.FromSeconds(3);
 
     private readonly IServiceScopeFactory _scopeFactory;

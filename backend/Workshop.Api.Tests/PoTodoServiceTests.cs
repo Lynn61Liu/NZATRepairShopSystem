@@ -137,6 +137,36 @@ public sealed class PoTodoServiceTests
     }
 
     [Fact]
+    public async Task GetTodoAsync_PaginatesRowsAndPreservesTotalCount()
+    {
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        for (var i = 1; i <= 20; i++)
+        {
+            db.Jobs.Add(new Job { Id = 5700 + i, NeedsPo = true, CreatedAt = now.AddMinutes(i), UpdatedAt = now });
+            db.JobPoStates.Add(new JobPoState
+            {
+                JobId = 5700 + i,
+                CorrelationId = JobPoStateService.BuildCorrelationId(5700 + i),
+                Status = JobPoStateStatus.Draft,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+
+        var result = await service.GetTodoAsync("pendingSend", page: 2, pageSize: 15, CancellationToken.None);
+
+        result.Total.Should().Be(20);
+        result.PageSize.Should().Be(15);
+        result.CurrentPage.Should().Be(2);
+        result.TotalPages.Should().Be(2);
+        result.Items.Select(x => x.JobId).Should().Equal(5705, 5704, 5703, 5702, 5701);
+    }
+
+    [Fact]
     public async Task GetTodoAsync_ReturnsCustomerBusinessCodeAndLatestInvoiceDetails()
     {
         await using var db = CreateDb();
@@ -227,6 +257,40 @@ public sealed class PoTodoServiceTests
     }
 
     [Fact]
+    public async Task SyncActiveAsync_SyncsOnlyRequestedPage()
+    {
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        for (var i = 1; i <= 20; i++)
+        {
+            db.Jobs.Add(new Job { Id = 5800 + i, NeedsPo = true, CreatedAt = now.AddMinutes(i), UpdatedAt = now });
+            db.JobPoStates.Add(new JobPoState
+            {
+                JobId = 5800 + i,
+                CorrelationId = JobPoStateService.BuildCorrelationId(5800 + i),
+                Status = JobPoStateStatus.AwaitingReply,
+                CounterpartyEmail = "supplier@example.test",
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db, includeStateSyncService: true);
+
+        var result = await service.SyncActiveAsync("awaitingPo", page: 2, pageSize: 15, CancellationToken.None);
+
+        result.CheckedJobs.Should().Be(5);
+        result.Warnings.Should().OnlyContain(x => x.Contains("Gmail thread sync service is unavailable"));
+        result.Warnings.Should().ContainInOrder(
+            "Gmail thread sync service is unavailable for job 5805.",
+            "Gmail thread sync service is unavailable for job 5804.",
+            "Gmail thread sync service is unavailable for job 5803.",
+            "Gmail thread sync service is unavailable for job 5802.",
+            "Gmail thread sync service is unavailable for job 5801.");
+    }
+
+    [Fact]
     public async Task ConfirmPoAsync_FailsSaveStep_WhenPoNumberIsBlank()
     {
         await using var db = CreateDb();
@@ -238,6 +302,23 @@ public sealed class PoTodoServiceTests
         result.PoNumber.Should().Be("");
         result.InvoiceReference.Should().Be("");
         result.Steps["savePo"].Status.Should().Be("failed");
+        result.Steps["xero"].Status.Should().Be("pending");
+        result.Steps["gmail"].Status.Should().Be("pending");
+        result.Steps["poState"].Status.Should().Be("pending");
+    }
+
+    [Fact]
+    public async Task ConfirmPoAsync_FailsSaveStep_WhenPoNumberContainsNonDigits()
+    {
+        await using var db = CreateDb();
+        var service = CreateService(db);
+
+        var result = await service.ConfirmPoAsync(5500, "12A45", CancellationToken.None);
+
+        result.Success.Should().BeFalse();
+        result.PoNumber.Should().Be("12A45");
+        result.Steps["savePo"].Status.Should().Be("failed");
+        result.Steps["savePo"].Message.Should().Be("PO number must contain digits only.");
         result.Steps["xero"].Status.Should().Be("pending");
         result.Steps["gmail"].Status.Should().Be("pending");
         result.Steps["poState"].Status.Should().Be("pending");
@@ -556,9 +637,16 @@ public sealed class PoTodoServiceTests
 
     private static PoTodoService CreateService(
         AppDbContext db,
+        bool includeStateSyncService = false,
         Func<long, string, CancellationToken, Task<JobInvoiceCreateResult>>? updateDraftReferenceAsync = null,
         Func<long?, string?, string?, CancellationToken, Task<GmailLabelResult>>? addInvoicedLabelAsync = null)
     {
-        return new PoTodoService(db, null!, null!, null!, null!, null!, updateDraftReferenceAsync, addInvoicedLabelAsync);
+        var stateSyncService = includeStateSyncService
+            ? new JobPoStateService(
+                db,
+                new BusinessHoursService(Microsoft.Extensions.Options.Options.Create(new Workshop.Api.Options.PoFollowUpOptions())),
+                Microsoft.Extensions.Options.Options.Create(new Workshop.Api.Options.PoFollowUpOptions()))
+            : null;
+        return new PoTodoService(db, null!, stateSyncService, null!, null!, null!, updateDraftReferenceAsync, addInvoicedLabelAsync);
     }
 }

@@ -3,6 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { subscribeWorklogCostAlert } from "@/utils/refreshSignals";
 import { usePoUnreadSummary } from "@/features/jobs";
 import { requestJson } from "@/utils/api";
+import { WOF_SIDEBAR_REFRESH_MS } from "./sidebarRefreshIntervals";
 import {
   ArrowLeftRight,
   CalendarClock,
@@ -120,7 +121,7 @@ export function Sidebar() {
     const initialTimer = window.setTimeout(() => void load(), 300);
     const timer = window.setInterval(() => {
       void load();
-    }, 60000);
+    }, WOF_SIDEBAR_REFRESH_MS);
 
     return () => {
       cancelled = true;

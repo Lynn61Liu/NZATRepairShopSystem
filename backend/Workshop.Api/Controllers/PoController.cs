@@ -15,9 +15,13 @@ public sealed class PoController : ControllerBase
     }
 
     [HttpGet("todo")]
-    public async Task<IActionResult> GetTodo([FromQuery] string? status, CancellationToken ct)
+    public async Task<IActionResult> GetTodo(
+        [FromQuery] string? status,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 15,
+        CancellationToken ct = default)
     {
-        var result = await _poTodoService.GetTodoAsync(status, ct);
+        var result = await _poTodoService.GetTodoAsync(status, page, pageSize, ct);
         return Ok(result);
     }
 
@@ -86,9 +90,13 @@ public sealed class PoController : ControllerBase
     }
 
     [HttpPost("todo/sync")]
-    public async Task<IActionResult> Sync(CancellationToken ct)
+    public async Task<IActionResult> Sync(
+        [FromQuery] string? status,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 15,
+        CancellationToken ct = default)
     {
-        var result = await _poTodoService.SyncActiveAsync(ct);
+        var result = await _poTodoService.SyncActiveAsync(status, page, pageSize, ct);
         return Ok(result);
     }
 

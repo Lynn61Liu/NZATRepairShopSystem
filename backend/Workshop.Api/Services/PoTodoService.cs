@@ -35,9 +35,14 @@ public sealed class PoTodoService
         _logger = logger;
     }
 
-    public async Task<PoTodoListResult> GetTodoAsync(string? status, CancellationToken ct)
+    public Task<PoTodoListResult> GetTodoAsync(string? status, CancellationToken ct) =>
+        GetTodoAsync(status, 1, 500, ct);
+
+    public async Task<PoTodoListResult> GetTodoAsync(string? status, int page, int pageSize, CancellationToken ct)
     {
         var normalizedStatus = NormalizeStatusFilter(status);
+        var safePage = NormalizePage(page);
+        var safePageSize = NormalizePageSize(pageSize);
         var query =
             from job in _db.Jobs.AsNoTracking()
             join state in _db.JobPoStates.AsNoTracking() on job.Id equals state.JobId into stateJoin
@@ -64,10 +69,15 @@ public sealed class PoTodoService
             _ => query,
         };
 
+        var total = await query.CountAsync(ct);
+        var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)safePageSize));
+        safePage = Math.Min(safePage, totalPages);
+
         var rows = await query
             .OrderByDescending(x => x.Job.CreatedAt)
             .ThenByDescending(x => x.Job.Id)
-            .Take(500)
+            .Skip((safePage - 1) * safePageSize)
+            .Take(safePageSize)
             .Select(x => new PoTodoQueryRow(
                 x.Job.Id,
                 x.Job.CreatedAt,
@@ -90,7 +100,7 @@ public sealed class PoTodoService
             .ToListAsync(ct);
 
         if (rows.Count == 0)
-            return new PoTodoListResult(0, []);
+            return new PoTodoListResult(total, [], safePage, safePageSize, totalPages);
 
         var jobIds = rows.Select(x => x.JobId).ToArray();
         var customerIds = rows.Where(x => x.CustomerId.HasValue).Select(x => x.CustomerId!.Value).Distinct().ToArray();
@@ -183,10 +193,13 @@ public sealed class PoTodoService
                 correlationId);
         }).ToList();
 
-        return new PoTodoListResult(items.Count, items);
+        return new PoTodoListResult(total, items, safePage, safePageSize, totalPages);
     }
 
-    public async Task<PoTodoSyncResult> SyncActiveAsync(CancellationToken ct)
+    public Task<PoTodoSyncResult> SyncActiveAsync(CancellationToken ct) =>
+        SyncActiveAsync(null, 1, 500, ct);
+
+    public async Task<PoTodoSyncResult> SyncActiveAsync(string? status, int page, int pageSize, CancellationToken ct)
     {
         var warnings = new List<string>();
         if (_jobPoStateService is null)
@@ -197,23 +210,44 @@ public sealed class PoTodoService
 
         await _jobPoStateService.EnsureStatesForNeedsPoJobsAsync(ct);
 
-        var targets = await (
+        var normalizedStatus = NormalizeStatusFilter(status);
+        var safePage = NormalizePage(page);
+        var safePageSize = NormalizePageSize(pageSize);
+        var targetQuery =
                 from job in _db.Jobs.AsNoTracking()
                 join state in _db.JobPoStates.AsNoTracking() on job.Id equals state.JobId
                 where job.NeedsPo
                 where job.Status == null || job.Status.ToLower() != "archived"
-                where state.Status == JobPoStateStatus.Draft ||
-                      state.Status == JobPoStateStatus.AwaitingReply ||
-                      state.Status == JobPoStateStatus.PendingConfirmation ||
-                      state.Status == JobPoStateStatus.EscalationRequired
-                orderby job.CreatedAt descending, job.Id descending
                 select new
                 {
                     job.Id,
+                    job.CreatedAt,
                     state.CounterpartyEmail,
                     state.CorrelationId,
-                })
-            .Take(500)
+                    state.Status,
+                };
+
+        targetQuery = normalizedStatus switch
+        {
+            "pendingSend" => targetQuery.Where(x => x.Status == JobPoStateStatus.Draft),
+            "awaitingPo" => targetQuery.Where(x =>
+                x.Status == JobPoStateStatus.AwaitingReply ||
+                x.Status == JobPoStateStatus.PendingConfirmation ||
+                x.Status == JobPoStateStatus.EscalationRequired),
+            "invoiced" => targetQuery.Where(x => x.Status == JobPoStateStatus.PoConfirmed),
+            "unknown" => targetQuery.Where(_ => false),
+            _ => targetQuery.Where(x =>
+                x.Status == JobPoStateStatus.Draft ||
+                x.Status == JobPoStateStatus.AwaitingReply ||
+                x.Status == JobPoStateStatus.PendingConfirmation ||
+                x.Status == JobPoStateStatus.EscalationRequired),
+        };
+
+        var targets = await targetQuery
+            .OrderByDescending(x => x.CreatedAt)
+            .ThenByDescending(x => x.Id)
+            .Skip((safePage - 1) * safePageSize)
+            .Take(safePageSize)
             .ToListAsync(ct);
 
         var syncedMessages = 0;
@@ -372,6 +406,11 @@ public sealed class PoTodoService
         {
             steps["savePo"] = PoTodoStepResult.Failed("PO number is required.");
             return new ConfirmPoResult(false, jobId, "", "", steps);
+        }
+        if (!normalizedPo.All(char.IsDigit))
+        {
+            steps["savePo"] = PoTodoStepResult.Failed("PO number must contain digits only.");
+            return new ConfirmPoResult(false, jobId, normalizedPo, "", steps);
         }
 
         var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == jobId && x.NeedsPo, ct);
@@ -654,6 +693,16 @@ public sealed class PoTodoService
         return "unknown";
     }
 
+    private static int NormalizePage(int page) => Math.Max(1, page);
+
+    private static int NormalizePageSize(int pageSize)
+    {
+        if (pageSize <= 0)
+            return 15;
+
+        return Math.Min(pageSize, 100);
+    }
+
     private static DateTime GetLogOccurredAtUtc(GmailMessageLog log)
     {
         if (log.InternalDateMs.HasValue && log.InternalDateMs.Value > 0)
@@ -730,7 +779,12 @@ public sealed record ConfirmPoResult(
     string InvoiceReference,
     Dictionary<string, PoTodoStepResult> Steps);
 
-public sealed record PoTodoListResult(int Total, IReadOnlyList<PoTodoRow> Items);
+public sealed record PoTodoListResult(
+    int Total,
+    IReadOnlyList<PoTodoRow> Items,
+    int CurrentPage = 1,
+    int PageSize = 500,
+    int TotalPages = 1);
 
 public sealed record PoTodoRow(
     long JobId,
