@@ -56,6 +56,41 @@ function formatCurrency(value?: number | null) {
   return value.toFixed(2);
 }
 
+function formatCurrencyBadge(value: number) {
+  return new Intl.NumberFormat("en-NZ", {
+    style: "currency",
+    currency: "NZD",
+  }).format(value);
+}
+
+function getPaymentAmount(row: Pick<InvoicePaymentRow, "paymentTotal" | "amount">) {
+  const value = row.paymentTotal ?? row.amount;
+  return typeof value === "number" && !Number.isNaN(value) ? value : 0;
+}
+
+function summarizePayments(items: InvoicePaymentRow[]) {
+  return items.reduce(
+    (summary, row) => {
+      const amount = getPaymentAmount(row);
+      const paymentWay = normalizePaymentWay(row.paymentWay);
+
+      if (paymentWay === "epost") summary.eftpos += amount;
+      if (paymentWay === "cash") summary.cash += amount;
+      summary.total += amount;
+
+      return summary;
+    },
+    { eftpos: 0, cash: 0, total: 0 }
+  );
+}
+
+function getPaymentWayBadgeClass(value: string) {
+  const paymentWay = normalizePaymentWay(value);
+  if (paymentWay === "epost") return "border-blue-200 bg-blue-50 text-blue-700";
+  if (paymentWay === "cash") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  return "border-slate-200 bg-slate-50 text-slate-600";
+}
+
 function formatNzDateTitle(value: string) {
   if (!value) return "-";
   const parts = value.split("-").map(Number);
@@ -369,19 +404,30 @@ export function InvoicePage() {
       {!loading && !error
         ? pagedGroups.map((group) => {
             const isExpanded = expandedDates[group.date] ?? false;
+            const paymentSummary = summarizePayments(group.items);
             return (
               <Card key={group.date} className="overflow-hidden">
-                <div className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
                   <div className="flex-1">
                     <div>
                       <div className="text-lg font-semibold text-[var(--ds-text)]">{formatNzDateTitle(group.date)}</div>
-                      <div className="mt-1 text-sm text-[var(--ds-muted)]">
-                        Invoice 总数：{group.items.length}
-                      </div>
+                      <div className="mt-1 text-sm text-[var(--ds-muted)]">Invoice 总数：{group.items.length}</div>
                     </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                    <div className="inline-flex items-center gap-2 rounded-[999px] border border-blue-100 bg-blue-50 px-3 py-1.5 text-sm">
+                      <span className="font-medium text-blue-700">Eftpos</span>
+                      <span className="font-semibold text-blue-900">{formatCurrencyBadge(paymentSummary.eftpos)}</span>
+                    </div>
+                    <div className="inline-flex items-center gap-2 rounded-[999px] border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-sm">
+                      <span className="font-medium text-emerald-700">Cash</span>
+                      <span className="font-semibold text-emerald-900">{formatCurrencyBadge(paymentSummary.cash)}</span>
+                    </div>
+                    <div className="inline-flex items-center gap-2 rounded-[999px] border border-[rgba(0,0,0,0.10)] bg-white px-3 py-1.5 text-sm">
+                      <span className="font-medium text-[var(--ds-muted)]">Total</span>
+                      <span className="font-semibold text-[var(--ds-text)]">{formatCurrencyBadge(paymentSummary.total)}</span>
+                    </div>
                     <button
                       type="button"
                       aria-label={isExpanded ? "Collapse section" : "Expand section"}
@@ -401,10 +447,10 @@ export function InvoicePage() {
                       <div>Contact</div>
                       <div>Reference</div>
                       <div>Job Note</div>
-                      <div>Xero Total</div>
-                      <div>Payment Total</div>
+                      <div className="text-right">Xero Total</div>
+                      <div className="text-right">Payment Total</div>
                       <div>Payment Way</div>
-                      <div>Payment Datetime</div>
+                      <div>Payment Date</div>
                       <div>Note</div>
                     </div>
                     <div>
@@ -434,9 +480,18 @@ export function InvoicePage() {
                             <div>{row.contact || "-"}</div>
                             <div className="break-words">{row.reference || "-"}</div>
                             <div className="break-words text-[var(--ds-muted)]">{row.jobNote || "-"}</div>
-                            <div>{formatCurrency(row.xeroTotal)}</div>
-                            <div>{formatCurrency(row.paymentTotal ?? row.amount)}</div>
-                            <div>{formatPaymentWay(row.paymentWay)}</div>
+                            <div className="text-right tabular-nums">{formatCurrency(row.xeroTotal)}</div>
+                            <div className="text-right tabular-nums">{formatCurrency(row.paymentTotal ?? row.amount)}</div>
+                            <div>
+                              <span
+                                className={[
+                                  "inline-flex items-center rounded-[999px] border px-2.5 py-1 text-xs font-semibold",
+                                  getPaymentWayBadgeClass(row.paymentWay),
+                                ].join(" ")}
+                              >
+                                {formatPaymentWay(row.paymentWay)}
+                              </span>
+                            </div>
                             <div className="space-y-2">
                               {editingRowId === row.id ? (
                                 <>
@@ -466,16 +521,14 @@ export function InvoicePage() {
                                   </div>
                                 </>
                               ) : (
-                                <>
-                                  <div>{row.paymentDateTime || row.paymentDate || "-"}</div>
-                                  <button
-                                    type="button"
-                                    onClick={() => startEditingPaymentDate(row)}
-                                    className="inline-flex items-center rounded-[10px] border border-[rgba(0,0,0,0.12)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--ds-muted)] transition hover:bg-[rgba(0,0,0,0.03)]"
-                                  >
-                                    Modify
-                                  </button>
-                                </>
+                                <button
+                                  type="button"
+                                  onClick={() => startEditingPaymentDate(row)}
+                                  className="block text-left font-medium text-[var(--ds-text)] transition hover:text-blue-700 hover:underline"
+                                  title="Click to edit payment date"
+                                >
+                                  {row.paymentDateTime || row.paymentDate || "-"}
+                                </button>
                               )}
                             </div>
                             <div className="break-words">{row.note || "-"}</div>
