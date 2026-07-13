@@ -11,6 +11,7 @@ import { CustomerProfilePage } from "./pages/customers/CustomerProfilePage";
 import { WofFailReasonsPage } from "./pages/wofFails/WofFailReasonsPage";
 import { XeroItemCodesPage } from "./pages/settings/XeroItemCodesPage";
 import { ServiceCatalogPage } from "./pages/settings/ServiceCatalogPage";
+import { EftposQuickJobsPage } from "./pages/settings/EftposQuickJobsPage";
 import { IntegrationsPage } from "./pages/settings/IntegrationsPage";
 import { PartFlowPage } from "./pages/PartFlowPages/PartFlowPage";
 import { PaintBoardPage } from "./pages/paint/PaintBoardPage";
@@ -70,6 +71,7 @@ const router = createBrowserRouter([
       { path: "wof-fails", element: <WofFailReasonsPage /> },
       { path: "xero-item-codes", element: <XeroItemCodesPage /> },
       { path: "service-settings", element: <ServiceCatalogPage /> },
+      { path: "eftpos-quick-jobs", element: <EftposQuickJobsPage /> },
       { path: "integrations", element: <IntegrationsPage /> },
       
       // --- [新增] 采购系统路由 ---

@@ -726,6 +726,38 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
     }
   }, [jobData?.status, jobId, toast]);
 
+  const unarchiveJob = useCallback(async () => {
+    if (!jobId) return { success: false, message: "缺少工单 ID" };
+    if (jobData?.status !== "Archived") return { success: true, message: "工单已是开放状态" };
+
+    setArchivingJob(true);
+    try {
+      const res = await updateJobStatus(jobId, "In Shop");
+      if (!res.ok) {
+        const message = res.error || "撤销归档失败";
+        toast.error(message);
+        return { success: false, message };
+      }
+
+      setJobData((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: "In Shop",
+            }
+          : prev
+      );
+      notifyPaintBoardRefresh();
+      notifyWofScheduleRefresh();
+      notifyPartsFlowRefresh();
+      notifyPoDashboardRefresh();
+      toast.success("已撤销归档");
+      return { success: true, message: "已撤销归档" };
+    } finally {
+      setArchivingJob(false);
+    }
+  }, [jobData?.status, jobId, toast]);
+
   useEffect(() => {
     if (!jobData || jobData.invoice) return;
     const processingStatus = jobData.invoiceProcessing?.status;
@@ -1175,6 +1207,7 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
     deletePartsNote: deletePartsNoteRow,
     refreshPartsServices,
     archiveJob,
+    unarchiveJob,
     deleteJob,
     createJobXeroDraftInvoice,
     attachJobXeroInvoice,

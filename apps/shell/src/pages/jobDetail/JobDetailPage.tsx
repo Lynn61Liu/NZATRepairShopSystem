@@ -67,6 +67,7 @@ export function JobDetailPage() {
     deleteMechService,
     deleteJob,
     archiveJob,
+    unarchiveJob,
     createJobXeroDraftInvoice,
     attachJobXeroInvoice,
     detachJobXeroInvoice,
@@ -174,6 +175,7 @@ export function JobDetailPage() {
         onDetachXeroInvoice={detachJobXeroInvoice}
         isDetachingXeroInvoice={detachingXeroInvoice}
         onArchiveJob={archiveJob}
+        onUnarchiveJob={unarchiveJob}
         isArchivingJob={archivingJob}
         onDeleteJob={openDeleteModal}
         isDeletingJob={deletingJob}

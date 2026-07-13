@@ -120,6 +120,7 @@ type MainColumnProps = {
   onDetachXeroInvoice?: () => Promise<{ success: boolean; message?: string }>;
   isDetachingXeroInvoice?: boolean;
   onArchiveJob?: () => Promise<{ success: boolean; message?: string }>;
+  onUnarchiveJob?: () => Promise<{ success: boolean; message?: string }>;
   isArchivingJob?: boolean;
   onDeleteJob?: () => void;
   isDeletingJob?: boolean;
@@ -174,6 +175,7 @@ export function MainColumn({
   onDetachXeroInvoice,
   isDetachingXeroInvoice,
   onArchiveJob,
+  onUnarchiveJob,
   isArchivingJob,
   onDeleteJob,
   isDeletingJob,
@@ -293,6 +295,7 @@ export function MainColumn({
           hasPaintService={Boolean(paintService?.id)}
           hasWofService={jobData.hasWofService}
           onArchive={onArchiveJob}
+          onUnarchive={onUnarchiveJob}
           isArchiving={isArchivingJob}
           onDelete={onDeleteJob}
           isDeleting={isDeletingJob}

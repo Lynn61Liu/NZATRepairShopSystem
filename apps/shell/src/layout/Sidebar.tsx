@@ -47,7 +47,15 @@ type SidebarGroupItem = SidebarItem & {
   child?: boolean;
 };
 
-const settingsPathRoots = ["/customers", "/tags", "/wof-fails", "/service-settings", "/xero-item-codes", "/integrations"];
+const settingsPathRoots = [
+  "/customers",
+  "/tags",
+  "/wof-fails",
+  "/service-settings",
+  "/eftpos-quick-jobs",
+  "/xero-item-codes",
+  "/integrations",
+];
 
 function isPathActive(pathname: string, to: string) {
   return pathname === to || pathname.startsWith(`${to}/`);
@@ -89,6 +97,7 @@ export function Sidebar() {
     { to: "/tags", label: "标签", icon: Tags },
     { to: "/wof-fails", label: "WOF 失败原因", icon: TriangleAlert },
     { to: "/service-settings", label: "服务目录", icon: Wrench },
+    { to: "/eftpos-quick-jobs", label: "EFTPOS 快速项目", icon: CircleDollarSign },
     { to: "/xero-item-codes", label: "Xero 项目编码", icon: Hash },
     { to: "/integrations", label: "账号切换", icon: ArrowLeftRight },
   ];

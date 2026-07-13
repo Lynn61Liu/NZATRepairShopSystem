@@ -2103,23 +2103,41 @@ public class JobsController : ControllerBase
         if (string.IsNullOrWhiteSpace(status))
             return BadRequest(new { error = "Status is required." });
 
-        if (!string.Equals(status, "Archived", StringComparison.OrdinalIgnoreCase))
-            return BadRequest(new { error = "Status must be Archived." });
-
-        job.Status = "Archived";
-        job.UpdatedAt = DateTime.UtcNow;
-
         var correlationId = BuildCorrelationId(job.Id);
-        var existingInactive = await _db.InactiveGmailCorrelations
-            .FirstOrDefaultAsync(x => x.CorrelationId == correlationId, ct);
-        if (existingInactive is null)
+        if (string.Equals(status, "Archived", StringComparison.OrdinalIgnoreCase))
         {
-            _db.InactiveGmailCorrelations.Add(new InactiveGmailCorrelation
+            job.Status = "Archived";
+            job.UpdatedAt = DateTime.UtcNow;
+
+            var existingInactive = await _db.InactiveGmailCorrelations
+                .FirstOrDefaultAsync(x => x.CorrelationId == correlationId, ct);
+            if (existingInactive is null)
             {
-                CorrelationId = correlationId,
-                Reason = $"Job {job.Id} archived",
-                CreatedAt = DateTime.UtcNow,
-            });
+                _db.InactiveGmailCorrelations.Add(new InactiveGmailCorrelation
+                {
+                    CorrelationId = correlationId,
+                    Reason = $"Job {job.Id} archived",
+                    CreatedAt = DateTime.UtcNow,
+                });
+            }
+        }
+        else if (string.Equals(status, "In Shop", StringComparison.OrdinalIgnoreCase))
+        {
+            job.Status = "In Shop";
+            job.UpdatedAt = DateTime.UtcNow;
+
+            var archivedInactive = await _db.InactiveGmailCorrelations
+                .FirstOrDefaultAsync(
+                    x => x.CorrelationId == correlationId
+                        && x.Reason != null
+                        && EF.Functions.ILike(x.Reason, "%archived%"),
+                    ct);
+            if (archivedInactive is not null)
+                _db.InactiveGmailCorrelations.Remove(archivedInactive);
+        }
+        else
+        {
+            return BadRequest(new { error = "Status must be Archived or In Shop." });
         }
 
         await _db.SaveChangesAsync(ct);

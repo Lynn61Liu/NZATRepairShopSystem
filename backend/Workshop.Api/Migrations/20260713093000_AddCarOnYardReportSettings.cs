@@ -1,10 +1,14 @@
 using System;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Workshop.Api.Data;
 
 #nullable disable
 
 namespace Workshop.Api.Migrations
 {
+    [DbContext(typeof(AppDbContext))]
+    [Migration("20260713093000_AddCarOnYardReportSettings")]
     public partial class AddCarOnYardReportSettings : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -31,10 +35,13 @@ namespace Workshop.Api.Migrations
                     table.PrimaryKey("pk_car_on_yard_report_settings", x => x.id);
                 });
 
-            migrationBuilder.InsertData(
-                table: "car_on_yard_report_settings",
-                columns: new[] { "id", "enabled", "recipients", "send_times", "subject", "time_zone_id" },
-                values: new object[] { 1L, true, "info@nzautotech.co.nz", "09:30,17:30", "Car On Yard", "Pacific/Auckland" });
+            migrationBuilder.Sql("""
+                INSERT INTO car_on_yard_report_settings
+                    (id, enabled, recipients, send_times, subject, time_zone_id)
+                VALUES
+                    (1, true, 'info@nzautotech.co.nz', '09:30,17:30', 'Car On Yard', 'Pacific/Auckland')
+                ON CONFLICT (id) DO NOTHING;
+                """);
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)

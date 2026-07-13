@@ -1,4 +1,4 @@
-import { Archive, Trash2, AlertCircle, Plus, Pencil } from "lucide-react";
+import { Archive, ArchiveRestore, Trash2, AlertCircle, Plus, Pencil } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Input, TagPill, Textarea } from "@/components/ui";
 import { XeroButton, getXeroInvoiceUrl } from "@/components/common/XeroButton";
@@ -44,6 +44,7 @@ interface JobHeaderProps {
   onCreateXeroInvoice?: () => Promise<{ success: boolean; message?: string }>;
   isCreatingXeroInvoice?: boolean;
   onArchive?: () => Promise<{ success: boolean; message?: string }> | void;
+  onUnarchive?: () => Promise<{ success: boolean; message?: string }> | void;
   isArchiving?: boolean;
   onDelete?: () => void;
   isDeleting?: boolean;
@@ -71,6 +72,7 @@ export function JobHeader({
   hasPaintService,
   hasWofService,
   onArchive,
+  onUnarchive,
   isArchiving,
   onDelete,
   isDeleting,
@@ -382,9 +384,19 @@ export function JobHeader({
         </div>
 
         <div className="flex items-center gap-3 ml-auto">
-          <Button leftIcon={<Archive className="w-4 h-4" />} onClick={() => void onArchive?.()} disabled={isArchiving || status === "Archived"}>
-            {isArchiving ? "归档中..." : JOB_DETAIL_TEXT.buttons.archive}
-          </Button>
+          {status === "Archived" ? (
+            <Button
+              leftIcon={<ArchiveRestore className="w-4 h-4" />}
+              onClick={() => void onUnarchive?.()}
+              disabled={isArchiving}
+            >
+              {isArchiving ? "恢复中..." : "撤销归档"}
+            </Button>
+          ) : (
+            <Button leftIcon={<Archive className="w-4 h-4" />} onClick={() => void onArchive?.()} disabled={isArchiving}>
+              {isArchiving ? "归档中..." : JOB_DETAIL_TEXT.buttons.archive}
+            </Button>
+          )}
           <Button
             leftIcon={<Trash2 className="w-4 h-4" />}
             className="border-red-300 text-red-700 hover:bg-red-50"
