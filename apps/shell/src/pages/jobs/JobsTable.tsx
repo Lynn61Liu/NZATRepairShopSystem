@@ -96,6 +96,27 @@ function WofStatusPill({ status }: { status?: JobRow["wofStatus"] }) {
   );
 }
 
+function XeroStatusCode({ status }: { status?: string | null }) {
+  const normalized = status?.trim().toUpperCase();
+  const config = normalized === "DRAFT"
+    ? { code: "DF", title: "Draft", className: "border-slate-200 bg-slate-50 text-slate-600" }
+    : normalized === "AUTHORISED"
+      ? { code: "AP", title: "Awaiting Payment", className: "border-amber-200 bg-amber-50 text-amber-700" }
+      : normalized === "PAID"
+        ? { code: "PD", title: "Paid", className: "border-emerald-200 bg-emerald-50 text-emerald-700" }
+        : null;
+
+  if (!config) return <span className="text-xs text-[rgba(0,0,0,0.28)]">—</span>;
+  return (
+    <span
+      className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-bold ${config.className}`}
+      title={config.title}
+    >
+      {config.code}
+    </span>
+  );
+}
+
 function getPaintStageValue(row: JobRow) {
   if (row.paintStatus === "delivered") return 6;
   if (row.paintStatus === "done") return 5;
@@ -616,6 +637,10 @@ export function JobsTable({
                       "—"
                     )}
                   </div>
+                </div>
+
+                <div className="flex items-center justify-center">
+                  <XeroStatusCode status={r.xeroStatus} />
                 </div>
 
                 <div className="flex flex-wrap justify-start gap-1.5">

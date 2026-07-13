@@ -23,6 +23,7 @@ export const JOB_TABLE_COLUMNS: JobTableColumn[] = [
   { key: "mech", label: "Mech", width: 66, minWidth: 60 },
   { key: "paint", label: "Paint", width: 108, minWidth: 98 },
   { key: "notes", label: "备注", width: 250, minWidth: 180 },
+  { key: "xero", label: "Xero", width: 54, minWidth: 50 },
   { key: "actions", label: "", width: 154, minWidth: 144 },
 ];
 

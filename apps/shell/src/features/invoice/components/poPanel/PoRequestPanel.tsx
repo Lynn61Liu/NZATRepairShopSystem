@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, useRef, type ClipboardEvent, type DragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { ChevronDown, Clock3, FileSearch, Mail, MailCheck, MessageSquareText, Paperclip, Send, Settings2, X } from "lucide-react";
-import { Button, Card, Input, Select, Textarea } from "@/components/ui";
+import { Button, Card, Input, Select } from "@/components/ui";
 import { buildSharedEmailSignatureHtml } from "@/features/email/emailSignature";
 import { withApiBase } from "@/utils/api";
 import type { PoDraftState } from "@/features/invoice/hooks/usePoEmailDraftActions";
 import { PoDetectionPanel } from "./PoDetectionPanel";
 import { StatusBadge } from "./StatusBadge";
-import type { EmailState, EmailTimelineEvent, InvoiceItem, MerchantEmailRecipient, PoDetection } from "../../types";
+import type { EmailState, EmailTimelineEvent, MerchantEmailRecipient, PoDetection } from "../../types";
 
 const DEFAULT_DRAFT_IMAGE_WIDTH = 360;
 const DEFAULT_INVOICE_PREVIEW_IMAGE_WIDTH = Math.round(DEFAULT_DRAFT_IMAGE_WIDTH * 2.5);
@@ -108,6 +108,11 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
+function extractEmailAddresses(value: string | undefined) {
+  if (!value) return [];
+  return value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? [];
+}
+
 function buildDraftImageHtml(src: string, name: string, width = DEFAULT_DRAFT_IMAGE_WIDTH) {
   return `<img src="${src}" alt="${escapeHtmlAttribute(name)}" data-po-draft-image="true" style="display:block; width:${width}px; max-width:100%; height:auto; margin:8px 0; border-radius:8px;" />`;
 }
@@ -193,7 +198,6 @@ type Props = {
   vehicleModel: string;
   vehicleMake: string;
   snapshotTotal: number;
-  items: InvoiceItem[];
   emailStates: EmailState[];
   timelineEvents: EmailTimelineEvent[];
   detections: PoDetection[];
@@ -210,6 +214,7 @@ type Props = {
   draftState: PoDraftState;
   onCreateDraft: (payload: { to: string; subject: string; body: string }) => Promise<boolean>;
   onRecreateDraft: (payload: { to: string; subject: string; body: string }) => Promise<boolean>;
+  onSend: (payload: { to: string; subject: string; body: string }) => Promise<boolean>;
   onPullInvoicePdf?: () => Promise<{ success: boolean; message: string }>;
   onViewDraft: () => Promise<boolean>;
   onOpenSentMailbox: () => boolean | Promise<boolean>;
@@ -228,7 +233,6 @@ export function PoRequestPanel({
   vehicleModel,
   vehicleMake,
   snapshotTotal,
-  items,
   timelineEvents,
   detections,
   selectedDetectionId,
@@ -244,6 +248,7 @@ export function PoRequestPanel({
   draftState,
   onCreateDraft,
   onRecreateDraft,
+  onSend,
   onPullInvoicePdf,
   onViewDraft,
   onOpenSentMailbox,
@@ -278,6 +283,27 @@ export function PoRequestPanel({
     ];
   }, [merchantEmailRecipients, selectedMerchantEmail]);
 
+  const searchableRecipients = useMemo(() => {
+    const contacts = recipientOptions.map((recipient) => ({
+      email: recipient.email.trim(),
+      label: recipient.kind === "staff"
+        ? [recipient.name, recipient.title].filter(Boolean).join(" · ") || "Staff"
+        : "门店邮箱",
+      source: "门店联系人",
+    }));
+    const knownEmails = new Set(contacts.map((item) => item.email.toLowerCase()));
+
+    for (const event of timelineEvents) {
+      for (const email of [...extractEmailAddresses(event.from), ...extractEmailAddresses(event.to)]) {
+        if (knownEmails.has(email.toLowerCase())) continue;
+        knownEmails.add(email.toLowerCase());
+        contacts.push({ email, label: "历史往来", source: "发送历史" });
+      }
+    }
+
+    return contacts;
+  }, [recipientOptions, timelineEvents]);
+
   // 【修改】按你的要求调整顺序，加上年份，并且去掉了 from NZAT
   const vehicleLabel = useMemo(
     () => `${[vehicleRego, vehicleYear, vehicleMake, vehicleModel].filter(Boolean).join(" ")}`,
@@ -311,19 +337,8 @@ export function PoRequestPanel({
       ? selectedRecipient.name.trim()
       : "Team";
 
-  // 【修改】正文模板，保留了空行，完美排版，加入了年份
+  // Keep the request lightweight: the inserted invoice already contains the job line details.
   const defaultBody = useMemo(() => {
-    const itemsHtml = items
-      .map(
-        (item) => `
-        <tr>
-          <td style="padding: 4px 12px 4px 0; text-align: left; vertical-align: top;">${item.description}</td>
-          <td style="padding: 4px 0 4px 0; text-align: right; vertical-align: top; width: 120px; white-space: nowrap;">$${item.unitPrice.toFixed(2)}</td>
-        </tr>
-      `
-      )
-      .join("");
-
     return `
       <div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">
         <div style="margin-bottom: 20px;">Hi ${greetingName},</div>
@@ -335,15 +350,13 @@ export function PoRequestPanel({
           <div style="margin-bottom: 6px;"><strong>- Total Amount:</strong> $${snapshotTotal.toFixed(2)} +GST</div>
           <div style="margin-bottom: 6px;"><strong>- Job Details:</strong></div>
         </div>
-        
-        <table style="width: 100%; max-width: 600px; border-collapse: collapse; margin-bottom: 30px;">
-          ${itemsHtml}
-        </table>
-        
+
+        <div style="height: 48px; line-height: 48px;">&nbsp;</div>
+
         ${buildSharedEmailSignatureHtml()}
       </div>
     `;
-  }, [greetingName, vehicleRego, vehicleYear, vehicleMake, vehicleModel, snapshotTotal, items]);
+  }, [greetingName, vehicleRego, vehicleYear, vehicleMake, vehicleModel, snapshotTotal]);
 
   const invoicePdfPreviewSrc = useMemo(() => {
     const trimmed = invoicePdfPreviewUrl?.trim();
@@ -389,6 +402,7 @@ export function PoRequestPanel({
   const isDraftMissing = draftState.mode === "missing";
   const isDraftLoading = draftState.mode === "loading";
   const createDisabled = readOnly || draftActionBusy || isDraftLoading || !correlationId.trim() || !normalizedToValue.trim() || !subject.trim();
+  const sendDisabled = readOnly || draftActionBusy || !correlationId.trim() || !normalizedToValue.trim() || !subject.trim();
   const canEditDraft = !readOnly && !isDraftAvailable;
   
   const stateRounds = useMemo(() => {
@@ -550,6 +564,20 @@ export function PoRequestPanel({
     try {
       await onRecreateDraft(payload);
       setTo(normalizedToValue);
+    } finally {
+      setDraftActionBusy(false);
+    }
+  };
+
+  const handleSend = async () => {
+    if (invoicePreviewCropRef.current) {
+      commitInvoicePreviewCrop();
+    }
+    const payload = { to: normalizedToValue, subject, body: editorRef.current?.innerHTML ?? body };
+    setDraftActionBusy(true);
+    try {
+      const sent = await onSend(payload);
+      if (sent) setTo(normalizedToValue);
     } finally {
       setDraftActionBusy(false);
     }
@@ -956,13 +984,77 @@ export function PoRequestPanel({
             <div className="space-y-3 text-sm text-slate-600">
               <div>
                 <div className="mb-1 font-semibold text-slate-900">To</div>
-                <Textarea
-                  rows={2}
-                  value={to}
-                  onChange={(event) => setTo(event.target.value)}
-                  placeholder="输入一个或多个邮箱，使用逗号分隔"
-                  disabled={readOnly || isDraftAvailable}
-                />
+                <div className="grid items-start gap-2 md:grid-cols-[minmax(180px,0.7fr)_160px_minmax(260px,1.3fr)]">
+                  <Input
+                    value={to}
+                    onChange={(event) => setTo(event.target.value)}
+                    placeholder="输入邮箱，多个地址用逗号分隔"
+                    disabled={readOnly || isDraftAvailable}
+                  />
+                  <Select
+                    value=""
+                    onChange={(event) => {
+                      if (readOnly || isDraftAvailable) return;
+                      const nextValue = event.target.value;
+                      if (nextValue) appendRecipient(nextValue);
+                      setQuickAddRecipient("");
+                    }}
+                    disabled={readOnly || isDraftAvailable}
+                  >
+                    <option value="">全部联系人</option>
+                    {recipientOptions.map((recipient) => (
+                      <option key={`${recipient.email}-${recipient.kind}`} value={recipient.email}>
+                        {recipient.email} ({recipient.kind === "staff" ? recipient.name || "staff" : "team"})
+                      </option>
+                    ))}
+                  </Select>
+                  <div className="relative">
+                    <Input
+                      value={quickAddRecipient}
+                      onChange={(event) => setQuickAddRecipient(event.target.value)}
+                      placeholder="搜索姓名或邮箱"
+                      disabled={readOnly || isDraftAvailable}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter") return;
+                        const firstMatch = searchableRecipients.find((recipient) => {
+                          const query = quickAddRecipient.trim().toLowerCase();
+                          return recipient.email.toLowerCase().includes(query) || recipient.label.toLowerCase().includes(query);
+                        });
+                        if (!firstMatch) return;
+                        event.preventDefault();
+                        appendRecipient(firstMatch.email);
+                        setQuickAddRecipient("");
+                      }}
+                    />
+                    {quickAddRecipient.trim() ? (
+                      <div className="absolute z-30 mt-1 max-h-52 w-full overflow-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+                        {searchableRecipients
+                          .filter((recipient) => {
+                            const query = quickAddRecipient.trim().toLowerCase();
+                            return recipient.email.toLowerCase().includes(query) || recipient.label.toLowerCase().includes(query);
+                          })
+                          .slice(0, 8)
+                          .map((recipient) => (
+                            <button
+                              key={`${recipient.email}-${recipient.source}`}
+                              type="button"
+                              className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
+                              onClick={() => {
+                                appendRecipient(recipient.email);
+                                setQuickAddRecipient("");
+                              }}
+                            >
+                              <span>
+                                <span className="block font-medium text-slate-800">{recipient.email}</span>
+                                <span className="block text-xs text-slate-500">{recipient.label}</span>
+                              </span>
+                              <span className="shrink-0 text-xs text-slate-400">{recipient.source}</span>
+                            </button>
+                          ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {selectedEmails.map((email) => (
                     <button
@@ -976,28 +1068,6 @@ export function PoRequestPanel({
                       <X className="h-3 w-3" />
                     </button>
                   ))}
-                </div>
-                <div className="mt-2 flex items-center gap-2">
-                  <Select
-                    value={quickAddRecipient}
-                    onChange={(event) => {
-                      if (readOnly || isDraftAvailable) return;
-                      const nextValue = event.target.value;
-                      if (nextValue) {
-                        appendRecipient(nextValue);
-                      }
-                      setQuickAddRecipient("");
-                    }}
-                    disabled={readOnly || isDraftAvailable}
-                  >
-                    <option value="">快速添加商户 / staff 邮箱</option>
-                    {recipientOptions.map((recipient) => (
-                      <option key={`${recipient.email}-${recipient.kind}`} value={recipient.email}>
-                        {recipient.email}{" "}
-                        ({recipient.kind === "staff" ? `${recipient.name || "staff"} - ${recipient.title || "-"}` : "team"})
-                      </option>
-                    ))}
-                  </Select>
                 </div>
               </div>
               <div>
@@ -1114,7 +1184,7 @@ export function PoRequestPanel({
                   <>
                     <Button
                       variant="primary"
-                      className="h-10 px-4"
+                      className="mr-auto h-10 px-4"
                       leftIcon={<Mail className="h-4 w-4" />}
                       onClick={handleRecreateDraft}
                       disabled={createDisabled}
@@ -1124,20 +1194,21 @@ export function PoRequestPanel({
                     <Button className="h-10 px-4" leftIcon={<Send className="h-4 w-4" />} onClick={handleOpenSentMailbox}>
                       查看发件箱
                     </Button>
+                    <Button
+                      variant="primary"
+                      className="h-10 px-4"
+                      leftIcon={<Send className="h-4 w-4" />}
+                      onClick={handleSend}
+                      disabled={sendDisabled}
+                    >
+                      {draftActionBusy ? "发送中..." : "直接发送"}
+                    </Button>
                   </>
                 ) : (
                   <>
                     <Button
-                      className="h-10 px-4"
-                      leftIcon={<FileSearch className="h-4 w-4" />}
-                      onClick={handleInsertInvoice}
-                      disabled={!onPullInvoicePdf || readOnly || !canEditDraft || Boolean(pullingInvoicePdf)}
-                    >
-                      {pullingInvoicePdf ? "拉取中..." : "插入 Invoice"}
-                    </Button>
-                    <Button
                       variant="primary"
-                      className="h-10 px-4"
+                      className="mr-auto h-10 px-4"
                       leftIcon={isDraftAvailable ? <MailCheck className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
                       onClick={isDraftAvailable ? handleViewDraft : handleCreateDraft}
                       disabled={isDraftAvailable ? readOnly || draftActionBusy || isDraftLoading : createDisabled}
@@ -1151,6 +1222,23 @@ export function PoRequestPanel({
                           : isDraftAvailable
                             ? "查看草稿"
                             : "创建草稿"}
+                    </Button>
+                    <Button
+                      className="h-10 px-4"
+                      leftIcon={<FileSearch className="h-4 w-4" />}
+                      onClick={handleInsertInvoice}
+                      disabled={!onPullInvoicePdf || readOnly || !canEditDraft || Boolean(pullingInvoicePdf)}
+                    >
+                      {pullingInvoicePdf ? "拉取中..." : "插入 Invoice"}
+                    </Button>
+                    <Button
+                      variant="primary"
+                      className="h-10 px-4"
+                      leftIcon={<Send className="h-4 w-4" />}
+                      onClick={handleSend}
+                      disabled={sendDisabled}
+                    >
+                      {draftActionBusy ? "发送中..." : "直接发送"}
                     </Button>
                   </>
                 )}

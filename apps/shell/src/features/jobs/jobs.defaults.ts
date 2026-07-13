@@ -5,6 +5,7 @@ export const DEFAULT_JOBS_FILTERS: JobsFilters = {
   jobType: "",
   wofStatus: "",
   paintStatus: "",
+  xeroStatus: "",
   timeRange: "",
   startDate: "",
   endDate: "",

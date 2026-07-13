@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Workshop.Api.Data;
+using Workshop.Api.Services;
 using Workshop.Api.Utils;
 
 namespace Workshop.Api.Controllers;
@@ -12,10 +13,14 @@ namespace Workshop.Api.Controllers;
 public class InvoicePaymentsController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly EftposXeroBatchPaymentService _eftposXeroBatchPaymentService;
 
-    public InvoicePaymentsController(AppDbContext db)
+    public InvoicePaymentsController(
+        AppDbContext db,
+        EftposXeroBatchPaymentService eftposXeroBatchPaymentService)
     {
         _db = db;
+        _eftposXeroBatchPaymentService = eftposXeroBatchPaymentService;
     }
 
     [HttpGet]
@@ -66,6 +71,32 @@ public class InvoicePaymentsController : ControllerBase
         {
             payment = MapPaymentRow(row),
         });
+    }
+
+    [HttpPost("eftpos-xero-batch/preview")]
+    public async Task<IActionResult> PreviewEftposXeroBatch([FromBody] EftposXeroBatchPaymentRequest? request, CancellationToken ct)
+    {
+        if (request is null)
+            return BadRequest(new { error = "Request body is required." });
+
+        var result = await _eftposXeroBatchPaymentService.PreviewAsync(request, ct);
+        if (!result.Ok)
+            return StatusCode(result.StatusCode, new { error = result.Error, result });
+
+        return Ok(new { result });
+    }
+
+    [HttpPost("eftpos-xero-batch/post")]
+    public async Task<IActionResult> PostEftposXeroBatch([FromBody] EftposXeroBatchPaymentRequest? request, CancellationToken ct)
+    {
+        if (request is null)
+            return BadRequest(new { error = "Request body is required." });
+
+        var result = await _eftposXeroBatchPaymentService.PostAsync(request, ct);
+        if (!result.Ok)
+            return StatusCode(result.StatusCode, new { error = result.Error, result });
+
+        return Ok(new { result });
     }
 
     private IQueryable<InvoicePaymentQueryRow> QueryPayments()

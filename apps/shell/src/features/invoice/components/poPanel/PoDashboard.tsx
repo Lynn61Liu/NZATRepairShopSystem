@@ -19,7 +19,6 @@ export function PoDashboard({ model }: PoDashboardProps) {
           vehicleMake={model.invoice.vehicleMake}
           vehicleYear={model.invoice.vehicleYear}
           snapshotTotal={getPoRequestSnapshotTotal(model)}
-          items={model.items}
           emailStates={model.invoice.emailStates}
           timelineEvents={model.timeline}
           detections={model.detections}
@@ -36,6 +35,7 @@ export function PoDashboard({ model }: PoDashboardProps) {
           pullingInvoicePdf={model.pullingInvoicePdf}
           onCreateDraft={model.createPoDraft}
           onRecreateDraft={model.recreatePoDraft}
+          onSend={model.sendPoEmail}
           onPullInvoicePdf={model.pullInvoicePdf}
           onViewDraft={model.viewPoDraft}
           onOpenSentMailbox={model.openSentMailbox}

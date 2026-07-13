@@ -93,6 +93,7 @@ public sealed class PaymarkTransactionSyncService
                 insightsBaseUrl = _options.InsightsBaseUrl.TrimEnd('/'),
                 cardAcceptorIdCode = _options.CardAcceptorIdCode,
                 headless = _options.Headless,
+                loginWaitMs = Math.Max(30, _options.LoginWaitSeconds) * 1000,
                 fromUtc = FormatUtc(fromUtc),
                 toUtc = FormatUtc(toUtc),
             }, JsonOptions);

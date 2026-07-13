@@ -64,6 +64,19 @@ export function JobsFiltersCard({ value, onChange, onReset, tagOptions }: Props)
           </div>
 
           <div className="col-span-12 md:col-span-3 lg:col-span-3">
+            <div className="mb-1 text-xs text-[rgba(0,0,0,0.55)]">Xero 状态</div>
+            <Select
+              value={value.xeroStatus}
+              onChange={(e) => onChange({ ...value, xeroStatus: e.target.value as JobsFilters["xeroStatus"] })}
+            >
+              <option value="">全部</option>
+              <option value="DRAFT">DF · Draft</option>
+              <option value="AUTHORISED">AP · Awaiting Payment</option>
+              <option value="PAID">PD · Paid</option>
+            </Select>
+          </div>
+
+          <div className="col-span-12 md:col-span-3 lg:col-span-3">
             <div className="mb-1 text-xs text-[rgba(0,0,0,0.55)]">时间</div>
             <Select
               value={value.timeRange}

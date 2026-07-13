@@ -6,7 +6,6 @@ namespace Workshop.Api.Services;
 public sealed class CarOnYardReportBackgroundService : BackgroundService
 {
     private static readonly TimeSpan SettingsRefreshInterval = TimeSpan.FromMinutes(30);
-    private static readonly TimeSpan SendWindow = TimeSpan.FromMinutes(5);
     private const string DefaultTimeZoneId = "Pacific/Auckland";
 
     private readonly IServiceScopeFactory _scopeFactory;
@@ -84,19 +83,12 @@ public sealed class CarOnYardReportBackgroundService : BackgroundService
     }
 
     private static string? FindDueTime(IEnumerable<string> sendTimes, TimeSpan currentTime)
-    {
-        foreach (var sendTime in sendTimes)
-        {
-            if (!TimeSpan.TryParse(sendTime, out var scheduledTime))
-                continue;
-
-            var elapsed = currentTime - scheduledTime;
-            if (elapsed >= TimeSpan.Zero && elapsed < SendWindow)
-                return sendTime;
-        }
-
-        return null;
-    }
+        => sendTimes
+            .Select(sendTime => TimeSpan.TryParse(sendTime, out var parsed) ? parsed : (TimeSpan?)null)
+            .Where(sendTime => sendTime.HasValue && sendTime.Value <= currentTime)
+            .OrderByDescending(sendTime => sendTime)
+            .Select(sendTime => $"{(int)sendTime!.Value.TotalHours:00}:{sendTime.Value.Minutes:00}")
+            .FirstOrDefault();
 
     private static TimeSpan CalculateNextDelay(IEnumerable<string> sendTimes, DateTime nowNz)
     {

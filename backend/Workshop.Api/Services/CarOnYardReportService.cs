@@ -66,7 +66,19 @@ public sealed class CarOnYardReportService
         if (string.Equals(settings.LastSentSlotKey, slotKey, StringComparison.OrdinalIgnoreCase))
             return new CarOnYardReportSendResult(false, "Report already sent for this slot.");
 
-        var report = await BuildReportAsync(settings.TimeZoneId, ct);
+        CarOnYardReportData report;
+        try
+        {
+            report = await BuildReportAsync(settings.TimeZoneId, ct);
+        }
+        catch (Exception ex)
+        {
+            settings.LastError = ex.Message;
+            settings.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(ct);
+            return new CarOnYardReportSendResult(false, ex.Message);
+        }
+
         var html = BuildHtmlReport(report);
         var plain = BuildPlainTextReport(report);
 
@@ -104,32 +116,41 @@ public sealed class CarOnYardReportService
     public async Task<CarOnYardReportData> BuildReportAsync(string? timeZoneId, CancellationToken ct)
     {
         var tz = ResolveTimeZone(timeZoneId);
-        var generatedAtNz = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+        var nowUtc = DateTime.UtcNow;
+        var generatedAtNz = TimeZoneInfo.ConvertTimeFromUtc(nowUtc, tz);
 
         var rows = await (
             from job in _db.Jobs.AsNoTracking()
             join vehicle in _db.Vehicles.AsNoTracking() on job.VehicleId equals vehicle.Id
             join customer in _db.Customers.AsNoTracking() on job.CustomerId equals customer.Id
             where job.Status != null && !EF.Functions.ILike(job.Status, "Archived")
-            select new CarOnYardReportJob(
+            select new
+            {
                 job.Id,
                 job.CreatedAt,
-                string.IsNullOrWhiteSpace(customer.BusinessCode) ? "WI" : customer.BusinessCode.ToUpper(),
-                vehicle.Plate ?? "",
-                BuildVehicleModel(vehicle.Make, vehicle.Model, vehicle.Year),
-                job.Notes ?? ""
-            ))
-            .OrderBy(x => x.DealerCode)
-            .ThenBy(x => x.CreatedAtUtc)
+                customer.BusinessCode,
+                vehicle.Plate,
+                vehicle.Make,
+                vehicle.Model,
+                vehicle.Year,
+                job.Notes,
+            })
             .ToListAsync(ct);
 
         var jobs = rows
-            .Select(row => row with
+            .Select(row => new CarOnYardReportJob(
+                row.Id,
+                row.CreatedAt,
+                string.IsNullOrWhiteSpace(row.BusinessCode) ? "WI" : row.BusinessCode.ToUpperInvariant(),
+                row.Plate ?? "",
+                BuildVehicleModel(row.Make, row.Model, row.Year),
+                row.Notes ?? "")
             {
-                AgeDays = Math.Max(0, (int)Math.Floor((DateTime.UtcNow - row.CreatedAtUtc).TotalDays)),
+                AgeDays = Math.Max(0, (int)Math.Floor((nowUtc - row.CreatedAt).TotalDays)),
             })
             .OrderByDescending(x => x.AgeDays)
             .ThenBy(x => x.DealerCode)
+            .ThenBy(x => x.CreatedAtUtc)
             .ToArray();
 
         var dealers = jobs

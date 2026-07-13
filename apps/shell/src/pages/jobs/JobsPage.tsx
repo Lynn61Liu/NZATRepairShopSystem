@@ -1,5 +1,5 @@
 import { Link, useSearchParams } from "react-router-dom";
-import { Archive, Plus, Tags, Trash2 } from "lucide-react";
+import { Archive, Plus, RefreshCw, Tags, Trash2 } from "lucide-react";
 import { DeleteJobDialog } from "@/components/common/DeleteJobDialog";
 import {
   createDeletingDeleteJobSteps,
@@ -49,6 +49,14 @@ type JobsListResponse = {
 
 type ApiErrorPayload = {
   error?: string;
+};
+
+type XeroStatusSyncResponse = {
+  requested: number;
+  processed: number;
+  succeeded: number;
+  skipped: number;
+  failed: number;
 };
 
 type TagsApiRow = {
@@ -107,7 +115,7 @@ export function JobsPage() {
   const [deleteCompletedId, setDeleteCompletedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [batchTags, setBatchTags] = useState<string[]>([]);
-  const [batchBusy, setBatchBusy] = useState<"archive" | "delete" | "tag" | null>(null);
+  const [batchBusy, setBatchBusy] = useState<"archive" | "delete" | "tag" | "xero" | null>(null);
   const toast = useToast();
   const poUnreadSummary = usePoUnreadSummary();
 
@@ -314,6 +322,35 @@ export function JobsPage() {
     [loadJobs, setAllRows, toast]
   );
 
+  const handleBatchXeroStatusSync = useCallback(async () => {
+    if (selectedCount === 0) return;
+    setBatchBusy("xero");
+    try {
+      const res = await fetch(withApiBase("/api/jobs/xero-status/sync"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobIds: selectedRows.map((row) => Number(row.id)) }),
+      });
+      const data: XeroStatusSyncResponse | ApiErrorPayload | null = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((data as ApiErrorPayload | null)?.error || "获取 Xero 状态失败");
+
+      const result = data as XeroStatusSyncResponse;
+      if (result.failed > 0) {
+        toast.error(`Xero 状态已更新 ${result.succeeded} 个，失败 ${result.failed} 个`);
+      } else if (result.skipped > 0) {
+        toast.success(`Xero 状态已更新 ${result.succeeded} 个，${result.skipped} 个没有关联发票`);
+      } else {
+        toast.success(`已更新 ${result.succeeded} 个工单的 Xero 状态`);
+      }
+      clearSelection();
+      await loadJobs();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "获取 Xero 状态失败");
+    } finally {
+      setBatchBusy(null);
+    }
+  }, [clearSelection, loadJobs, selectedCount, selectedRows, toast]);
+
   const handleBatchArchive = useCallback(async () => {
     if (selectedCount === 0) return;
     setBatchBusy("archive");
@@ -381,6 +418,7 @@ export function JobsPage() {
     clearSelection();
     void loadJobs();
   }, [batchTags, clearSelection, loadJobs, selectedCount, selectedRows, toast]);
+
 
   const handleDelete = useCallback(
     async () => {
@@ -591,6 +629,13 @@ export function JobsPage() {
             onClick={() => void handleBatchArchive()}
           >
             归档
+          </Button>
+          <Button
+            leftIcon={<RefreshCw size={16} className={batchBusy === "xero" ? "animate-spin" : ""} />}
+            disabled={selectedCount === 0 || batchBusy !== null}
+            onClick={() => void handleBatchXeroStatusSync()}
+          >
+            {batchBusy === "xero" ? "正在获取..." : "批量获取 Xero 状态"}
           </Button>
           <Button
             leftIcon={<Trash2 size={16} />}

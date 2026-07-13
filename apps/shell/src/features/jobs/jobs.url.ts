@@ -10,6 +10,7 @@ export function filtersToSearchParams(filters: JobsFilters): URLSearchParams {
   if (filters.jobType) p.set("status", filters.jobType);
   if (filters.wofStatus) p.set("wof", filters.wofStatus);
   if (filters.paintStatus) p.set("paint", filters.paintStatus);
+  if (filters.xeroStatus) p.set("xero", filters.xeroStatus);
   if (filters.timeRange) p.set("range", filters.timeRange);
   if (filters.startDate) p.set("start", filters.startDate);
   if (filters.endDate) p.set("end", filters.endDate);
@@ -29,6 +30,7 @@ export function searchParamsToFilters(sp: URLSearchParams): JobsFilters {
   next.jobType = (sp.get("status") ?? "") as JobsFilters["jobType"];
   next.wofStatus = (sp.get("wof") ?? "") as JobsFilters["wofStatus"];
   next.paintStatus = (sp.get("paint") ?? "") as JobsFilters["paintStatus"];
+  next.xeroStatus = (sp.get("xero") ?? "") as JobsFilters["xeroStatus"];
   next.timeRange = (sp.get("range") ?? "") as JobsFilters["timeRange"];
   next.startDate = sp.get("start") ?? "";
   next.endDate = sp.get("end") ?? "";

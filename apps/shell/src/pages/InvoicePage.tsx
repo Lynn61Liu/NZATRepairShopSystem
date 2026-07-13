@@ -110,6 +110,33 @@ type VehicleLookupState = {
   payload: VehicleLookupPayload | null;
 };
 
+type EftposXeroBatchResult = {
+  ok: boolean;
+  error?: string | null;
+  message?: string;
+  posted?: boolean;
+  paymentDate: string;
+  bankAmount: number;
+  localEftposTotal: number;
+  xeroAmountDueTotal: number;
+  batchPaymentId?: string | null;
+  account?: {
+    accountId?: string | null;
+    code?: string;
+    name?: string;
+    bankAccountNumber?: string;
+  } | null;
+  invoices?: Array<{
+    invoiceId: string;
+    invoiceNumber: string;
+    status: string;
+    contactName: string;
+    currencyCode: string;
+    total: number;
+    amountDue: number;
+  }>;
+};
+
 type DateFilterPreset = "7d" | "1m" | "custom";
 type PaymentWayFilter = "all" | "epost" | "cash";
 type PaymarkActionMode = "match" | "quick" | "note";
@@ -175,6 +202,14 @@ function getPaymentWayBadgeClass(value: string) {
   if (paymentWay === "epost") return "border-blue-200 bg-blue-50 text-blue-700";
   if (paymentWay === "cash") return "border-emerald-200 bg-emerald-50 text-emerald-700";
   return "border-slate-200 bg-slate-50 text-slate-600";
+}
+
+function getEftposBatchRows(items: InvoicePaymentRow[]) {
+  return items.filter((row) => normalizePaymentWay(row.paymentWay) === "epost" && row.invoiceNumber.trim());
+}
+
+function getUniqueInvoiceNumbers(items: InvoicePaymentRow[]) {
+  return Array.from(new Set(getEftposBatchRows(items).map((row) => row.invoiceNumber.trim()).filter(Boolean))).sort();
 }
 
 function normalizeLookupPlate(value: string) {
@@ -346,6 +381,10 @@ export function InvoicePage() {
   const [preQuickJobSaving, setPreQuickJobSaving] = useState(false);
   const [preQuickJobError, setPreQuickJobError] = useState("");
   const [preQuickJobMessage, setPreQuickJobMessage] = useState("");
+  const [eftposBatchBankAmounts, setEftposBatchBankAmounts] = useState<Record<string, string>>({});
+  const [eftposBatchResults, setEftposBatchResults] = useState<Record<string, EftposXeroBatchResult | null>>({});
+  const [eftposBatchErrors, setEftposBatchErrors] = useState<Record<string, string>>({});
+  const [eftposBatchPostingDate, setEftposBatchPostingDate] = useState<string | null>(null);
   const [preVehicleLookup, setPreVehicleLookup] = useState<VehicleLookupState>({
     loading: false,
     error: "",
@@ -580,7 +619,7 @@ export function InvoicePage() {
   const syncPaymarkTransactions = async () => {
     setPaymarkSyncing(true);
     setPaymarkError("");
-    setPaymarkMessage("");
+    setPaymarkMessage("If a Paymark login window opens, please login there. Sync will continue automatically.");
     const range = getNzDayUtcRange(paymarkDate);
 
     try {
@@ -910,6 +949,59 @@ export function InvoicePage() {
       setPreVehicleLookup({ loading: false, error: "", payload: null });
     } finally {
       setPreQuickJobSaving(false);
+    }
+  };
+
+  const getEftposBatchBankAmount = (date: string, defaultAmount: number) =>
+    eftposBatchBankAmounts[date] ?? defaultAmount.toFixed(2);
+
+  const runEftposXeroBatch = async (group: { date: string; items: InvoicePaymentRow[] }, bankAmountDefault: number) => {
+    const invoiceNumbers = getUniqueInvoiceNumbers(group.items);
+    if (invoiceNumbers.length === 0) {
+      setEftposBatchErrors((prev) => ({ ...prev, [group.date]: "No EFTPOS Xero invoice numbers found for this date." }));
+      return;
+    }
+
+    const bankAmount = Number(getEftposBatchBankAmount(group.date, bankAmountDefault));
+    if (!Number.isFinite(bankAmount) || bankAmount <= 0) {
+      setEftposBatchErrors((prev) => ({ ...prev, [group.date]: "POS bank amount is required." }));
+      return;
+    }
+
+    setEftposBatchPostingDate(group.date);
+    setEftposBatchErrors((prev) => ({ ...prev, [group.date]: "" }));
+
+    try {
+      const res = await requestJson<{ result?: EftposXeroBatchResult }>(
+        "/api/invoice-payments/eftpos-xero-batch/post",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            paymentDate: group.date,
+            bankAmount,
+            invoiceNumbers,
+          }),
+        }
+      );
+
+      if (!res.ok || !res.data?.result) {
+        if (res.data?.result) {
+          setEftposBatchResults((prev) => ({ ...prev, [group.date]: res.data!.result! }));
+        }
+        setEftposBatchErrors((prev) => ({ ...prev, [group.date]: res.error || "Failed to process Xero EFTPOS batch." }));
+        return;
+      }
+
+      setEftposBatchResults((prev) => ({ ...prev, [group.date]: res.data!.result! }));
+      await loadInvoicePayments();
+    } catch (err) {
+      setEftposBatchErrors((prev) => ({
+        ...prev,
+        [group.date]: err instanceof Error ? err.message : "Failed to process Xero EFTPOS batch.",
+      }));
+    } finally {
+      setEftposBatchPostingDate(null);
     }
   };
 
@@ -1375,6 +1467,11 @@ export function InvoicePage() {
         ? pagedGroups.map((group) => {
             const isExpanded = expandedDates[group.date] ?? false;
             const paymentSummary = summarizePayments(group.items);
+            const eftposInvoiceNumbers = getUniqueInvoiceNumbers(group.items);
+            const eftposBatchResult = eftposBatchResults[group.date];
+            const eftposBatchError = eftposBatchErrors[group.date];
+            const eftposBankAmount = getEftposBatchBankAmount(group.date, paymentSummary.eftpos);
+            const canRunEftposBatch = eftposInvoiceNumbers.length > 0 && paymentSummary.eftpos > 0;
             return (
               <Card key={group.date} className="overflow-hidden">
                 <div className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
@@ -1398,6 +1495,33 @@ export function InvoicePage() {
                       <span className="font-medium text-[var(--ds-muted)]">Total</span>
                       <span className="font-semibold text-[var(--ds-text)]">{formatCurrencyBadge(paymentSummary.total)}</span>
                     </div>
+                    <div className="flex items-center gap-2 rounded-[10px] border border-[rgba(0,0,0,0.10)] bg-white px-2 py-1.5">
+                      <span className="whitespace-nowrap text-xs font-semibold text-[var(--ds-muted)]">POS bank</span>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={eftposBankAmount}
+                        onChange={(event) => {
+                          setEftposBatchBankAmounts((prev) => ({ ...prev, [group.date]: event.target.value }));
+                          setEftposBatchResults((prev) => ({ ...prev, [group.date]: null }));
+                          setEftposBatchErrors((prev) => ({ ...prev, [group.date]: "" }));
+                        }}
+                        className="h-8 w-[110px] text-right"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void runEftposXeroBatch(group, paymentSummary.eftpos)}
+                      disabled={
+                        !canRunEftposBatch ||
+                        eftposBatchPostingDate === group.date ||
+                        Boolean(eftposBatchResult?.posted)
+                      }
+                      className="inline-flex h-10 items-center rounded-[10px] border border-emerald-100 bg-emerald-50 px-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {eftposBatchPostingDate === group.date ? "Checking & posting..." : "Check & Post"}
+                    </button>
                     <button
                       type="button"
                       aria-label={isExpanded ? "Collapse section" : "Expand section"}
@@ -1408,6 +1532,24 @@ export function InvoicePage() {
                     </button>
                   </div>
                 </div>
+
+                {eftposBatchError ? (
+                  <div className="border-t border-red-100 bg-red-50 px-5 py-3 text-sm text-red-700">{eftposBatchError}</div>
+                ) : null}
+                {eftposBatchResult?.ok ? (
+                  <div className="border-t border-blue-100 bg-blue-50 px-5 py-3 text-sm text-blue-800">
+                    <div className="font-semibold">
+                      {eftposBatchResult.posted ? "Xero batch posted" : "Ready for Xero batch"}
+                      {eftposBatchResult.batchPaymentId ? ` · ${eftposBatchResult.batchPaymentId}` : ""}
+                    </div>
+                    <div className="mt-1">
+                      {eftposBatchResult.invoices?.length ?? 0} invoice(s) · Xero due{" "}
+                      {formatCurrencyBadge(eftposBatchResult.xeroAmountDueTotal)} · POS bank{" "}
+                      {formatCurrencyBadge(eftposBatchResult.bankAmount)}
+                      {eftposBatchResult.account?.name ? ` · ${eftposBatchResult.account.name}` : ""}
+                    </div>
+                  </div>
+                ) : null}
 
                 {isExpanded ? (
                   <div className="border-t border-[var(--ds-border)]">

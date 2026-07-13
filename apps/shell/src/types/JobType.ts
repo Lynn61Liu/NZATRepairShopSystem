@@ -26,6 +26,7 @@ export type JobRow = {
   customerPhone: string;
   notes?: string;
   externalInvoiceId?: string;
+  xeroStatus?: string | null;
   createdAt: string; 
 };
 
@@ -47,6 +48,7 @@ export type JobsFilters = {
   jobType: "" | JobStatus;
   wofStatus: "" | "Todo" | "Checked" | "Recorded";
   paintStatus: PaintFilterStatus;
+  xeroStatus: "" | "DRAFT" | "AUTHORISED" | "PAID";
   timeRange: TimeRange;
   startDate: string; // yyyy-mm-dd (input date)
   endDate: string;   // yyyy-mm-dd

@@ -56,6 +56,7 @@ builder.Services.Configure<ImageOcrOptions>(builder.Configuration.GetSection(Ima
 builder.Services.Configure<InventoryItemOptions>(builder.Configuration.GetSection(InventoryItemOptions.SectionName));
 builder.Services.Configure<PoFollowUpOptions>(builder.Configuration.GetSection(PoFollowUpOptions.SectionName));
 builder.Services.Configure<XeroPaymentOptions>(builder.Configuration.GetSection(XeroPaymentOptions.SectionName));
+builder.Services.Configure<XeroPollingOptions>(builder.Configuration.GetSection(XeroPollingOptions.SectionName));
 builder.Services.Configure<EStationMqttOptions>(builder.Configuration.GetSection(EStationMqttOptions.SectionName));
 builder.Services.Configure<PaymarkOptions>(builder.Configuration.GetSection(PaymarkOptions.SectionName));
 builder.Services.AddSingleton(TimeProvider.System);
@@ -141,7 +142,9 @@ builder.Services.AddScoped<XeroTokenStore>();
 builder.Services.AddScoped<XeroTokenService>();
 builder.Services.AddScoped<XeroInvoiceService>();
 builder.Services.AddScoped<XeroPaymentService>();
+builder.Services.AddScoped<EftposXeroBatchPaymentService>();
 builder.Services.AddScoped<JobInvoiceService>();
+builder.Services.AddScoped<XeroInvoiceStatusSyncService>();
 builder.Services.AddScoped<NewJobCreationService>();
 builder.Services.AddScoped<InvoiceOutboxService>();
 builder.Services.AddSingleton<InvoiceOutboxKickService>();
@@ -176,6 +179,7 @@ builder.Services.AddHostedService<InvoiceOutboxBackgroundService>();
 builder.Services.AddHostedService<GmailBackgroundSyncService>();
 builder.Services.AddHostedService<PoAutoFollowUpBackgroundService>();
 builder.Services.AddHostedService<CarOnYardReportBackgroundService>();
+builder.Services.AddHostedService<XeroInvoiceStatusBackgroundService>();
 builder.Services.AddHostedService<EStationMqttListenerBackgroundService>();
 
 // ========= Carjam Importer DI =========

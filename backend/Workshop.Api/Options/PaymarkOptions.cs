@@ -9,4 +9,5 @@ public sealed class PaymarkOptions
     public string InsightsBaseUrl { get; set; } = "https://insights.paymark.co.nz";
     public string ApiBaseUrl { get; set; } = "https://api.paymark.nz";
     public bool Headless { get; set; } = false;
+    public int LoginWaitSeconds { get; set; } = 600;
 }

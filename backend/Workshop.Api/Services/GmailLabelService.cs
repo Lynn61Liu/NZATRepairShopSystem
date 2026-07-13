@@ -9,6 +9,7 @@ public sealed class GmailLabelService
 {
     private const string GmailModifyScope = "https://www.googleapis.com/auth/gmail.modify";
     private const string InvoicedLabelName = "invoiced";
+    private const string WaitingForPoLabelName = "waiting for PO";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IHttpClientFactory _httpClientFactory;
@@ -49,7 +50,7 @@ public sealed class GmailLabelService
         }
 
         var client = _httpClientFactory.CreateClient();
-        var labelResult = await ResolveInvoicedLabelIdAsync(client, tokenResult.AccessToken, ct);
+        var labelResult = await ResolveLabelIdAsync(client, tokenResult.AccessToken, InvoicedLabelName, createIfMissing: false, ct);
         if (!labelResult.Ok)
             return labelResult;
 
@@ -64,6 +65,47 @@ public sealed class GmailLabelService
         return modifyResult.Ok
             ? GmailLabelResult.Success(labelResult.LabelId!)
             : modifyResult;
+    }
+
+    public Task<GmailLabelResult> AddWaitingForPoLabelAsync(
+        long? gmailAccountId,
+        string? gmailThreadId,
+        string? gmailMessageId,
+        CancellationToken ct) =>
+        AddNamedLabelAsync(gmailAccountId, gmailThreadId, gmailMessageId, WaitingForPoLabelName, ct);
+
+    private async Task<GmailLabelResult> AddNamedLabelAsync(
+        long? gmailAccountId,
+        string? gmailThreadId,
+        string? gmailMessageId,
+        string labelName,
+        CancellationToken ct)
+    {
+        var normalizedThreadId = gmailThreadId?.Trim();
+        var normalizedMessageId = gmailMessageId?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedThreadId) && string.IsNullOrWhiteSpace(normalizedMessageId))
+            return GmailLabelResult.Fail(400, "Gmail thread id or message id is required.");
+
+        var tokenResult = await _gmailTokenService.RefreshAccessTokenAsync(gmailAccountId, ct);
+        if (!tokenResult.Ok)
+            return GmailLabelResult.Fail(tokenResult.StatusCode, tokenResult.Error ?? "Failed to refresh Gmail access token.");
+
+        var storedScope = await GetStoredScopeAsync(tokenResult.AccountId ?? gmailAccountId, ct);
+        if (!HasModifyScope(tokenResult.Scope) && !HasModifyScope(storedScope))
+            return GmailLabelResult.Fail(403, $"Gmail account is missing required scope {GmailModifyScope}. Reconnect Gmail with modify access.");
+
+        var client = _httpClientFactory.CreateClient();
+        var labelResult = await ResolveLabelIdAsync(client, tokenResult.AccessToken, labelName, createIfMissing: true, ct);
+        if (!labelResult.Ok)
+            return labelResult;
+
+        return await AddLabelAsync(
+            client,
+            tokenResult.AccessToken,
+            labelResult.LabelId!,
+            normalizedThreadId,
+            normalizedMessageId,
+            ct);
     }
 
     private static bool HasModifyScope(string? scopes) =>
@@ -82,7 +124,12 @@ public sealed class GmailLabelService
         return (await _gmailAccountService.GetEffectiveAccountAsync(ct))?.Scope;
     }
 
-    private async Task<GmailLabelResult> ResolveInvoicedLabelIdAsync(HttpClient client, string accessToken, CancellationToken ct)
+    private async Task<GmailLabelResult> ResolveLabelIdAsync(
+        HttpClient client,
+        string accessToken,
+        string labelName,
+        bool createIfMissing,
+        CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "https://gmail.googleapis.com/gmail/v1/users/me/labels");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
@@ -94,12 +141,28 @@ public sealed class GmailLabelService
 
         var labels = JsonSerializer.Deserialize<GmailLabelsResponse>(payload, JsonOptions);
         var label = (labels?.Labels ?? []).FirstOrDefault(x =>
-            string.Equals(x.Name?.Trim(), InvoicedLabelName, StringComparison.OrdinalIgnoreCase));
+            string.Equals(x.Name?.Trim(), labelName, StringComparison.OrdinalIgnoreCase));
 
-        if (string.IsNullOrWhiteSpace(label?.Id))
-            return GmailLabelResult.Fail(404, "Existing Gmail label 'invoiced' was not found.");
+        if (!string.IsNullOrWhiteSpace(label?.Id))
+            return GmailLabelResult.Success(label.Id);
 
-        return GmailLabelResult.Success(label.Id);
+        if (!createIfMissing)
+            return GmailLabelResult.Fail(404, $"Existing Gmail label '{labelName}' was not found.");
+
+        using var createRequest = new HttpRequestMessage(HttpMethod.Post, "https://gmail.googleapis.com/gmail/v1/users/me/labels");
+        createRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        createRequest.Content = JsonContent.Create(new GmailCreateLabelRequest(labelName));
+
+        using var createResponse = await client.SendAsync(createRequest, ct);
+        var createPayload = await createResponse.Content.ReadAsStringAsync(ct);
+        if (!createResponse.IsSuccessStatusCode)
+            return GmailLabelResult.Fail((int)createResponse.StatusCode, createPayload);
+
+        var createdLabel = JsonSerializer.Deserialize<GmailLabelResponse>(createPayload, JsonOptions);
+        if (string.IsNullOrWhiteSpace(createdLabel?.Id))
+            return GmailLabelResult.Fail(502, $"Gmail created label '{labelName}' without returning an id.");
+
+        return GmailLabelResult.Success(createdLabel.Id);
     }
 
     private async Task<GmailLabelResult> AddLabelAsync(
@@ -135,6 +198,9 @@ public sealed class GmailLabelService
 
     private sealed record GmailModifyRequest(
         [property: JsonPropertyName("addLabelIds")] IReadOnlyList<string> AddLabelIds);
+
+    private sealed record GmailCreateLabelRequest(
+        [property: JsonPropertyName("name")] string Name);
 }
 
 public sealed record GmailLabelResult(

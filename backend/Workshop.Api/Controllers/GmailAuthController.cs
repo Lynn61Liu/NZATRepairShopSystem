@@ -34,6 +34,7 @@ public class GmailAuthController : ControllerBase
     private readonly GmailOptions _options;
     private readonly GmailAccountService _gmailAccountService;
     private readonly GmailMessageSenderService _gmailMessageSenderService;
+    private readonly GmailLabelService _gmailLabelService;
     private readonly GmailDraftService _gmailDraftService;
     private readonly GmailTokenService _gmailTokenService;
     private readonly GmailThreadSyncService _gmailThreadSyncService;
@@ -48,6 +49,7 @@ public class GmailAuthController : ControllerBase
         IOptions<GmailOptions> options,
         GmailAccountService gmailAccountService,
         GmailMessageSenderService gmailMessageSenderService,
+        GmailLabelService gmailLabelService,
         GmailDraftService gmailDraftService,
         GmailTokenService gmailTokenService,
         GmailThreadSyncService gmailThreadSyncService,
@@ -61,6 +63,7 @@ public class GmailAuthController : ControllerBase
         _options = options.Value;
         _gmailAccountService = gmailAccountService;
         _gmailMessageSenderService = gmailMessageSenderService;
+        _gmailLabelService = gmailLabelService;
         _gmailDraftService = gmailDraftService;
         _gmailTokenService = gmailTokenService;
         _gmailThreadSyncService = gmailThreadSyncService;
@@ -298,6 +301,16 @@ public class GmailAuthController : ControllerBase
             });
         }
 
+        GmailLabelResult? waitingForPoLabelResult = null;
+        if (JobPoStateService.TryExtractJobIdFromCorrelationId(req.CorrelationId?.Trim()).HasValue)
+        {
+            waitingForPoLabelResult = await _gmailLabelService.AddWaitingForPoLabelAsync(
+                sendResult.GmailAccountId,
+                sendResult.ThreadId,
+                sendResult.MessageId,
+                ct);
+        }
+
         return Ok(new
         {
             message = "Email sent via Gmail API.",
@@ -309,6 +322,8 @@ public class GmailAuthController : ControllerBase
             gmailAccountEmail = sendResult.GmailAccountEmail,
             scope = sendResult.Scope,
             accessTokenExpiresIn = sendResult.AccessTokenExpiresIn,
+            waitingForPoLabelApplied = waitingForPoLabelResult?.Ok ?? false,
+            labelWarning = waitingForPoLabelResult is { Ok: false } ? waitingForPoLabelResult.Error : null,
         });
     }
 

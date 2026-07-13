@@ -1,9 +1,15 @@
 import type { JobStatus } from "@/types/JobType";
 import { JOB_STATUS_LABELS, JOB_STATUS_STYLES } from "@/features/jobs/jobs.constants";
 
-export function StatusPill({ status }: { status: JobStatus }) {
-  const style = JOB_STATUS_STYLES[status];
-  const label = JOB_STATUS_LABELS[status];
+export function StatusPill({ status }: { status: JobStatus | string | null | undefined }) {
+  const normalizedStatus = status === "In Shop" || status === "InProgress" ? "In Progress" : status;
+  const knownStatus = normalizedStatus && normalizedStatus in JOB_STATUS_STYLES
+    ? normalizedStatus as JobStatus
+    : "Pending";
+  const style = JOB_STATUS_STYLES[knownStatus];
+  const label = normalizedStatus && normalizedStatus in JOB_STATUS_LABELS
+    ? JOB_STATUS_LABELS[normalizedStatus as JobStatus]
+    : normalizedStatus || JOB_STATUS_LABELS.Pending;
 
   return (
     <span

@@ -4,6 +4,7 @@ import type { EmailTimelineEvent, InvoiceDashboardState } from "@/features/invoi
 import {
   createPoRequestDraft,
   getPoRequestDraftState,
+  sendPoRequest,
   type GmailPoDraftStateResponse,
 } from "@/features/invoice/api/gmailDraftApi";
 
@@ -200,6 +201,48 @@ export function usePoEmailDraftActions({
     [submitDraft]
   );
 
+  const sendPoEmail = useCallback(
+    async (payload: DraftComposePayload) => {
+      if (poLocked) {
+        toast.error(poLockReason);
+        return false;
+      }
+      if (!enabled) {
+        toast.error("PO email is not available for this job.");
+        return false;
+      }
+
+      try {
+        const latestThreadId = latestThreadEvent?.threadId || null;
+        const result = await sendPoRequest({
+          ...buildDraftPayload(payload),
+          threadId: latestThreadId,
+        });
+
+        if (!result.ok || !result.data) {
+          throw new Error(result.error || "Failed to send PO email");
+        }
+
+        setDraftState({
+          mode: "none",
+          sentMailboxUrl: buildSentMailboxUrl(result.data.gmailAccountEmail),
+          gmailAccountEmail: result.data.gmailAccountEmail ?? null,
+        });
+        toast.success(
+          result.data.labelWarning
+            ? `邮件已发送；Waiting for PO 标签未添加：${result.data.labelWarning}`
+            : "邮件已发送，并已添加 Waiting for PO 标签"
+        );
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to send PO email";
+        toast.error(message);
+        return false;
+      }
+    },
+    [buildDraftPayload, enabled, latestThreadEvent?.threadId, poLockReason, poLocked, toast]
+  );
+
   const viewPoDraft = useCallback(async () => {
     if (!enabled) {
       toast.error("PO draft status is not available for this job.");
@@ -272,6 +315,7 @@ export function usePoEmailDraftActions({
     refreshDraftState,
     createPoDraft,
     recreatePoDraft,
+    sendPoEmail,
     viewPoDraft,
     openSentMailbox,
   };
