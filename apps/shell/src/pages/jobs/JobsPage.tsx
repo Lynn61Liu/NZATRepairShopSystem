@@ -1,6 +1,7 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { Archive, Plus, RefreshCw, Tags, Trash2 } from "lucide-react";
 import { DeleteJobDialog } from "@/components/common/DeleteJobDialog";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import {
   createDeletingDeleteJobSteps,
   createInitialDeleteJobSteps,
@@ -116,6 +117,7 @@ export function JobsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [batchTags, setBatchTags] = useState<string[]>([]);
   const [batchBusy, setBatchBusy] = useState<"archive" | "delete" | "tag" | "xero" | null>(null);
+  const [pendingBatchAction, setPendingBatchAction] = useState<"archive" | "delete" | null>(null);
   const toast = useToast();
   const poUnreadSummary = usePoUnreadSummary();
 
@@ -374,8 +376,6 @@ export function JobsPage() {
 
   const handleBatchDelete = useCallback(async () => {
     if (selectedCount === 0) return;
-    const ok = window.confirm(`确认删除选中的 ${selectedCount} 个工单吗？这个操作不能撤销。`);
-    if (!ok) return;
 
     setBatchBusy("delete");
     const results = await Promise.all(selectedRows.map((row) => deleteJob(row.id)));
@@ -391,6 +391,16 @@ export function JobsPage() {
     clearSelection();
     void loadJobs();
   }, [clearSelection, loadJobs, selectedCount, selectedRows, toast]);
+
+  const handleConfirmBatchAction = useCallback(async () => {
+    const action = pendingBatchAction;
+    if (action === "archive") {
+      await handleBatchArchive();
+    } else if (action === "delete") {
+      await handleBatchDelete();
+    }
+    setPendingBatchAction(null);
+  }, [handleBatchArchive, handleBatchDelete, pendingBatchAction]);
 
   const handleBatchAddTags = useCallback(async () => {
     if (selectedCount === 0) return;
@@ -626,7 +636,7 @@ export function JobsPage() {
           <Button
             leftIcon={<Archive size={16} />}
             disabled={selectedCount === 0 || batchBusy !== null}
-            onClick={() => void handleBatchArchive()}
+            onClick={() => setPendingBatchAction("archive")}
           >
             归档
           </Button>
@@ -641,7 +651,7 @@ export function JobsPage() {
             leftIcon={<Trash2 size={16} />}
             disabled={selectedCount === 0 || batchBusy !== null}
             className="text-red-600 hover:bg-red-50"
-            onClick={() => void handleBatchDelete()}
+            onClick={() => setPendingBatchAction("delete")}
           >
             删除
           </Button>
@@ -691,6 +701,23 @@ export function JobsPage() {
         steps={deleteDialogSteps}
         onConfirm={() => void handleDelete()}
         onClose={closeDeleteDialog}
+      />
+      <ConfirmDialog
+        open={pendingBatchAction !== null}
+        title={pendingBatchAction === "archive" ? "确认批量归档" : "确认批量删除"}
+        message={
+          pendingBatchAction === "archive"
+            ? `即将归档选中的 ${selectedCount} 个工单。\n请确认这不是误触，是否继续？`
+            : `即将永久删除选中的 ${selectedCount} 个工单。\n删除操作无法撤销，请确认是否继续？`
+        }
+        confirmLabel={pendingBatchAction === "archive" ? "Yes，确认归档" : "Yes，确认删除"}
+        cancelLabel="Cancel"
+        isProcessing={batchBusy === pendingBatchAction}
+        onConfirm={() => void handleConfirmBatchAction()}
+        onClose={() => {
+          if (batchBusy !== null) return;
+          setPendingBatchAction(null);
+        }}
       />
     </div>
   );
