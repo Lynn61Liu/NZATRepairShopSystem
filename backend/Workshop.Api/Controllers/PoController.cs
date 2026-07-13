@@ -98,7 +98,14 @@ public async Task<IActionResult> SyncDashboard(CancellationToken ct = default)
 }
 
 // end api
-
+// TEST XERO SYNC FRO PO
+[HttpPost("todo/test-draft-xero")]
+public async Task<IActionResult> SyncDraftXero(CancellationToken ct = default)
+{
+    var result = await _poTodoService.DebugSyncDraftPoInvoicesFromXeroAsync(ct);
+    return Ok(result);
+}
+// END TEST XERO SYNC FRO PO
     [HttpPost("todo/sync")]
     public async Task<IActionResult> Sync(
         [FromQuery] string? status,

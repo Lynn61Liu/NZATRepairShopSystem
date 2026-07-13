@@ -9,6 +9,8 @@ namespace Workshop.Api.Services;
 
 public sealed class XeroInvoiceService
 {
+    private const int InvoiceIdsBatchSize = 100;
+
     private static readonly JsonSerializerOptions XeroWriteOptions = new()
     {
         PropertyNamingPolicy = null,
@@ -250,28 +252,35 @@ public sealed class XeroInvoiceService
                 "");
         }
 
-        var ids = string.Join(",", distinctInvoiceIds.Select(x => x.ToString()));
-        var requestUri = $"https://api.xero.com/api.xro/2.0/Invoices?IDs={Uri.EscapeDataString(ids)}";
         var client = _httpClientFactory.CreateClient();
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Get, requestUri);
-        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenResult.AccessToken);
-        httpRequest.Headers.Add("xero-tenant-id", tokenResult.TenantId);
-        httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        var mergedInvoices = new List<JsonElement>();
 
-        using var response = await client.SendAsync(httpRequest, ct);
-        var responseBody = await response.Content.ReadAsStringAsync(ct);
-        var parsedResponse = DeserializePayload(responseBody);
-
-        if (!response.IsSuccessStatusCode)
+        foreach (var invoiceIdBatch in distinctInvoiceIds.Chunk(InvoiceIdsBatchSize))
         {
-            return XeroInvoiceGetResult.Fail(
-                (int)response.StatusCode,
-                responseBody,
-                parsedResponse,
-                tokenResult.TenantId);
+            var ids = string.Join(",", invoiceIdBatch.Select(x => x.ToString()));
+            var requestUri = $"https://api.xero.com/api.xro/2.0/Invoices?IDs={Uri.EscapeDataString(ids)}";
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Get, requestUri);
+            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenResult.AccessToken);
+            httpRequest.Headers.Add("xero-tenant-id", tokenResult.TenantId);
+            httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            using var response = await client.SendAsync(httpRequest, ct);
+            var responseBody = await response.Content.ReadAsStringAsync(ct);
+            var parsedResponse = DeserializePayload(responseBody);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return XeroInvoiceGetResult.Fail(
+                    (int)response.StatusCode,
+                    responseBody,
+                    parsedResponse,
+                    tokenResult.TenantId);
+            }
+
+            mergedInvoices.AddRange(ExtractInvoices(responseBody));
         }
 
-        return XeroInvoiceGetResult.Success(parsedResponse, tokenResult.TenantId);
+        return XeroInvoiceGetResult.Success(new XeroInvoicesReadPayload { Invoices = mergedInvoices }, tokenResult.TenantId);
     }
 
     public async Task<XeroInvoicePdfResult> GetInvoicePdfByIdAsync(Guid invoiceId, CancellationToken ct)
@@ -416,6 +425,28 @@ public sealed class XeroInvoiceService
         catch (JsonException)
         {
             return new { raw = payload };
+        }
+    }
+
+    private static List<JsonElement> ExtractInvoices(string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+            return [];
+
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            if (!document.RootElement.TryGetProperty("Invoices", out var invoices) || invoices.ValueKind != JsonValueKind.Array)
+                return [];
+
+            return invoices
+                .EnumerateArray()
+                .Select(invoice => invoice.Clone())
+                .ToList();
+        }
+        catch (JsonException)
+        {
+            return [];
         }
     }
 
@@ -603,6 +634,11 @@ public sealed class XeroInvoiceService
 
         [JsonPropertyName("DiscountAmount")]
         public decimal? DiscountAmount { get; set; }
+    }
+
+    private sealed class XeroInvoicesReadPayload
+    {
+        public List<JsonElement> Invoices { get; init; } = [];
     }
 }
 

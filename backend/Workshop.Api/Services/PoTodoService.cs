@@ -268,7 +268,7 @@ public sealed class PoTodoService
             return new PoTodoSyncResult(0, 0, warnings);
         }
 
-        await _jobPoStateService.EnsureStatesForNeedsPoJobsAsync(ct);
+        // await _jobPoStateService.EnsureStatesForNeedsPoJobsAsync(ct);
         await SyncDraftPoInvoicesFromXeroAndCompleteReadyAsync(warnings, ct);
 
         var targets = await (
@@ -288,11 +288,24 @@ public sealed class PoTodoService
                     state.Status))
             .ToListAsync(ct);
 
+    
         var result = await SyncTargetsAsync(targets, warnings, ct);
         await SavePoGmailSyncStateAsync(result.CheckedJobs, result.SyncedMessages, result.Warnings, ct);
-        return result;
+         return result;
     }
+//test xero update po
+public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToken ct)
+{
+    var warnings = new List<string>();
+    await SyncDraftPoInvoicesFromXeroAndCompleteReadyAsync(warnings, ct);
 
+    return new
+    {
+        ok = warnings.Count == 0,
+        warnings
+    };
+}
+//end test xero update po
     private async Task SyncDraftPoInvoicesFromXeroAndCompleteReadyAsync(List<string> warnings, CancellationToken ct)
     {
         if (_jobInvoiceService is null)
@@ -311,7 +324,7 @@ public sealed class PoTodoService
                 select new JobInvoiceXeroSyncTarget(job.Id, invoice.Id, invoice.ExternalInvoiceId!))
             .Distinct()
             .ToArrayAsync(ct);
-
+    var draftInvoiceTargetsLength = draftInvoiceTargets.Length;
         if (draftInvoiceTargets.Length == 0)
             return;
 
@@ -376,30 +389,31 @@ public sealed class PoTodoService
         }
 
         var syncedMessages = 0;
+        IReadOnlyList<GmailThreadSyncService.GmailThreadBatchSyncResult> gmailResults;
 
-        foreach (var target in targets)
+        if (_gmailThreadSyncService is null)
         {
-            var stateSyncedByGmail = false;
+            gmailResults = targets
+                .Select(target => new GmailThreadSyncService.GmailThreadBatchSyncResult(
+                    target.Id,
+                    GmailThreadSyncService.GmailThreadSyncResult.Failed(
+                        $"Gmail thread sync service is unavailable for job {target.Id}.")))
+                .ToList();
+        }
+        else
+        {
             try
             {
-                if (_gmailThreadSyncService is null)
-                {
-                    warnings.Add($"Gmail thread sync service is unavailable for job {target.Id}.");
-                }
-                else
-                {
-                    var result = await _gmailThreadSyncService.SyncThreadAsync(
-                        target.CounterpartyEmail,
-                        target.CorrelationId,
-                        _gmailThreadSyncService.BackgroundThreadFetchLimit,
-                        null,
-                        ct);
-
-                    syncedMessages += result.SyncedCount;
-                    stateSyncedByGmail = result.Ok && !result.Skipped;
-                    if (!string.IsNullOrWhiteSpace(result.Warning))
-                        warnings.Add($"Job {target.Id}: {result.Warning}");
-                }
+                gmailResults = await _gmailThreadSyncService.SyncThreadsAsync(
+                    targets
+                        .Select(target => new GmailThreadSyncService.GmailThreadBatchSyncTarget(
+                            target.Id,
+                            target.CounterpartyEmail,
+                            target.CorrelationId))
+                        .ToList(),
+                    _gmailThreadSyncService.BackgroundThreadFetchLimit,
+                    null,
+                    ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -407,8 +421,32 @@ public sealed class PoTodoService
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning(ex, "PO todo Gmail sync failed for job {JobId}.", target.Id);
-                warnings.Add($"Job {target.Id}: {ex.Message}");
+                _logger?.LogWarning(ex, "PO todo Gmail batch sync failed.");
+                warnings.Add($"Gmail batch sync failed: {ex.Message}");
+                gmailResults = targets
+                    .Select(target => new GmailThreadSyncService.GmailThreadBatchSyncResult(
+                        target.Id,
+                        GmailThreadSyncService.GmailThreadSyncResult.Failed(ex.Message)))
+                    .ToList();
+            }
+        }
+
+        var gmailResultsByJobId = gmailResults.ToDictionary(x => x.TargetId);
+
+        foreach (var target in targets)
+        {
+            var stateSyncedByGmail = false;
+            if (gmailResultsByJobId.TryGetValue(target.Id, out var gmailResult))
+            {
+                var result = gmailResult.Result;
+                syncedMessages += result.SyncedCount;
+                stateSyncedByGmail = result.Ok && !result.Skipped;
+                if (!string.IsNullOrWhiteSpace(result.Warning))
+                    warnings.Add($"Job {target.Id}: {result.Warning}");
+            }
+            else
+            {
+                warnings.Add($"Job {target.Id}: Gmail batch sync returned no result.");
             }
 
             if (stateSyncedByGmail)
