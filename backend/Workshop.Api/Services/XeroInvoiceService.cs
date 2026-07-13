@@ -213,6 +213,67 @@ public sealed class XeroInvoiceService
         return XeroInvoiceGetResult.Success(parsedResponse, tokenResult.TenantId);
     }
 
+    public async Task<XeroInvoiceGetResult> GetInvoicesByIdsAsync(IReadOnlyCollection<Guid> invoiceIds, CancellationToken ct)
+    {
+        var distinctInvoiceIds = invoiceIds.Distinct().ToArray();
+        if (distinctInvoiceIds.Length == 0)
+            return XeroInvoiceGetResult.Success(new { Invoices = Array.Empty<object>() }, "");
+
+        var missing = new List<string>();
+        if (string.IsNullOrWhiteSpace(_configuration.ClientId)) missing.Add("Xero:ClientId");
+        if (string.IsNullOrWhiteSpace(_configuration.ClientSecret)) missing.Add("Xero:ClientSecret");
+        if (missing.Count > 0)
+        {
+            return XeroInvoiceGetResult.Fail(
+                400,
+                "Missing Xero configuration for invoice read.",
+                new { missing },
+                "");
+        }
+
+        var tokenResult = await _xeroTokenService.RefreshAccessTokenAsync(ct);
+        if (!tokenResult.Ok)
+        {
+            return XeroInvoiceGetResult.Fail(
+                tokenResult.StatusCode,
+                tokenResult.Error ?? "Failed to refresh Xero access token.",
+                null,
+                tokenResult.TenantId);
+        }
+
+        if (string.IsNullOrWhiteSpace(tokenResult.TenantId))
+        {
+            return XeroInvoiceGetResult.Fail(
+                400,
+                "Missing Xero tenant id for invoice read.",
+                new { missing = new[] { "Xero:TenantId" } },
+                "");
+        }
+
+        var ids = string.Join(",", distinctInvoiceIds.Select(x => x.ToString()));
+        var requestUri = $"https://api.xero.com/api.xro/2.0/Invoices?IDs={Uri.EscapeDataString(ids)}";
+        var client = _httpClientFactory.CreateClient();
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenResult.AccessToken);
+        httpRequest.Headers.Add("xero-tenant-id", tokenResult.TenantId);
+        httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        using var response = await client.SendAsync(httpRequest, ct);
+        var responseBody = await response.Content.ReadAsStringAsync(ct);
+        var parsedResponse = DeserializePayload(responseBody);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return XeroInvoiceGetResult.Fail(
+                (int)response.StatusCode,
+                responseBody,
+                parsedResponse,
+                tokenResult.TenantId);
+        }
+
+        return XeroInvoiceGetResult.Success(parsedResponse, tokenResult.TenantId);
+    }
+
     public async Task<XeroInvoicePdfResult> GetInvoicePdfByIdAsync(Guid invoiceId, CancellationToken ct)
     {
         var missing = new List<string>();

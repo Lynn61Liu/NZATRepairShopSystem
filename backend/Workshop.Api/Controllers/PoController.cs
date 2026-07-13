@@ -88,6 +88,16 @@ public sealed class PoController : ControllerBase
             items,
         });
     }
+ 
+ // RUN ONETIME TO SYNC ALL EXISTING JOBS WITH GMAIL
+ [HttpPost("todo/sync-dashboard")]
+public async Task<IActionResult> SyncDashboard(CancellationToken ct = default)
+{
+    var result = await _poTodoService.SyncDashboardGmailAsync(ct);
+    return Ok(result);
+}
+
+// end api
 
     [HttpPost("todo/sync")]
     public async Task<IActionResult> Sync(

@@ -269,12 +269,12 @@ public sealed class PoTodoService
         }
 
         await _jobPoStateService.EnsureStatesForNeedsPoJobsAsync(ct);
+        await SyncDraftPoInvoicesFromXeroAndCompleteReadyAsync(warnings, ct);
 
         var targets = await (
                 from job in _db.Jobs.AsNoTracking()
                 join state in _db.JobPoStates.AsNoTracking() on job.Id equals state.JobId
                 where job.NeedsPo
-                where job.Status == null || job.Status.ToLower() != "archived"
                 where state.Status == JobPoStateStatus.Draft ||
                       state.Status == JobPoStateStatus.AwaitingReply ||
                       state.Status == JobPoStateStatus.PendingConfirmation ||
@@ -291,6 +291,77 @@ public sealed class PoTodoService
         var result = await SyncTargetsAsync(targets, warnings, ct);
         await SavePoGmailSyncStateAsync(result.CheckedJobs, result.SyncedMessages, result.Warnings, ct);
         return result;
+    }
+
+    private async Task SyncDraftPoInvoicesFromXeroAndCompleteReadyAsync(List<string> warnings, CancellationToken ct)
+    {
+        if (_jobInvoiceService is null)
+        {
+            warnings.Add("Xero invoice service is unavailable for PO draft completion sync.");
+            return;
+        }
+
+        var draftInvoiceTargets = await (
+                from job in _db.Jobs.AsNoTracking()
+                join state in _db.JobPoStates.AsNoTracking() on job.Id equals state.JobId
+                join invoice in _db.JobInvoices.AsNoTracking() on job.Id equals invoice.JobId
+                where job.NeedsPo
+                where state.Status == JobPoStateStatus.Draft
+                where invoice.ExternalInvoiceId != null && invoice.ExternalInvoiceId != ""
+                select new JobInvoiceXeroSyncTarget(job.Id, invoice.Id, invoice.ExternalInvoiceId!))
+            .Distinct()
+            .ToArrayAsync(ct);
+
+        if (draftInvoiceTargets.Length == 0)
+            return;
+
+        try
+        {
+            var syncResult = await _jobInvoiceService.SyncFromXeroAsync(draftInvoiceTargets, ct);
+            if (!syncResult.Ok)
+            {
+                warnings.Add(syncResult.Error ?? "Failed to sync draft PO invoices from Xero.");
+                return;
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "PO todo Xero draft invoice sync failed.");
+            warnings.Add($"Xero draft invoice sync failed: {ex.Message}");
+            return;
+        }
+
+        var draftJobIds = draftInvoiceTargets.Select(x => x.JobId).Distinct().ToArray();
+        var readyStates = await (
+                from job in _db.Jobs.AsNoTracking()
+                join state in _db.JobPoStates on job.Id equals state.JobId
+                join invoice in _db.JobInvoices.AsNoTracking() on job.Id equals invoice.JobId
+                where draftJobIds.Contains(job.Id)
+                where job.NeedsPo
+                where state.Status == JobPoStateStatus.Draft
+                where invoice.Reference != null &&
+                      invoice.Reference.Trim() != "" &&
+                      !invoice.Reference.ToLower().Contains("pending")
+                select state)
+            .Distinct()
+            .ToListAsync(ct);
+
+        if (readyStates.Count == 0)
+            return;
+
+        var now = DateTime.UtcNow;
+        foreach (var state in readyStates)
+        {
+            state.Status = JobPoStateStatus.Completed;
+            state.CompletedAt = now;
+            state.UpdatedAt = now;
+        }
+
+        await _db.SaveChangesAsync(ct);
     }
 
     private async Task<PoTodoSyncResult> SyncTargetsAsync(

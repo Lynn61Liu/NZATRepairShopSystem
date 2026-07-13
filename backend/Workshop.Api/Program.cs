@@ -10,6 +10,7 @@ using Workshop.Api.Features.EStationMonitoring.BackgroundServices;
 using Workshop.Api.Features.EStationMonitoring.Options;
 using Workshop.Api.Features.EStationMonitoring.Services;
 using Workshop.Api.Features.JobLightBindings.Services;
+using Workshop.Api.Logging;
 using Workshop.Api.Middleware;
 using Workshop.Api.Models;
 using Workshop.Api.Options;
@@ -21,6 +22,14 @@ using Workshop.Api.Procurement;
 // ------------------------------------
 
 var builder = WebApplication.CreateBuilder(args);
+
+var fileLogDirectory = builder.Configuration["FileLogging:Directory"];
+if (string.IsNullOrWhiteSpace(fileLogDirectory))
+    fileLogDirectory = Path.Combine(builder.Environment.ContentRootPath, "Logs");
+else if (!Path.IsPathRooted(fileLogDirectory))
+    fileLogDirectory = Path.Combine(builder.Environment.ContentRootPath, fileLogDirectory);
+
+builder.Logging.AddProvider(new FileLoggerProvider(fileLogDirectory));
 
 QuestPDF.Settings.License = LicenseType.Community;
 

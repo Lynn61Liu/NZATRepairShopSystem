@@ -472,6 +472,100 @@ public sealed class JobInvoiceService
         return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true, payload: xeroResult.Payload, requestBody: request);
     }
 
+    public async Task<JobInvoiceBulkSyncResult> SyncFromXeroAsync(IReadOnlyCollection<JobInvoiceXeroSyncTarget> targets, CancellationToken ct)
+    {
+        await EnsureJobInvoicePdfColumnsAsync(ct);
+        if (targets.Count == 0)
+            return JobInvoiceBulkSyncResult.Success(0, 0, null);
+
+        var syncTargets = new List<(JobInvoice Invoice, Guid InvoiceId)>();
+        foreach (var target in targets)
+        {
+            if (target.JobId <= 0 ||
+                target.JobInvoiceId <= 0 ||
+                string.IsNullOrWhiteSpace(target.ExternalInvoiceId) ||
+                !Guid.TryParse(target.ExternalInvoiceId, out var invoiceId))
+            {
+                continue;
+            }
+
+            var invoice = GetOrAttachJobInvoice(target.JobInvoiceId, target.JobId, target.ExternalInvoiceId);
+            syncTargets.Add((invoice, invoiceId));
+        }
+
+        if (syncTargets.Count == 0)
+            return JobInvoiceBulkSyncResult.Success(targets.Count, 0, null);
+
+        var xeroResult = await _xeroInvoiceService.GetInvoicesByIdsAsync(
+            syncTargets.Select(x => x.InvoiceId).Distinct().ToArray(),
+            ct);
+        if (!xeroResult.Ok)
+        {
+            return JobInvoiceBulkSyncResult.Fail(
+                xeroResult.StatusCode,
+                xeroResult.Error ?? "Failed to fetch invoices from Xero.",
+                targets.Count,
+                0,
+                xeroResult.Payload);
+        }
+
+        var payloadsByInvoiceId = ExtractSingleInvoicePayloadsById(xeroResult.Payload);
+        if (payloadsByInvoiceId.Count == 0)
+            return JobInvoiceBulkSyncResult.Success(targets.Count, 0, xeroResult.Payload);
+
+        var synced = 0;
+        var now = DateTime.UtcNow;
+        foreach (var (jobInvoice, invoiceId) in syncTargets)
+        {
+            if (!payloadsByInvoiceId.TryGetValue(invoiceId, out var payload))
+                continue;
+
+            var request = BuildRequestFromPayload(payload, jobInvoice);
+            ApplyInvoiceUpdate(jobInvoice, request, payload, xeroResult.TenantId);
+
+            var job = GetOrAttachJob(jobInvoice.JobId);
+            job.InvoiceReference = jobInvoice.Reference;
+            job.UpdatedAt = now;
+
+            synced++;
+        }
+
+        if (synced > 0)
+            await _db.SaveChangesAsync(ct);
+
+        return JobInvoiceBulkSyncResult.Success(targets.Count, synced, xeroResult.Payload);
+    }
+
+    private JobInvoice GetOrAttachJobInvoice(long jobInvoiceId, long jobId, string externalInvoiceId)
+    {
+        var tracked = _db.JobInvoices.Local.FirstOrDefault(x => x.Id == jobInvoiceId);
+        if (tracked is not null)
+            return tracked;
+
+        var invoice = new JobInvoice
+        {
+            Id = jobInvoiceId,
+            JobId = jobId,
+            ExternalInvoiceId = externalInvoiceId,
+        };
+        _db.JobInvoices.Attach(invoice);
+        return invoice;
+    }
+
+    private Job GetOrAttachJob(long jobId)
+    {
+        var tracked = _db.Jobs.Local.FirstOrDefault(x => x.Id == jobId);
+        if (tracked is not null)
+            return tracked;
+
+        var job = new Job
+        {
+            Id = jobId,
+        };
+        _db.Jobs.Attach(job);
+        return job;
+    }
+
     public async Task<JobInvoiceCreateResult> SyncInvoicePdfAsync(long jobId, CancellationToken ct)
     {
         await EnsureJobInvoicePdfColumnsAsync(ct);
@@ -2132,6 +2226,41 @@ public sealed class JobInvoiceService
         }
     }
 
+    private static Dictionary<Guid, object> ExtractSingleInvoicePayloadsById(object? payload)
+    {
+        if (payload is null)
+            return [];
+
+        var json = JsonSerializer.Serialize(payload, JsonOptions);
+        if (string.IsNullOrWhiteSpace(json))
+            return [];
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (!document.RootElement.TryGetProperty("Invoices", out var invoices) || invoices.ValueKind != JsonValueKind.Array)
+                return [];
+
+            var payloadsByInvoiceId = new Dictionary<Guid, object>();
+            foreach (var invoice in invoices.EnumerateArray())
+            {
+                if (!Guid.TryParse(TryGetString(invoice, "InvoiceID"), out var invoiceId))
+                    continue;
+
+                payloadsByInvoiceId[invoiceId] = new SingleXeroInvoicePayload
+                {
+                    Invoices = [invoice.Clone()],
+                };
+            }
+
+            return payloadsByInvoiceId;
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
     private static string? TryGetString(JsonElement element, string propertyName)
     {
         if (!element.TryGetProperty(propertyName, out var value) || value.ValueKind != JsonValueKind.String)
@@ -2148,6 +2277,11 @@ public sealed class JobInvoiceService
         public string? Reference { get; init; }
         public string? ContactName { get; init; }
         public DateOnly? Date { get; init; }
+    }
+
+    private sealed class SingleXeroInvoicePayload
+    {
+        public List<JsonElement> Invoices { get; init; } = [];
     }
 }
 
@@ -2208,6 +2342,44 @@ public sealed class JobInvoiceCreateResult
             RefreshTokenUpdated = refreshTokenUpdated,
             Scope = scope ?? "",
             AccessTokenExpiresIn = expiresIn,
+        };
+}
+
+public sealed record JobInvoiceXeroSyncTarget(long JobId, long JobInvoiceId, string ExternalInvoiceId);
+
+public sealed class JobInvoiceBulkSyncResult
+{
+    public bool Ok { get; private init; }
+    public int StatusCode { get; private init; }
+    public string? Error { get; private init; }
+    public int RequestedJobs { get; private init; }
+    public int SyncedInvoices { get; private init; }
+    public object? Payload { get; private init; }
+
+    public static JobInvoiceBulkSyncResult Success(int requestedJobs, int syncedInvoices, object? payload) =>
+        new()
+        {
+            Ok = true,
+            StatusCode = 200,
+            RequestedJobs = requestedJobs,
+            SyncedInvoices = syncedInvoices,
+            Payload = payload,
+        };
+
+    public static JobInvoiceBulkSyncResult Fail(
+        int statusCode,
+        string error,
+        int requestedJobs,
+        int syncedInvoices,
+        object? payload) =>
+        new()
+        {
+            Ok = false,
+            StatusCode = statusCode,
+            Error = error,
+            RequestedJobs = requestedJobs,
+            SyncedInvoices = syncedInvoices,
+            Payload = payload,
         };
 }
 
