@@ -1,9 +1,9 @@
 import { Link } from "react-router-dom";
-import { Archive, Lightbulb, Trash2 } from "lucide-react";
+import { Archive, Lightbulb, SprayCan, Trash2, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import { StatusPill, ProgressRing, TagsCell } from "@/features/jobs/components";
-import { XeroButton, getXeroInvoiceUrl } from "@/components/common/XeroButton";
+import { getXeroInvoiceUrl, XeroIcon } from "@/components/common/XeroButton";
 import { PAINT_STAGE_OPTIONS } from "@/features/paint/paintBoard.utils";
 import { formatNzDate, formatNzDateTime, parseTimestamp } from "@/utils/date";
 import type { JobRow } from "@/types/JobType";
@@ -23,7 +23,9 @@ import { requestJson } from "@/utils/api";
 import { JOB_TABLE_COLUMNS } from "./jobsTableLayout";
 export type JobsTableProps = {
   rows: JobRow[];
-  onToggleUrgent: (id: string) => void | Promise<void>;
+  selectedIds?: Set<string>;
+  onToggleSelected?: (id: string) => void;
+  onToggleAllVisible?: (checked: boolean) => void;
   onArchive: (id: string) => void | Promise<void>;
   onDelete: (id: string) => void | Promise<void>;
   onUpdateCreatedAt: (id: string, date: string) => boolean | Promise<boolean>;
@@ -46,8 +48,6 @@ const ONE_LINE_CLAMP_STYLE = {
   WebkitLineClamp: 1,
   wordBreak: "break-word",
 } as const;
-const ACTION_TEXT_BUTTON_CLASS =
-  "inline-flex h-7 min-w-10 items-center justify-center rounded-[8px] border px-2 text-xs leading-none";
 const ACTION_ICON_BUTTON_CLASS =
   "inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-transparent";
 
@@ -169,7 +169,9 @@ function formatCreatedAtDisplay(value?: string) {
 
 export function JobsTable({
   rows,
-  onToggleUrgent,
+  selectedIds,
+  onToggleSelected,
+  onToggleAllVisible,
   onArchive,
   onDelete,
   onUpdateCreatedAt,
@@ -197,6 +199,13 @@ export function JobsTable({
   const [lightBindingsByJobId, setLightBindingsByJobId] = useState<Record<string, JobLightBindingResponse | null>>({});
   const bindingInputRef = useRef<HTMLInputElement | null>(null);
   const rowIdsKey = useMemo(() => rows.map((row) => row.id).join("|"), [rows]);
+  const selectedCount = useMemo(
+    () => rows.filter((row) => selectedIds?.has(row.id)).length,
+    [rows, selectedIds]
+  );
+  const allVisibleSelected = rows.length > 0 && selectedCount === rows.length;
+  const someVisibleSelected = selectedCount > 0 && selectedCount < rows.length;
+  const selectAllRef = useRef<HTMLInputElement | null>(null);
 
   const gridTemplateColumns = useMemo(() => {
     if (colWidths.length === 0) return "";
@@ -237,6 +246,12 @@ export function JobsTable({
   }, [stopResize]);
 
   useEffect(() => () => stopResizeRef.current(), []);
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someVisibleSelected;
+    }
+  }, [someVisibleSelected]);
 
   useEffect(() => {
     if (!bindDialogRow) return;
@@ -436,9 +451,21 @@ export function JobsTable({
         >
           {JOB_TABLE_COLUMNS.map((col, index) => {
             const isResizable = index < JOB_TABLE_COLUMNS.length - 1;
+            const alignClass = col.key === "code" || col.key === "actions" ? "text-left" : "text-center";
             return (
-              <div key={col.key} className="relative text-center">
-                {col.label}
+              <div key={col.key} className={`relative ${alignClass}`}>
+                {col.key === "select" ? (
+                  <input
+                    ref={selectAllRef}
+                    type="checkbox"
+                    className="h-4 w-4 accent-[var(--ds-primary)]"
+                    checked={allVisibleSelected}
+                    onChange={(event) => onToggleAllVisible?.(event.target.checked)}
+                    title="选择当前页"
+                  />
+                ) : (
+                  col.label
+                )}
                 {isResizable ? (
                   <span
                     className="absolute right-0 top-0 h-full w-0.5 bg-slate-200 cursor-col-resize touch-none hover:bg-slate-400"
@@ -452,7 +479,7 @@ export function JobsTable({
 
         {/* rows */}
         {rows.map((r, index) => {
-        //   const isSelected = selectedIds.has(r.id);
+          const isSelected = selectedIds?.has(r.id) ?? false;
           const timeInShop = getTimeInShop(r.createdAt);
           const timeClass =
             timeInShop.level === "danger"
@@ -469,11 +496,11 @@ export function JobsTable({
           const lightActionLabel = lightActionId === r.id
             ? "处理中"
             : lightBinding?.status === "Bound"
-              ? "点亮"
-              : "绑定";
+              ? "点亮灯条"
+              : "绑定灯条";
           const lightActionClassName = [
-            ACTION_TEXT_BUTTON_CLASS,
-            "gap-1 font-medium disabled:cursor-not-allowed disabled:opacity-60",
+            ACTION_ICON_BUTTON_CLASS,
+            "disabled:cursor-not-allowed disabled:opacity-60",
             lightActionId === r.id
               ? "border-slate-200 bg-slate-50 text-slate-500"
               : lightBinding?.status === "Bound"
@@ -489,6 +516,15 @@ export function JobsTable({
                 className="grid gap-0 px-4 pb-2 pt-3 items-center text-center"
                 style={gridStyle}
               >
+                <div>
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-[var(--ds-primary)]"
+                    checked={isSelected}
+                    onChange={() => onToggleSelected?.(r.id)}
+                    title="选择工单"
+                  />
+                </div>
                 <div
                   onDoubleClick={() => startEditCreatedAt(r)}
                   className="cursor-pointer"
@@ -522,24 +558,17 @@ export function JobsTable({
 
                 <div><StatusPill status={r.vehicleStatus} /></div>
 
-                <div className="min-w-0 flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-[var(--ds-primary)]"
-                    checked={r.urgent}
-                    onChange={() => onToggleUrgent(r.id)}
-                    title="加急"
-                  />
+                <div className="min-w-0 flex items-center">
                   <TagsCell selectedTags={r.selectedTags} />
                 </div>
 
-                <div className="truncate">{r.customerCode || r.customerName || "—"}</div>
+                <div className="truncate text-left">{r.customerCode || r.customerName || "—"}</div>
 
-                <div className="text-left font-medium text-[rgba(0,0,0,0.70)]">
-                  <div className="flex items-center gap-2 h-6 overflow-hidden leading-5" style={ONE_LINE_CLAMP_STYLE}>
+                <div className="min-w-0 text-left font-medium text-[rgba(0,0,0,0.70)]">
+                  <div className="flex items-center gap-2 leading-5">
                     <Link
                       to={`/jobs/${r.id}`}
-                      className="block text-[rgba(37,99,235,1)] font-semibold underline"
+                      className="block break-all text-[rgba(37,99,235,1)] font-semibold underline"
                     >
                       {r.plate}
                     </Link>
@@ -559,10 +588,21 @@ export function JobsTable({
                     {r.vehicleModel || "—"}
                   </div>
                 </div>
-                   {/* LIST 2  */}
-                <div className="flex min-w-0 items-start gap-2">
-                  <span className="shrink-0 pt-0.5 font-semibold text-[rgba(0,0,0,0.40)]">备注</span>
-                  <div className="min-w-0 flex-1 text-[rgba(0,0,0,0.50)]">
+
+                <div className="flex items-center justify-center">
+                  <WofStatusPill status={r.wofStatus} />
+                </div>
+
+                <div className="flex items-center justify-center">
+                  <ProgressRing value={r.mechPct} />
+                </div>
+
+                <div className="flex items-center justify-center">
+                  <PaintStatusSelect row={r} onChange={onUpdatePaintStatus ? (stageIndex) => onUpdatePaintStatus(r.id, stageIndex) : undefined} />
+                </div>
+
+                <div className="flex min-w-0 items-start">
+                  <div className="min-w-0 flex-1 text-left text-[rgba(0,0,0,0.50)]">
                     {r.notes ? (
                       <span className="relative inline-flex max-w-full align-middle group">
                         <span className="h-10 overflow-hidden leading-5" style={TWO_LINE_CLAMP_STYLE}>
@@ -578,61 +618,37 @@ export function JobsTable({
                   </div>
                 </div>
 
-
-              </div>
-              <div
-                className="grid gap-4 px-4 pb-3 text-left text-xs text-[rgba(0,0,0,0.56)]"
-                style={{ gridTemplateColumns: "minmax(320px,1fr)  minmax(160px,auto)" }}
-              >
-
-              
-                {/* server state */}
-                <div className="flex gap-8">
-                <div className="flex items-center gap-2">
-                  <span className="shrink-0 font-semibold text-[rgba(0,0,0,0.40)]">WOF</span>
-                  <WofStatusPill status={r.wofStatus} />
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="shrink-0 font-semibold text-[rgba(0,0,0,0.40)]">机修</span>
-                  <ProgressRing value={r.mechPct} />
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="shrink-0 font-semibold text-[rgba(0,0,0,0.40)]">喷漆</span>
-                  <PaintStatusSelect row={r} onChange={onUpdatePaintStatus ? (stageIndex) => onUpdatePaintStatus(r.id, stageIndex) : undefined} />
-                </div>
-                </div>
-                   {/* server state end */}
-
-                   {/* action btns */}
-                <div className="flex flex-wrap justify-center gap-1.5">
+                <div className="flex flex-wrap justify-start gap-1.5">
                   <button
                     className={lightActionClassName}
-                    title="绑定/点亮灯条"
+                    title={lightActionLabel}
                     onClick={() => void handleLightAction(r)}
                     disabled={lightActionId === r.id}
                   >
                     <Lightbulb size={14} />
-                    {lightActionLabel}
                   </button>
                   <button
-                    className={`${ACTION_TEXT_BUTTON_CLASS} border-[rgba(0,0,0,0.12)] text-[rgba(0,0,0,0.65)] hover:bg-[rgba(0,0,0,0.04)]`}
+                    className={`${ACTION_ICON_BUTTON_CLASS} border-[rgba(0,0,0,0.12)] text-[rgba(0,0,0,0.65)] hover:bg-[rgba(0,0,0,0.04)]`}
+                    title="机修打印"
                     onClick={() => onPrintMech(r.id)}
                   >
-                    机修
+                    <Wrench size={16} />
                   </button>
                   <button
-                    className={`${ACTION_TEXT_BUTTON_CLASS} border-[rgba(0,0,0,0.12)] text-[rgba(0,0,0,0.65)] hover:bg-[rgba(0,0,0,0.04)]`}
+                    className={`${ACTION_ICON_BUTTON_CLASS} border-[rgba(0,0,0,0.12)] text-[rgba(0,0,0,0.65)] hover:bg-[rgba(0,0,0,0.04)]`}
+                    title="喷漆打印"
                     onClick={() => onPrintPaint(r.id)}
                   >
-                    喷漆
+                    <SprayCan size={16} />
                   </button>
                   {r.externalInvoiceId ? (
                     <button
-                      className={`${ACTION_TEXT_BUTTON_CLASS} border-[rgba(0,0,0,0.12)] text-[rgba(0,0,0,0.65)] hover:bg-[rgba(0,0,0,0.04)]`}
-      
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-[#13B5EA]/25 bg-white text-[#13B5EA] hover:bg-[#13B5EA]/[0.06]"
+                      title="Open Xero"
                       onClick={() => window.open(getXeroInvoiceUrl(r.externalInvoiceId), "_blank", "noopener,noreferrer")}
-                    >xero
-                  </button>
+                    >
+                      <XeroIcon className="h-4 w-4" />
+                    </button>
                   ) : null}
                   <button
                     className={`${ACTION_ICON_BUTTON_CLASS} text-[rgba(0,0,0,0.45)] hover:bg-[rgba(0,0,0,0.04)] hover:text-[rgba(0,0,0,0.70)]`}
@@ -663,8 +679,7 @@ export function JobsTable({
                     </div>
                   ) : null}
                 </div>
-{/* action btns */}
-            </div>
+              </div>
             </div>
           );
         })}

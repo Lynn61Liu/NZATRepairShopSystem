@@ -153,6 +153,7 @@ builder.Services.AddSingleton<SilentPrintHtmlRenderer>();
 builder.Services.AddSingleton<SilentPrintCommandExecutor>();
 builder.Services.AddSingleton<SilentPrintService>();
 builder.Services.AddScoped<PoAutoFollowUpService>();
+builder.Services.AddScoped<CarOnYardReportService>();
 builder.Services.AddSingleton<AppleVisionImageOcrService>();
 builder.Services.AddScoped<StationStatusService>();
 builder.Services.AddScoped<LightTagStatusService>();
@@ -164,6 +165,7 @@ builder.Services.AddHostedService<PoStateSchemaInitializerService>();
 builder.Services.AddHostedService<InvoiceOutboxBackgroundService>();
 builder.Services.AddHostedService<GmailBackgroundSyncService>();
 builder.Services.AddHostedService<PoAutoFollowUpBackgroundService>();
+builder.Services.AddHostedService<CarOnYardReportBackgroundService>();
 builder.Services.AddHostedService<EStationMqttListenerBackgroundService>();
 
 // ========= Carjam Importer DI =========

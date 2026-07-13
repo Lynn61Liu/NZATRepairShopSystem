@@ -67,6 +67,7 @@ export function Sidebar() {
   const mainItems: SidebarItem[] = [
     { to: "/", label: "Dashboard", icon: LayoutDashboard },
     { to: "/jobs", label: "全部工单", icon: FileText },
+    { to: "/car-on-yard", label: "Car On Yard", icon: CarFront },
     { to: "/parts-flow", label: "报价-配件", icon: Cog },
     { to: "/invoice", label: "发票", icon: CircleDollarSign },
     { to: "/wof-schedule", label: "WOF 排班表", icon: CalendarClock, badge: wofTodoCount },

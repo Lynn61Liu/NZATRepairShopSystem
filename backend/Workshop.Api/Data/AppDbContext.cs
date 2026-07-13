@@ -23,6 +23,7 @@ public class AppDbContext : DbContext
     public DbSet<InventoryItem> InventoryItems => Set<InventoryItem>();
     public DbSet<ServiceCatalogItem> ServiceCatalogItems => Set<ServiceCatalogItem>();
     public DbSet<SystemSyncState> SystemSyncStates => Set<SystemSyncState>();
+    public DbSet<CarOnYardReportSettings> CarOnYardReportSettings => Set<CarOnYardReportSettings>();
     public DbSet<JobPoState> JobPoStates => Set<JobPoState>();
     public DbSet<JobWofState> JobWofStates => Set<JobWofState>();
     public DbSet<JobWofScheduleEntry> JobWofScheduleEntries => Set<JobWofScheduleEntry>();
@@ -428,6 +429,21 @@ public class AppDbContext : DbContext
         sss.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         sss.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         sss.HasIndex(x => x.SyncKey).IsUnique().HasDatabaseName("ux_system_sync_state_sync_key");
+
+        var coyrs = modelBuilder.Entity<CarOnYardReportSettings>();
+        coyrs.ToTable("car_on_yard_report_settings");
+        coyrs.HasKey(x => x.Id);
+        coyrs.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        coyrs.Property(x => x.Enabled).HasColumnName("enabled").HasDefaultValue(true);
+        coyrs.Property(x => x.Recipients).HasColumnName("recipients").IsRequired();
+        coyrs.Property(x => x.SendTimes).HasColumnName("send_times").IsRequired();
+        coyrs.Property(x => x.Subject).HasColumnName("subject").IsRequired();
+        coyrs.Property(x => x.TimeZoneId).HasColumnName("time_zone_id").IsRequired();
+        coyrs.Property(x => x.LastSentSlotKey).HasColumnName("last_sent_slot_key");
+        coyrs.Property(x => x.LastSentAtUtc).HasColumnName("last_sent_at_utc");
+        coyrs.Property(x => x.LastError).HasColumnName("last_error");
+        coyrs.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        coyrs.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
 
         var jp = modelBuilder.Entity<JobPoState>();
         jp.ToTable("job_po_state");

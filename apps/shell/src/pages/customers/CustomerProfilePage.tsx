@@ -717,7 +717,6 @@ export function CustomerProfilePage() {
         ) : (
           <JobsTable
             rows={profile.jobs}
-            onToggleUrgent={async () => {}}
             onArchive={async () => {}}
             onDelete={async () => {}}
             onUpdateCreatedAt={async () => true}

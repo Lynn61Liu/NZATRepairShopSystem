@@ -28,6 +28,7 @@ import { AgreementHistoryPage } from "./pages/agreementHistory/AgreementHistoryP
 import { CourtesyCarEntryPage } from "./pages/courtesyCarEntry/CourtesyCarEntryPage";
 import { DeviceCommunicationPage } from "./pages/deviceCommunication/DeviceCommunicationPage";
 import { LightFinderPage } from "./pages/LightFinderPage";
+import { CarOnYardPage } from "./pages/carOnYard/CarOnYardPage";
 
 // --- [从 Eric 版引入] 采购相关组件 ---
 import Shopfront from "./components/Shopfront";
@@ -40,6 +41,7 @@ const router = createBrowserRouter([
   { path: "/courtesy-car", element: <CourtesyCarEntryPage /> },
   { path: "/light-finder", element: <LightFinderPage /> },
   { path: "/staff-shop", element: <Shopfront /> },
+  { path: "/car-on-yard-tv", element: <CarOnYardPage standalone /> },
 
   {
     path: "/",
@@ -47,6 +49,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <DashboardPage /> },
       { path: "jobs", element: <JobsPage /> },
+      { path: "car-on-yard", element: <CarOnYardPage /> },
       { path: "paint-board", element: <PaintBoardPage /> },
       { path: "wof-schedule", element: <WofSchedulePage /> }, 
       { path: "courtesy-cars", element: <CourtesyCarsPage /> },
