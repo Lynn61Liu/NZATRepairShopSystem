@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, Archive, CarFront, Clock3, ExternalLink, RefreshCw, Save, SearchX, Settings2 } from "lucide-react";
 import { getXeroInvoiceUrl, XeroIcon } from "@/components/common/XeroButton";
+import { GmailIcon } from "@/components/common/GmailSearchButton";
+import { getGmailPlateSearchUrl } from "@/components/common/gmailSearch";
 import { useToast } from "@/components/ui";
 import { updateJobStatus } from "@/features/jobDetail/api/jobDetailApi";
 import { requestJson } from "@/utils/api";
@@ -516,6 +518,17 @@ export function CarOnYardPage({ standalone = false }: { standalone?: boolean }) 
                         >
                           <XeroIcon className="h-4 w-4" />
                         </button>
+                      ) : null}
+                      {getGmailPlateSearchUrl(row.plate) ? (
+                        <a
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-red-200 bg-white text-red-600 hover:bg-red-50"
+                          title={`在 Gmail 搜索 ${row.plate}`}
+                          href={getGmailPlateSearchUrl(row.plate)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <GmailIcon className="h-4 w-4" />
+                        </a>
                       ) : null}
                       <button
                         type="button"

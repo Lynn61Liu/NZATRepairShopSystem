@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import { StatusPill, ProgressRing, TagsCell } from "@/features/jobs/components";
 import { getXeroInvoiceUrl, XeroIcon } from "@/components/common/XeroButton";
+import { GmailIcon } from "@/components/common/GmailSearchButton";
+import { getGmailPlateSearchUrl } from "@/components/common/gmailSearch";
 import { PAINT_STAGE_OPTIONS } from "@/features/paint/paintBoard.utils";
 import { formatNzDate, formatNzDateTime, parseTimestamp } from "@/utils/date";
 import type { JobRow } from "@/types/JobType";
@@ -674,6 +676,17 @@ export function JobsTable({
                     >
                       <XeroIcon className="h-4 w-4" />
                     </button>
+                  ) : null}
+                  {getGmailPlateSearchUrl(r.plate) ? (
+                    <a
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-red-200 bg-white text-red-600 hover:bg-red-50"
+                      title={`在 Gmail 搜索 ${r.plate}`}
+                      href={getGmailPlateSearchUrl(r.plate)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <GmailIcon className="h-4 w-4" />
+                    </a>
                   ) : null}
                   <button
                     className={`${ACTION_ICON_BUTTON_CLASS} text-[rgba(0,0,0,0.45)] hover:bg-[rgba(0,0,0,0.04)] hover:text-[rgba(0,0,0,0.70)]`}

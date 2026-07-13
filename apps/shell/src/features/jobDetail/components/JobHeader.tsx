@@ -1,7 +1,8 @@
-import { Archive, ArchiveRestore, Trash2, AlertCircle, Plus, Pencil } from "lucide-react";
+import { Archive, ArchiveRestore, Trash2, AlertCircle, Tags, Pencil } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Input, TagPill, Textarea } from "@/components/ui";
 import { XeroButton, getXeroInvoiceUrl } from "@/components/common/XeroButton";
+import { VehicleQuickLinks } from "@/components/common/VehicleQuickLinks";
 import { JOB_DETAIL_TEXT } from "@/features/jobDetail/jobDetail.constants";
 import type { TagOption } from "@/components/MultiTagSelect";
 import { MultiTagSelect } from "@/components/MultiTagSelect";
@@ -350,14 +351,14 @@ export function JobHeader({
             <TagPill key={tag} label={tag} variant="primary" />
           ))}
           <div className="relative">
-            <button
-              type="button"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[rgba(0,0,0,0.10)] text-[rgba(0,0,0,0.55)] hover:text-[rgba(0,0,0,0.8)] hover:bg-[rgba(0,0,0,0.04)]"
+            <Button
+              leftIcon={<Tags className="h-4 w-4" />}
+              className="h-9 border-blue-200 text-blue-700 hover:bg-blue-50"
               title="Add tags"
               onClick={() => setEditingTags((v) => !v)}
             >
-              <Plus className="h-4 w-4" />
-            </button>
+              加 Tag
+            </Button>
             {editingTags ? (
               <div className="absolute left-0 top-full z-50 mt-2 w-[520px] max-w-[90vw] rounded-[12px] border border-[rgba(0,0,0,0.12)] bg-white p-3 shadow-lg">
                 <div className="text-sm font-semibold text-[rgba(0,0,0,0.72)] mb-2">选择标签</div>
@@ -381,6 +382,7 @@ export function JobHeader({
               </div>
             ) : null}
           </div>
+          <VehicleQuickLinks plate={vehiclePlate} />
         </div>
 
         <div className="flex items-center gap-3 ml-auto">
