@@ -1,6 +1,7 @@
 import { Link, useSearchParams } from "react-router-dom";
-import { Plus } from "lucide-react";
+import { Archive, Plus, RefreshCw, Tags, Trash2 } from "lucide-react";
 import { DeleteJobDialog } from "@/components/common/DeleteJobDialog";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import {
   createDeletingDeleteJobSteps,
   createInitialDeleteJobSteps,
@@ -20,7 +21,7 @@ import {
   usePoUnreadSummary,
 } from "@/features/jobs";
 import { useJobSheetPrinter } from "@/features/printing/useJobSheetPrinter";
-import type { TagOption } from "@/components/MultiTagSelect";
+import { MultiTagSelect, type TagOption } from "@/components/MultiTagSelect";
 import {
   deleteJob,
   fetchJob,
@@ -31,6 +32,7 @@ import {
 import { fetchPaintService, updatePaintStage } from "@/features/paint/api/paintApi";
 import { parseTimestamp } from "@/utils/date";
 import type { SilentPrintRouteKey } from "@/features/printing/silentPrint.routes";
+import type { JobRow } from "@/types/JobType";
 import {
   notifyPaintBoardRefresh,
   notifyPartsFlowRefresh,
@@ -39,11 +41,62 @@ import {
 } from "@/utils/refreshSignals";
 
 type JobsListResponse = {
-  items?: any[];
+  items?: JobRow[];
   totalItems?: number;
   totalPages?: number;
   currentPage?: number;
   pageSize?: number;
+};
+
+type ApiErrorPayload = {
+  error?: string;
+};
+
+type XeroStatusSyncResponse = {
+  requested: number;
+  processed: number;
+  succeeded: number;
+  skipped: number;
+  failed: number;
+};
+
+type TagsApiRow = {
+  isActive?: boolean;
+  name?: string;
+};
+
+type JobDetailApiData = {
+  job?: JobDetailPayload;
+} & Partial<JobDetailPayload>;
+
+type JobDetailPayload = {
+  notes?: string | null;
+  createdAt?: string | null;
+  hasWofService?: boolean | null;
+  customer?: {
+    notes?: string | null;
+    businessCode?: string | null;
+    name?: string | null;
+  } | null;
+  vehicle?: {
+    plate?: string | null;
+    make?: string | null;
+    model?: string | null;
+    year?: number | string | null;
+    nzFirstRegistration?: string | null;
+    vin?: string | null;
+  } | null;
+};
+
+type PrintJobSheetRow = {
+  plate: string;
+  vehicleModel: string;
+  customerCode: string;
+  customerName: string;
+  createdAt: string;
+  panels: number | null;
+  nzFirstRegistration: string;
+  vin: string;
 };
 
 export function JobsPage() {
@@ -61,6 +114,10 @@ export function JobsPage() {
   const [deleteDialogError, setDeleteDialogError] = useState<string | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deleteCompletedId, setDeleteCompletedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [batchTags, setBatchTags] = useState<string[]>([]);
+  const [batchBusy, setBatchBusy] = useState<"archive" | "delete" | "tag" | "xero" | null>(null);
+  const [pendingBatchAction, setPendingBatchAction] = useState<"archive" | "delete" | null>(null);
   const toast = useToast();
   const poUnreadSummary = usePoUnreadSummary();
 
@@ -83,7 +140,6 @@ export function JobsPage() {
     setCurrentPage,
     pageSize,
     visibleRows,
-    allRows,
     setAllRows,
   } = useJobsQuery({
     initialRows: [],
@@ -122,13 +178,13 @@ export function JobsPage() {
 
       const query = params.toString();
       const res = await fetch(withApiBase(`/api/jobs${query ? `?${query}` : ""}`));
-      const data: JobsListResponse | any[] | null = await res.json().catch(() => null);
+      const data: JobsListResponse | JobRow[] | null = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error((data as any)?.error || "加载工单失败");
+        throw new Error((data as ApiErrorPayload | null)?.error || "加载工单失败");
       }
 
       const rows = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
-      const rowsWithUnreadDefaults = rows.map((row: any) => ({
+      const rowsWithUnreadDefaults: JobRow[] = rows.map((row) => ({
         ...row,
         poUnreadReplyCount: Number(row.poUnreadReplyCount ?? 0),
         selectedTags: Array.isArray(row.selectedTags) ? row.selectedTags : [],
@@ -170,16 +226,16 @@ export function JobsPage() {
     const loadTags = async () => {
       try {
         const res = await fetch(withApiBase("/api/tags"));
-        const data = await res.json().catch(() => null);
+        const data: TagsApiRow[] | ApiErrorPayload | null = await res.json().catch(() => null);
         if (!res.ok) {
-          throw new Error(data?.error || "加载标签失败");
+          throw new Error((data as ApiErrorPayload | null)?.error || "加载标签失败");
         }
         const tags = Array.isArray(data) ? data : [];
         if (!cancelled) {
           const activeTags = tags.filter(
-            (tag: any) => tag?.isActive !== false && typeof tag?.name === "string"
+            (tag) => tag?.isActive !== false && typeof tag?.name === "string"
           );
-          setTagOptions(activeTags.map((tag: any) => ({ id: tag.name, label: tag.name })));
+          setTagOptions(activeTags.map((tag) => ({ id: tag.name!, label: tag.name! })));
         }
       } catch {
         if (!cancelled) {
@@ -208,49 +264,37 @@ export function JobsPage() {
     );
   }, [poUnreadSummary.items, setAllRows]);
 
-  const handleToggleUrgent = useCallback(
-    async (id: string) => {
-      const row = allRows.find((item) => item.id === id);
-      if (!row) return;
+  useEffect(() => {
+    const visibleIds = new Set(visibleRows.map((row) => row.id));
+    setSelectedIds((prev) => {
+      const next = new Set(Array.from(prev).filter((id) => visibleIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [visibleRows]);
 
-      const currentTags = Array.isArray(row.selectedTags) ? row.selectedTags : [];
-      const hasUrgent = currentTags.some((tag) => String(tag).toLowerCase() === "urgent");
-      const requestedTags = hasUrgent
-        ? currentTags.filter((tag) => String(tag).toLowerCase() !== "urgent")
-        : Array.from(new Set([...currentTags, "Urgent"]));
+  const selectedRows = visibleRows.filter((row) => selectedIds.has(row.id));
+  const selectedCount = selectedRows.length;
 
-      const res = await updateJobTags(id, [], requestedTags);
-      if (!res.ok) {
-        setLoadError(res.error || "更新加急标签失败");
-        toast.error(res.error || "更新加急标签失败");
-        return;
-      }
+  const toggleSelected = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
-      const resolvedTags: string[] = Array.isArray(res.data?.tags)
-        ? res.data.tags.map((tag: unknown) => String(tag))
-        : hasUrgent
-          ? currentTags.filter((tag) => String(tag).toLowerCase() !== "urgent")
-          : Array.from(new Set([...currentTags, "Urgent"]));
-
-      const normalizedTags: string[] = Array.from(new Set(resolvedTags));
-      const nextUrgent = normalizedTags.some((tag) => String(tag).toLowerCase() === "urgent");
-
-      setAllRows((prev) =>
-        prev.map((item) =>
-          item.id === id
-            ? {
-                ...item,
-                urgent: nextUrgent,
-                selectedTags: normalizedTags,
-              }
-            : item
-        )
-      );
-      toast.success(nextUrgent ? "已标记为加急" : "已取消加急");
-      void loadJobs();
+  const toggleAllVisible = useCallback(
+    (checked: boolean) => {
+      setSelectedIds(checked ? new Set(visibleRows.map((row) => row.id)) : new Set());
     },
-    [allRows, loadJobs, setAllRows, toast]
+    [visibleRows]
   );
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+    setBatchTags([]);
+  }, []);
 
   const handleArchive = useCallback(
     async (id: string) => {
@@ -279,6 +323,112 @@ export function JobsPage() {
     },
     [loadJobs, setAllRows, toast]
   );
+
+  const handleBatchXeroStatusSync = useCallback(async () => {
+    if (selectedCount === 0) return;
+    setBatchBusy("xero");
+    try {
+      const res = await fetch(withApiBase("/api/jobs/xero-status/sync"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobIds: selectedRows.map((row) => Number(row.id)) }),
+      });
+      const data: XeroStatusSyncResponse | ApiErrorPayload | null = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((data as ApiErrorPayload | null)?.error || "获取 Xero 状态失败");
+
+      const result = data as XeroStatusSyncResponse;
+      if (result.failed > 0) {
+        toast.error(`Xero 状态已更新 ${result.succeeded} 个，失败 ${result.failed} 个`);
+      } else if (result.skipped > 0) {
+        toast.success(`Xero 状态已更新 ${result.succeeded} 个，${result.skipped} 个没有关联发票`);
+      } else {
+        toast.success(`已更新 ${result.succeeded} 个工单的 Xero 状态`);
+      }
+      clearSelection();
+      await loadJobs();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "获取 Xero 状态失败");
+    } finally {
+      setBatchBusy(null);
+    }
+  }, [clearSelection, loadJobs, selectedCount, selectedRows, toast]);
+
+  const handleBatchArchive = useCallback(async () => {
+    if (selectedCount === 0) return;
+    setBatchBusy("archive");
+    const results = await Promise.all(selectedRows.map((row) => updateJobStatus(row.id, "Archived")));
+    const failed = results.filter((res) => !res.ok);
+    setBatchBusy(null);
+
+    if (failed.length > 0) {
+      toast.error(`${failed.length} 个工单归档失败`);
+    } else {
+      toast.success(`已归档 ${selectedCount} 个工单`);
+    }
+
+    notifyPaintBoardRefresh();
+    notifyWofScheduleRefresh();
+    notifyPartsFlowRefresh();
+    notifyPoDashboardRefresh();
+    clearSelection();
+    void loadJobs();
+  }, [clearSelection, loadJobs, selectedCount, selectedRows, toast]);
+
+  const handleBatchDelete = useCallback(async () => {
+    if (selectedCount === 0) return;
+
+    setBatchBusy("delete");
+    const results = await Promise.all(selectedRows.map((row) => deleteJob(row.id)));
+    const failed = results.filter((res) => !res.ok);
+    setBatchBusy(null);
+
+    if (failed.length > 0) {
+      toast.error(`${failed.length} 个工单删除失败`);
+    } else {
+      toast.success(`已删除 ${selectedCount} 个工单`);
+    }
+
+    clearSelection();
+    void loadJobs();
+  }, [clearSelection, loadJobs, selectedCount, selectedRows, toast]);
+
+  const handleConfirmBatchAction = useCallback(async () => {
+    const action = pendingBatchAction;
+    if (action === "archive") {
+      await handleBatchArchive();
+    } else if (action === "delete") {
+      await handleBatchDelete();
+    }
+    setPendingBatchAction(null);
+  }, [handleBatchArchive, handleBatchDelete, pendingBatchAction]);
+
+  const handleBatchAddTags = useCallback(async () => {
+    if (selectedCount === 0) return;
+    if (batchTags.length === 0) {
+      toast.info("请选择要添加的 tag");
+      return;
+    }
+
+    setBatchBusy("tag");
+    const results = await Promise.all(
+      selectedRows.map((row) => {
+        const nextTags = Array.from(new Set([...(row.selectedTags ?? []), ...batchTags]));
+        return updateJobTags(row.id, [], nextTags);
+      })
+    );
+    const failed = results.filter((res) => !res.ok);
+    setBatchBusy(null);
+
+    if (failed.length > 0) {
+      toast.error(`${failed.length} 个工单添加 tag 失败`);
+    } else {
+      toast.success(`已给 ${selectedCount} 个工单添加 tag`);
+    }
+
+    clearSelection();
+    void loadJobs();
+  }, [batchTags, clearSelection, loadJobs, selectedCount, selectedRows, toast]);
+
 
   const handleDelete = useCallback(
     async () => {
@@ -380,7 +530,8 @@ export function JobsPage() {
     async (id: string) => {
       const jobRes = await fetchJob(id);
       if (!jobRes.ok) return null;
-      const job = (jobRes.data as any)?.job ?? jobRes.data;
+      const payload = jobRes.data as JobDetailApiData | null;
+      const job = payload?.job ?? payload;
 
       const paintRes = await fetchPaintService(id);
       const paintPanels =
@@ -390,7 +541,7 @@ export function JobsPage() {
 
       const notes = job?.notes ?? job?.customer?.notes ?? "";
 
-      const row = {
+      const row: PrintJobSheetRow = {
         plate: job?.vehicle?.plate ?? "",
         vehicleModel: [job?.vehicle?.make, job?.vehicle?.model, job?.vehicle?.year]
           .filter(Boolean)
@@ -407,9 +558,9 @@ export function JobsPage() {
         row,
         notes,
         routeKey: job?.hasWofService ? "job-wof" : "job-mech",
-      } satisfies { row: any; notes: string; routeKey: SilentPrintRouteKey };
+      } satisfies { row: PrintJobSheetRow; notes: string; routeKey: SilentPrintRouteKey };
     },
-    [fetchJob]
+    []
   );
 
   const { printById } = useJobSheetPrinter({
@@ -461,6 +612,57 @@ export function JobsPage() {
         </Link>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-[8px] border border-[var(--ds-border)] bg-white px-3 py-3">
+        <div className="text-sm font-medium text-[var(--ds-text)]">
+          已选择 {selectedCount} 个工单
+        </div>
+        <div className="flex min-w-[280px] flex-1 flex-wrap items-center justify-end gap-2">
+          <div className="w-[260px]">
+            <MultiTagSelect
+              options={tagOptions}
+              value={batchTags}
+              onChange={setBatchTags}
+              placeholder="批量添加 tag"
+              maxChips={1}
+            />
+          </div>
+          <Button
+            leftIcon={<Tags size={16} />}
+            disabled={selectedCount === 0 || batchBusy !== null}
+            onClick={() => void handleBatchAddTags()}
+          >
+            加 Tag
+          </Button>
+          <Button
+            leftIcon={<Archive size={16} />}
+            disabled={selectedCount === 0 || batchBusy !== null}
+            onClick={() => setPendingBatchAction("archive")}
+          >
+            归档
+          </Button>
+          <Button
+            leftIcon={<RefreshCw size={16} className={batchBusy === "xero" ? "animate-spin" : ""} />}
+            disabled={selectedCount === 0 || batchBusy !== null}
+            onClick={() => void handleBatchXeroStatusSync()}
+          >
+            {batchBusy === "xero" ? "正在获取..." : "批量获取 Xero 状态"}
+          </Button>
+          <Button
+            leftIcon={<Trash2 size={16} />}
+            disabled={selectedCount === 0 || batchBusy !== null}
+            className="text-red-600 hover:bg-red-50"
+            onClick={() => setPendingBatchAction("delete")}
+          >
+            删除
+          </Button>
+          {selectedCount > 0 ? (
+            <Button disabled={batchBusy !== null} onClick={clearSelection}>
+              清空
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
       <Card className="overflow-hidden">
         {loading ? (
           <div className="py-10 text-center text-sm text-[var(--ds-muted)]">加载中...</div>
@@ -470,7 +672,9 @@ export function JobsPage() {
           <>
             <JobsTable
               rows={visibleRows}
-              onToggleUrgent={handleToggleUrgent}
+              selectedIds={selectedIds}
+              onToggleSelected={toggleSelected}
+              onToggleAllVisible={toggleAllVisible}
               onArchive={handleArchive}
               onDelete={openDeleteDialog}
               onUpdateCreatedAt={handleUpdateCreatedAt}
@@ -497,6 +701,23 @@ export function JobsPage() {
         steps={deleteDialogSteps}
         onConfirm={() => void handleDelete()}
         onClose={closeDeleteDialog}
+      />
+      <ConfirmDialog
+        open={pendingBatchAction !== null}
+        title={pendingBatchAction === "archive" ? "确认批量归档" : "确认批量删除"}
+        message={
+          pendingBatchAction === "archive"
+            ? `即将归档选中的 ${selectedCount} 个工单。\n请确认这不是误触，是否继续？`
+            : `即将永久删除选中的 ${selectedCount} 个工单。\n删除操作无法撤销，请确认是否继续？`
+        }
+        confirmLabel={pendingBatchAction === "archive" ? "Yes，确认归档" : "Yes，确认删除"}
+        cancelLabel="Cancel"
+        isProcessing={batchBusy === pendingBatchAction}
+        onConfirm={() => void handleConfirmBatchAction()}
+        onClose={() => {
+          if (batchBusy !== null) return;
+          setPendingBatchAction(null);
+        }}
       />
     </div>
   );

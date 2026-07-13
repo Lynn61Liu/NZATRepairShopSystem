@@ -47,7 +47,15 @@ type SidebarGroupItem = SidebarItem & {
   child?: boolean;
 };
 
-const settingsPathRoots = ["/customers", "/tags", "/wof-fails", "/service-settings", "/xero-item-codes", "/integrations"];
+const settingsPathRoots = [
+  "/customers",
+  "/tags",
+  "/wof-fails",
+  "/service-settings",
+  "/eftpos-quick-jobs",
+  "/xero-item-codes",
+  "/integrations",
+];
 
 function isPathActive(pathname: string, to: string) {
   return pathname === to || pathname.startsWith(`${to}/`);
@@ -66,7 +74,8 @@ export function Sidebar() {
 
   const mainItems: SidebarItem[] = [
     { to: "/", label: "Dashboard", icon: LayoutDashboard },
-    { to: "/jobs", label: "全部工单", icon: FileText },
+    { to: "/jobs", label: "工单中心", icon: FileText },
+    { to: "/car-on-yard", label: "Car On Yard", icon: CarFront },
     { to: "/parts-flow", label: "报价-配件", icon: Cog },
     { to: "/invoice", label: "发票", icon: CircleDollarSign },
     { to: "/wof-schedule", label: "WOF 排班表", icon: CalendarClock, badge: wofTodoCount },
@@ -88,6 +97,7 @@ export function Sidebar() {
     { to: "/tags", label: "标签", icon: Tags },
     { to: "/wof-fails", label: "WOF 失败原因", icon: TriangleAlert },
     { to: "/service-settings", label: "服务目录", icon: Wrench },
+    { to: "/eftpos-quick-jobs", label: "EFTPOS 快速项目", icon: CircleDollarSign },
     { to: "/xero-item-codes", label: "Xero 项目编码", icon: Hash },
     { to: "/integrations", label: "账号切换", icon: ArrowLeftRight },
   ];

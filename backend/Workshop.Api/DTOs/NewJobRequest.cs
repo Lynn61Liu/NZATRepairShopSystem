@@ -7,6 +7,7 @@ public sealed class NewJobRequest
     public string Plate { get; set; } = "";
     public string[] Services { get; set; } = Array.Empty<string>();
     public bool CreateNewInvoice { get; set; } = true;
+    public bool SkipInvoice { get; set; }
     public string? ExistingInvoiceNumber { get; set; }
     public bool UseServiceCatalogMapping { get; set; }
     public List<long> RootServiceCatalogItemIds { get; set; } = new();

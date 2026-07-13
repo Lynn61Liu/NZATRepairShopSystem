@@ -50,7 +50,7 @@ public sealed class NewJobCreationService
         var normalizedCustomerType = NormalizeCustomerType(req.Customer.Type);
         if (!IsValidCustomerType(normalizedCustomerType))
             throw new InvalidOperationException("Customer type must be Personal or Business.");
-        if (!req.CreateNewInvoice && string.IsNullOrWhiteSpace(req.ExistingInvoiceNumber))
+        if (!req.SkipInvoice && !req.CreateNewInvoice && string.IsNullOrWhiteSpace(req.ExistingInvoiceNumber))
             throw new InvalidOperationException("Invoice number is required when linking an existing invoice.");
 
         req.Customer.Type = normalizedCustomerType;
@@ -259,10 +259,14 @@ public sealed class NewJobCreationService
             _db.OutboxMessages.Add(poOutboxMessage);
         }
 
-        var invoiceOutboxMessage = req.CreateNewInvoice
-            ? _invoiceOutboxService.BuildCreateDraftMessage(job.Id, DateTime.UtcNow)
-            : _invoiceOutboxService.BuildAttachExistingMessage(job.Id, req.ExistingInvoiceNumber!, DateTime.UtcNow);
-        _db.OutboxMessages.Add(invoiceOutboxMessage);
+        OutboxMessage? invoiceOutboxMessage = null;
+        if (!req.SkipInvoice)
+        {
+            invoiceOutboxMessage = req.CreateNewInvoice
+                ? _invoiceOutboxService.BuildCreateDraftMessage(job.Id, DateTime.UtcNow)
+                : _invoiceOutboxService.BuildAttachExistingMessage(job.Id, req.ExistingInvoiceNumber!, DateTime.UtcNow);
+            _db.OutboxMessages.Add(invoiceOutboxMessage);
+        }
         await _db.SaveChangesAsync(ct);
         jobCustomerId = job.CustomerId;
 
@@ -285,22 +289,29 @@ public sealed class NewJobCreationService
                 poOutboxMessage.Id);
         }
 
-        _logger.LogInformation(
-            "New job segment {Segment} completed in {ElapsedMs} ms for job {JobId} (messageId: {MessageId}, mode: {Mode})",
-            "invoice_outbox_enqueue",
-            0,
-            job.Id,
-            invoiceOutboxMessage.Id,
-            req.CreateNewInvoice ? "create_draft" : "attach_existing");
+        if (invoiceOutboxMessage is not null)
+        {
+            _logger.LogInformation(
+                "New job segment {Segment} completed in {ElapsedMs} ms for job {JobId} (messageId: {MessageId}, mode: {Mode})",
+                "invoice_outbox_enqueue",
+                0,
+                job.Id,
+                invoiceOutboxMessage.Id,
+                req.CreateNewInvoice ? "create_draft" : "attach_existing");
+        }
 
         var coreRequestElapsedMs = totalStopwatch.Elapsed.TotalMilliseconds;
         var invoiceKickDispatchStopwatch = Stopwatch.StartNew();
-        var invoiceStartedAsync = await _invoiceOutboxService.TryStartMessageNowAsync(invoiceOutboxMessage.Id, ct);
-        _invoiceOutboxKickService.Dispatch(
-            invoiceOutboxMessage.Id,
-            job.Id,
-            "invoice_outbox_async_kick",
-            alreadyStarted: invoiceStartedAsync);
+        var invoiceStartedAsync = false;
+        if (invoiceOutboxMessage is not null)
+        {
+            invoiceStartedAsync = await _invoiceOutboxService.TryStartMessageNowAsync(invoiceOutboxMessage.Id, ct);
+            _invoiceOutboxKickService.Dispatch(
+                invoiceOutboxMessage.Id,
+                job.Id,
+                "invoice_outbox_async_kick",
+                alreadyStarted: invoiceStartedAsync);
+        }
         invoiceKickDispatchStopwatch.Stop();
         var invoiceKickDispatchElapsedMs = invoiceKickDispatchStopwatch.Elapsed.TotalMilliseconds;
 
@@ -337,9 +348,9 @@ public sealed class NewJobCreationService
             CustomerId: jobCustomerId,
             VehicleId: vehicle.Id,
             WofCreated: wofCreated,
-            InvoiceQueued: true,
-            InvoiceMode: req.CreateNewInvoice ? "create_draft" : "attach_existing",
-            InvoiceProcessedInline: invoiceStartedAsync ? "async-started" : "async-pending",
+            InvoiceQueued: invoiceOutboxMessage is not null,
+            InvoiceMode: req.SkipInvoice ? "skipped" : (req.CreateNewInvoice ? "create_draft" : "attach_existing"),
+            InvoiceProcessedInline: invoiceOutboxMessage is null ? "skipped" : (invoiceStartedAsync ? "async-started" : "async-pending"),
             PoProcessedInline: poOutboxMessage is null ? null : (poStartedAsync == true ? "async-started" : "async-pending"),
             CoreRequestMs: Math.Round(coreRequestElapsedMs),
             TotalResponseMs: Math.Round(totalResponseElapsedMs),

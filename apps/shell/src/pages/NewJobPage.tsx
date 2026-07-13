@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { AlertCircle, ArrowLeft, Boxes, Car, FileText, Loader2, Plus, ReceiptText, Tag, UserRound, X } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { Alert, Button, Input, SectionCard, Textarea, useToast } from "@/components/ui";
 import { useJobSheetPrinter } from "@/features/printing/useJobSheetPrinter";
 import {
@@ -37,6 +38,27 @@ import { withApiBase } from "@/utils/api";
 const REQUIRED_ROOT_SERVICE_TYPES: ServiceType[] = ["wof", "mech", "paint"];
 
 const normalizeLightTagInput = (value: string) => value.trim().toUpperCase().replace(/\s+/g, "");
+const normalizeDealerCode = (value: unknown) => String(value ?? "").trim().toUpperCase();
+const NO_PO_DEALER_CODES = new Set([
+  "516",
+  "FAS",
+  "GLOSS",
+  "HAN",
+  "HM",
+  "JAD",
+  "GORAN",
+  "REGINA",
+  "MAN",
+  "CAM",
+  "BEN",
+  "JACOB",
+  "IDEAL",
+  "RUI",
+  "SUN",
+  "TUDIS",
+  "WILSON",
+  "ZYJ",
+]);
 
 export function NewJobPage() {
   type PersonalCustomerOption = CachedPersonalCustomer;
@@ -124,6 +146,13 @@ export function NewJobPage() {
     () => businessOptions.find((biz) => biz.id === businessId),
     [businessOptions, businessId]
   );
+  const selectedBusinessSkipsPo = useMemo(() => {
+    if (!selectedBusiness) return false;
+
+    const businessCode = normalizeDealerCode(selectedBusiness.businessCode);
+    const fallbackCode = normalizeDealerCode(selectedBusiness.id);
+    return NO_PO_DEALER_CODES.has(businessCode) || NO_PO_DEALER_CODES.has(fallbackCode);
+  }, [selectedBusiness]);
   const businessOptionLabel = useCallback(
     (biz: BusinessOption) => [biz.label, biz.businessCode].filter(Boolean).join(" - "),
     []
@@ -425,12 +454,13 @@ export function NewJobPage() {
   }, [businessOptionLabel, customerType, selectedBusiness]);
 
   useEffect(() => {
-    if (showNeedsPo) {
-      setNeedsPo(true);
-    } else {
+    if (!showNeedsPo) {
       setNeedsPo(false);
+      return;
     }
-  }, [showNeedsPo]);
+
+    setNeedsPo(!selectedBusinessSkipsPo);
+  }, [showNeedsPo, selectedBusinessSkipsPo, businessId]);
 
   useEffect(() => {
     if (showPaintPanels) {
@@ -1129,7 +1159,7 @@ export function NewJobPage() {
             titleIcon={<Car size={18} />}
             titleClassName="text-lg font-semibold"
           >
-            <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+            <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div>
                 <label htmlFor="new-job-rego" className="block text-base text-[rgba(0,0,0,0.65)]">
                   Rego/ VIN/ Chassis <span className="text-[#dc2626]">*</span>
@@ -1147,13 +1177,15 @@ export function NewJobPage() {
                     type="button"
                     onClick={() => void handleImportClick()}
                     disabled={importState === "loading" || !rego.trim()}
-                    className="inline-flex h-10 w-[76px] shrink-0 items-center justify-center rounded-[8px] border border-[rgba(220,38,38,0.35)] bg-white text-sm font-semibold text-[#b91c1c] shadow-sm transition hover:bg-[rgba(220,38,38,0.06)] disabled:cursor-not-allowed disabled:border-[rgba(0,0,0,0.12)] disabled:text-[rgba(0,0,0,0.35)] disabled:shadow-none"
+                    className="inline-flex h-10 w-[88px] shrink-0 items-center justify-center rounded-[8px] bg-[#dc2626] text-sm font-semibold text-white shadow-sm transition hover:bg-[#b91c1c] disabled:cursor-not-allowed disabled:bg-[rgba(0,0,0,0.12)] disabled:text-[rgba(0,0,0,0.35)] disabled:shadow-none"
                   >
                     {importState === "loading" ? "抓取中" : "抓取"}
                   </button>
                 </div>
-                <div className="mt-2 text-base text-[rgba(0,0,0,0.45)]">长度 {rego.length || 0}</div>
-                <div className="mt-1 text-base text-[rgba(0,0,0,0.45)]">Eg：NRL867</div>
+                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-base text-[rgba(0,0,0,0.45)]">
+                  <span>长度 {rego.length || 0}</span>
+                  <span>Eg：NRL867</span>
+                </div>
               </div>
 
               <div className="min-h-[104px] rounded-[8px] border border-dashed border-[rgba(0,0,0,0.12)] bg-[rgba(0,0,0,0.015)] p-3">
@@ -1189,23 +1221,22 @@ export function NewJobPage() {
                 )}
               </div>
 
-              <div className="rounded-[8px] border border-[rgba(0,0,0,0.08)] bg-white p-3">
-                <div className="mb-2 flex items-center gap-2 text-base font-semibold text-[rgba(0,0,0,0.72)]">
-                  <Tag size={16} className="text-[#dc2626]" />
-                  Key Tag
-                </div>
-                <label htmlFor="new-job-light-tag" className="block text-sm text-[rgba(0,0,0,0.60)]">
-                  Key Tag Barcode
-                </label>
-                <Input
-                  id="new-job-light-tag"
-                  value={lightTagId}
-                  placeholder="Scan or enter barcode"
-                  autoComplete="off"
-                  className="mt-2"
-                  onChange={(event) => setLightTagId(normalizeLightTagInput(event.target.value))}
-                />
+            </div>
+
+            <div className="mt-4 rounded-[8px] border border-[rgba(220,38,38,0.16)] bg-[rgba(220,38,38,0.03)] p-3">
+              <div className="mb-2 flex items-center gap-2 text-base font-semibold text-[rgba(0,0,0,0.72)]">
+                <Tag size={16} className="text-[#dc2626]" />
+                Key Tag
               </div>
+              <Input
+                id="new-job-light-tag"
+                value={lightTagId}
+                aria-label="Key Tag Barcode"
+                placeholder="Scan or enter barcode"
+                autoComplete="off"
+                className="mt-2"
+                onChange={(event) => setLightTagId(normalizeLightTagInput(event.target.value))}
+              />
             </div>
           </SectionCard>
 
@@ -1326,19 +1357,19 @@ export function NewJobPage() {
                       />
                     </div>
                     <div>
-                      <label htmlFor="new-job-customer-address" className="block text-base text-[rgba(0,0,0,0.65)]">
+                      <label className="block text-base text-[rgba(0,0,0,0.65)]">
                         地址
                       </label>
-                      <Input
-                        id="new-job-customer-address"
-                        value={customerAddress}
-                        placeholder="输入地址"
-                        className="mt-2"
-                        onChange={(event) => {
-                          clearCustomerMatchHint();
-                          setCustomerAddress(event.target.value);
-                        }}
-                      />
+                      <div className="mt-2">
+                        <AddressAutocomplete
+                          placeholder="输入地址"
+                          value={customerAddress}
+                          onChange={(value) => {
+                            clearCustomerMatchHint();
+                            setCustomerAddress(value);
+                          }}
+                        />
+                      </div>
                     </div>
                   </div>
                 </>

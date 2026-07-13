@@ -38,6 +38,7 @@ public class JobsController : ControllerBase
     private readonly JobInvoiceService _jobInvoiceService;
     private readonly WofQueryService _wofQueryService;
     private readonly NztaExpiryLookupService _nztaExpiryLookupService;
+    private readonly XeroInvoiceStatusSyncService? _xeroInvoiceStatusSyncService;
 
     public JobsController(
         AppDbContext db,
@@ -45,7 +46,8 @@ public class JobsController : ControllerBase
         JobPoStateService jobPoStateService,
         JobInvoiceService jobInvoiceService,
         WofQueryService wofQueryService,
-        NztaExpiryLookupService nztaExpiryLookupService)
+        NztaExpiryLookupService nztaExpiryLookupService,
+        XeroInvoiceStatusSyncService? xeroInvoiceStatusSyncService = null)
     {
         _db = db;
         _appCache = appCache;
@@ -53,6 +55,7 @@ public class JobsController : ControllerBase
         _jobInvoiceService = jobInvoiceService;
         _wofQueryService = wofQueryService;
         _nztaExpiryLookupService = nztaExpiryLookupService;
+        _xeroInvoiceStatusSyncService = xeroInvoiceStatusSyncService;
     }
 
     [HttpGet]
@@ -129,6 +132,11 @@ public class JobsController : ControllerBase
                 EF.Functions.ILike(x.Customer.BusinessCode ?? "", customerPattern)
                 || EF.Functions.ILike(x.Customer.Name ?? "", customerPattern));
         }
+
+        if (!string.IsNullOrWhiteSpace(request.XeroStatus))
+            query = query.Where(x => x.Invoice != null
+                && x.Invoice.ExternalStatus != null
+                && EF.Functions.ILike(x.Invoice.ExternalStatus, request.XeroStatus));
 
         if (request.RangeStartUtc.HasValue)
             query = query.Where(x => x.Job.CreatedAt >= request.RangeStartUtc.Value);
@@ -296,6 +304,7 @@ public class JobsController : ControllerBase
                 x.Job.CreatedAt,
                 x.Job.Notes,
                 x.Invoice != null ? x.Invoice.ExternalInvoiceId : null,
+                x.Invoice != null ? x.Invoice.ExternalStatus : null,
                 paintServices
                     .Where(paint => paint.JobId == x.Job.Id)
                     .OrderByDescending(paint => paint.UpdatedAt)
@@ -372,6 +381,7 @@ public class JobsController : ControllerBase
                 wofStatus = WofQueryService.DeriveWofStatus(row.HasWofService, row.HasWofRecord, row.LatestWofManualStatus),
                 notes = row.Notes ?? "",
                 externalInvoiceId = row.ExternalInvoiceId,
+                xeroStatus = row.ExternalStatus,
                 createdAt = FormatDateTime(row.CreatedAt),
                 panels = row.PaintPanels
             };
@@ -408,6 +418,7 @@ public class JobsController : ControllerBase
             request.JobType,
             request.WofStatus,
             request.PaintStatus,
+            request.XeroStatus,
             request.Customer,
             request.RangeStartUtc?.Ticks.ToString(CultureInfo.InvariantCulture) ?? "",
             request.RangeEndUtcExclusive?.Ticks.ToString(CultureInfo.InvariantCulture) ?? "",
@@ -487,6 +498,7 @@ public class JobsController : ControllerBase
             query?.IncludeArchived ?? false,
             query?.Wof?.Trim() ?? "",
             query?.Paint?.Trim() ?? "",
+            NormalizeXeroStatus(query?.Xero),
             query?.Customer?.Trim() ?? "",
             selectedTags,
             startUtc,
@@ -494,12 +506,21 @@ public class JobsController : ControllerBase
         );
     }
 
+    private static string NormalizeXeroStatus(string? value) => value?.Trim().ToUpperInvariant() switch
+    {
+        "DF" or "DRAFT" => "DRAFT",
+        "AP" or "AWAITINGPAYMENT" or "AWAITING_PAYMENT" or "AUTHORISED" => "AUTHORISED",
+        "PD" or "PAID" => "PAID",
+        _ => ""
+    };
+
     public sealed record JobsListQuery(
         string? Q,
         string? Status,
         bool? IncludeArchived,
         string? Wof,
         string? Paint,
+        string? Xero,
         string? Range,
         string? Start,
         string? End,
@@ -516,6 +537,7 @@ public class JobsController : ControllerBase
         bool IncludeArchived,
         string WofStatus,
         string PaintStatus,
+        string XeroStatus,
         string Customer,
         string[] SelectedTags,
         DateTime? RangeStartUtc,
@@ -529,6 +551,7 @@ public class JobsController : ControllerBase
         DateTime CreatedAt,
         string? Notes,
         string? ExternalInvoiceId,
+        string? ExternalStatus,
         string? PaintStatus,
         int? PaintCurrentStage,
         int? PaintPanels,
@@ -544,6 +567,26 @@ public class JobsController : ControllerBase
         string? CustomerPhone);
 
     private sealed record JobTagListRow(long JobId, string Name);
+
+    public sealed record SyncXeroStatusesRequest(long[]? JobIds);
+
+    [HttpPost("xero-status/sync")]
+    public async Task<IActionResult> SyncXeroStatuses([FromBody] SyncXeroStatusesRequest request, CancellationToken ct)
+    {
+        var ids = (request.JobIds ?? [])
+            .Where(id => id > 0)
+            .Distinct()
+            .Take(MaxJobsPageSize)
+            .ToArray();
+        if (ids.Length == 0)
+            return BadRequest(new { error = "Please select at least one job." });
+        if (_xeroInvoiceStatusSyncService is null)
+            return StatusCode(503, new { error = "Xero status sync is unavailable." });
+
+        var result = await _xeroInvoiceStatusSyncService.SyncJobsAsync(ids, ct);
+        await TouchJobsListVersionAsync(ct);
+        return Ok(result);
+    }
 
     [HttpGet("tags")]
     public async Task<IActionResult> GetTags([FromQuery] string? ids, CancellationToken ct)
@@ -2103,23 +2146,41 @@ public class JobsController : ControllerBase
         if (string.IsNullOrWhiteSpace(status))
             return BadRequest(new { error = "Status is required." });
 
-        if (!string.Equals(status, "Archived", StringComparison.OrdinalIgnoreCase))
-            return BadRequest(new { error = "Status must be Archived." });
-
-        job.Status = "Archived";
-        job.UpdatedAt = DateTime.UtcNow;
-
         var correlationId = BuildCorrelationId(job.Id);
-        var existingInactive = await _db.InactiveGmailCorrelations
-            .FirstOrDefaultAsync(x => x.CorrelationId == correlationId, ct);
-        if (existingInactive is null)
+        if (string.Equals(status, "Archived", StringComparison.OrdinalIgnoreCase))
         {
-            _db.InactiveGmailCorrelations.Add(new InactiveGmailCorrelation
+            job.Status = "Archived";
+            job.UpdatedAt = DateTime.UtcNow;
+
+            var existingInactive = await _db.InactiveGmailCorrelations
+                .FirstOrDefaultAsync(x => x.CorrelationId == correlationId, ct);
+            if (existingInactive is null)
             {
-                CorrelationId = correlationId,
-                Reason = $"Job {job.Id} archived",
-                CreatedAt = DateTime.UtcNow,
-            });
+                _db.InactiveGmailCorrelations.Add(new InactiveGmailCorrelation
+                {
+                    CorrelationId = correlationId,
+                    Reason = $"Job {job.Id} archived",
+                    CreatedAt = DateTime.UtcNow,
+                });
+            }
+        }
+        else if (string.Equals(status, "In Shop", StringComparison.OrdinalIgnoreCase))
+        {
+            job.Status = "In Shop";
+            job.UpdatedAt = DateTime.UtcNow;
+
+            var archivedInactive = await _db.InactiveGmailCorrelations
+                .FirstOrDefaultAsync(
+                    x => x.CorrelationId == correlationId
+                        && x.Reason != null
+                        && EF.Functions.ILike(x.Reason, "%archived%"),
+                    ct);
+            if (archivedInactive is not null)
+                _db.InactiveGmailCorrelations.Remove(archivedInactive);
+        }
+        else
+        {
+            return BadRequest(new { error = "Status must be Archived or In Shop." });
         }
 
         await _db.SaveChangesAsync(ct);
@@ -2326,7 +2387,8 @@ public class JobsController : ControllerBase
     private static string MapStatus(string? status)
     {
         var value = status?.Trim() ?? "";
-        if (value.Equals("InProgress", StringComparison.OrdinalIgnoreCase))
+        if (value.Equals("InProgress", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("In Shop", StringComparison.OrdinalIgnoreCase))
             return "In Progress";
         if (value.Equals("Delivered", StringComparison.OrdinalIgnoreCase))
             return "Ready";

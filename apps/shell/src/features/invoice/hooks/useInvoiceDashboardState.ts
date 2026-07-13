@@ -674,6 +674,7 @@ export function useInvoiceDashboardState({
     draftState: poDraftState,
     createPoDraft,
     recreatePoDraft,
+    sendPoEmail,
     viewPoDraft,
     openSentMailbox,
   } = usePoEmailDraftActions({ invoice, timeline, poLocked, poLockReason, enabled: enabled && needsPo });
@@ -1279,6 +1280,7 @@ export function useInvoiceDashboardState({
     setManualPoNumber,
     createPoDraft,
     recreatePoDraft,
+    sendPoEmail,
     pullInvoicePdf,
     viewPoDraft,
     openSentMailbox,
@@ -1321,6 +1323,7 @@ export function useInvoiceDashboardState({
     openInXero,
     createPoDraft,
     recreatePoDraft,
+    sendPoEmail,
     viewPoDraft,
     openSentMailbox,
     sendReminderNow,

@@ -36,6 +36,29 @@ export type GmailPoDraftStateResponse = {
   accessTokenExpiresIn?: number | null;
 };
 
+export type GmailPoSendRequestPayload = {
+  to: string;
+  subject: string;
+  body: string;
+  correlationId: string;
+  isHtmlBody?: boolean;
+  threadId?: string | null;
+  replyToRfcMessageId?: string | null;
+  referencesHeader?: string | null;
+  gmailAccountId?: number | null;
+};
+
+export type GmailPoSendResponse = {
+  id: string;
+  threadId: string;
+  rfcMessageId: string;
+  referencesHeader: string;
+  gmailAccountId?: number | null;
+  gmailAccountEmail?: string | null;
+  waitingForPoLabelApplied?: boolean;
+  labelWarning?: string | null;
+};
+
 export function createPoRequestDraft(payload: GmailPoDraftRequestPayload) {
   return requestJson<GmailPoDraftResponse>("/api/gmail/drafts/po-request", {
     method: "POST",
@@ -54,4 +77,15 @@ export function getPoRequestDraftState(correlationId: string, gmailAccountId?: n
   }
 
   return requestJson<GmailPoDraftStateResponse>(`/api/gmail/drafts/po-request/status?${query.toString()}`);
+}
+
+export function sendPoRequest(payload: GmailPoSendRequestPayload) {
+  return requestJson<GmailPoSendResponse>("/api/gmail/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...payload,
+      isHtmlBody: payload.isHtmlBody ?? true,
+    }),
+  });
 }

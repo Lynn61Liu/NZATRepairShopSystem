@@ -11,6 +11,7 @@ import { CustomerProfilePage } from "./pages/customers/CustomerProfilePage";
 import { WofFailReasonsPage } from "./pages/wofFails/WofFailReasonsPage";
 import { XeroItemCodesPage } from "./pages/settings/XeroItemCodesPage";
 import { ServiceCatalogPage } from "./pages/settings/ServiceCatalogPage";
+import { EftposQuickJobsPage } from "./pages/settings/EftposQuickJobsPage";
 import { IntegrationsPage } from "./pages/settings/IntegrationsPage";
 import { PartFlowPage } from "./pages/PartFlowPages/PartFlowPage";
 import { PaintBoardPage } from "./pages/paint/PaintBoardPage";
@@ -28,6 +29,7 @@ import { AgreementHistoryPage } from "./pages/agreementHistory/AgreementHistoryP
 import { CourtesyCarEntryPage } from "./pages/courtesyCarEntry/CourtesyCarEntryPage";
 import { DeviceCommunicationPage } from "./pages/deviceCommunication/DeviceCommunicationPage";
 import { LightFinderPage } from "./pages/LightFinderPage";
+import { CarOnYardPage } from "./pages/carOnYard/CarOnYardPage";
 
 // --- [从 Eric 版引入] 采购相关组件 ---
 import Shopfront from "./components/Shopfront";
@@ -40,6 +42,7 @@ const router = createBrowserRouter([
   { path: "/courtesy-car", element: <CourtesyCarEntryPage /> },
   { path: "/light-finder", element: <LightFinderPage /> },
   { path: "/staff-shop", element: <Shopfront /> },
+  { path: "/car-on-yard-tv", element: <CarOnYardPage standalone /> },
 
   {
     path: "/",
@@ -47,6 +50,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <DashboardPage /> },
       { path: "jobs", element: <JobsPage /> },
+      { path: "car-on-yard", element: <CarOnYardPage /> },
       { path: "paint-board", element: <PaintBoardPage /> },
       { path: "wof-schedule", element: <WofSchedulePage /> }, 
       { path: "courtesy-cars", element: <CourtesyCarsPage /> },
@@ -67,6 +71,7 @@ const router = createBrowserRouter([
       { path: "wof-fails", element: <WofFailReasonsPage /> },
       { path: "xero-item-codes", element: <XeroItemCodesPage /> },
       { path: "service-settings", element: <ServiceCatalogPage /> },
+      { path: "eftpos-quick-jobs", element: <EftposQuickJobsPage /> },
       { path: "integrations", element: <IntegrationsPage /> },
       
       // --- [新增] 采购系统路由 ---
