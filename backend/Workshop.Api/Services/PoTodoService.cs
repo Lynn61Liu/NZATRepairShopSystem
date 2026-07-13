@@ -6,6 +6,8 @@ namespace Workshop.Api.Services;
 
 public sealed class PoTodoService
 {
+    public const string PoGmailSyncKey = "po-gmail";
+
     private readonly AppDbContext _db;
     private readonly GmailThreadSyncService? _gmailThreadSyncService;
     private readonly JobPoStateService? _jobPoStateService;
@@ -99,8 +101,10 @@ public sealed class PoTodoService
                 x.State == null ? null : x.State.ConfirmedPoNumber))
             .ToListAsync(ct);
 
+        var lastGmailSyncedAt = await GetLastGmailSyncedAtAsync(ct);
+
         if (rows.Count == 0)
-            return new PoTodoListResult(total, [], safePage, safePageSize, totalPages);
+            return new PoTodoListResult(total, [], safePage, safePageSize, totalPages, lastGmailSyncedAt);
 
         var jobIds = rows.Select(x => x.JobId).ToArray();
         var customerIds = rows.Where(x => x.CustomerId.HasValue).Select(x => x.CustomerId!.Value).Distinct().ToArray();
@@ -193,7 +197,7 @@ public sealed class PoTodoService
                 correlationId);
         }).ToList();
 
-        return new PoTodoListResult(total, items, safePage, safePageSize, totalPages);
+        return new PoTodoListResult(total, items, safePage, safePageSize, totalPages, lastGmailSyncedAt);
     }
 
     public Task<PoTodoSyncResult> SyncActiveAsync(CancellationToken ct) =>
@@ -248,12 +252,63 @@ public sealed class PoTodoService
             .ThenByDescending(x => x.Id)
             .Skip((safePage - 1) * safePageSize)
             .Take(safePageSize)
+            .Select(x => new PoTodoSyncTarget(x.Id, x.CreatedAt, x.CounterpartyEmail, x.CorrelationId, x.Status))
             .ToListAsync(ct);
+
+        return await SyncTargetsAsync(targets, warnings, ct);
+    }
+
+    public async Task<PoTodoSyncResult> SyncDashboardGmailAsync(CancellationToken ct)
+    {
+        var warnings = new List<string>();
+        if (_jobPoStateService is null)
+        {
+            warnings.Add("PO state sync service is unavailable.");
+            await SavePoGmailSyncStateAsync(0, 0, warnings, ct);
+            return new PoTodoSyncResult(0, 0, warnings);
+        }
+
+        await _jobPoStateService.EnsureStatesForNeedsPoJobsAsync(ct);
+
+        var targets = await (
+                from job in _db.Jobs.AsNoTracking()
+                join state in _db.JobPoStates.AsNoTracking() on job.Id equals state.JobId
+                where job.NeedsPo
+                where job.Status == null || job.Status.ToLower() != "archived"
+                where state.Status == JobPoStateStatus.Draft ||
+                      state.Status == JobPoStateStatus.AwaitingReply ||
+                      state.Status == JobPoStateStatus.PendingConfirmation ||
+                      state.Status == JobPoStateStatus.PoConfirmed
+                orderby job.CreatedAt descending, job.Id descending
+                select new PoTodoSyncTarget(
+                    job.Id,
+                    job.CreatedAt,
+                    state.CounterpartyEmail,
+                    state.CorrelationId,
+                    state.Status))
+            .ToListAsync(ct);
+
+        var result = await SyncTargetsAsync(targets, warnings, ct);
+        await SavePoGmailSyncStateAsync(result.CheckedJobs, result.SyncedMessages, result.Warnings, ct);
+        return result;
+    }
+
+    private async Task<PoTodoSyncResult> SyncTargetsAsync(
+        IReadOnlyList<PoTodoSyncTarget> targets,
+        List<string> warnings,
+        CancellationToken ct)
+    {
+        if (_jobPoStateService is null)
+        {
+            warnings.Add("PO state sync service is unavailable.");
+            return new PoTodoSyncResult(0, 0, warnings);
+        }
 
         var syncedMessages = 0;
 
         foreach (var target in targets)
         {
+            var stateSyncedByGmail = false;
             try
             {
                 if (_gmailThreadSyncService is null)
@@ -270,6 +325,7 @@ public sealed class PoTodoService
                         ct);
 
                     syncedMessages += result.SyncedCount;
+                    stateSyncedByGmail = result.Ok && !result.Skipped;
                     if (!string.IsNullOrWhiteSpace(result.Warning))
                         warnings.Add($"Job {target.Id}: {result.Warning}");
                 }
@@ -283,6 +339,9 @@ public sealed class PoTodoService
                 _logger?.LogWarning(ex, "PO todo Gmail sync failed for job {JobId}.", target.Id);
                 warnings.Add($"Job {target.Id}: {ex.Message}");
             }
+
+            if (stateSyncedByGmail)
+                continue;
 
             try
             {
@@ -300,6 +359,35 @@ public sealed class PoTodoService
         }
 
         return new PoTodoSyncResult(targets.Count, syncedMessages, warnings);
+    }
+
+    private async Task<DateTime?> GetLastGmailSyncedAtAsync(CancellationToken ct)
+    {
+        return await _db.SystemSyncStates.AsNoTracking()
+            .Where(x => x.SyncKey == PoGmailSyncKey)
+            .Select(x => x.LastSyncedAt)
+            .FirstOrDefaultAsync(ct);
+    }
+
+    private async Task SavePoGmailSyncStateAsync(int checkedJobs, int syncedMessages, IReadOnlyList<string> warnings, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var state = await _db.SystemSyncStates.FirstOrDefaultAsync(x => x.SyncKey == PoGmailSyncKey, ct);
+        if (state is null)
+        {
+            state = new SystemSyncState
+            {
+                SyncKey = PoGmailSyncKey,
+                CreatedAt = now,
+            };
+            _db.SystemSyncStates.Add(state);
+        }
+
+        state.LastSyncedAt = now;
+        state.LastResult = $"checkedJobs={checkedJobs}; syncedMessages={syncedMessages}; warnings={warnings.Count}";
+        state.LastError = warnings.Count == 0 ? null : string.Join("\n", warnings.Take(10));
+        state.UpdatedAt = now;
+        await _db.SaveChangesAsync(ct);
     }
 
     public async Task<PoTodoActionResult> ManualConfirmSentAsync(long jobId, CancellationToken ct)
@@ -698,9 +786,9 @@ public sealed class PoTodoService
     private static int NormalizePageSize(int pageSize)
     {
         if (pageSize <= 0)
-            return 15;
+            return 500;
 
-        return Math.Min(pageSize, 100);
+        return Math.Min(pageSize, 1000);
     }
 
     private static DateTime GetLogOccurredAtUtc(GmailMessageLog log)
@@ -747,6 +835,13 @@ public sealed class PoTodoService
         DateTime? LastSupplierReplyAt,
         string? DetectedPoNumber,
         string? ConfirmedPoNumber);
+
+    private sealed record PoTodoSyncTarget(
+        long Id,
+        DateTime CreatedAt,
+        string? CounterpartyEmail,
+        string CorrelationId,
+        JobPoStateStatus Status);
 }
 
 public sealed record PoTodoActionResult(bool Success, string? Error)
@@ -784,7 +879,8 @@ public sealed record PoTodoListResult(
     IReadOnlyList<PoTodoRow> Items,
     int CurrentPage = 1,
     int PageSize = 500,
-    int TotalPages = 1);
+    int TotalPages = 1,
+    DateTime? LastGmailSyncedAt = null);
 
 public sealed record PoTodoRow(
     long JobId,

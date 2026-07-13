@@ -1,23 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button, Card, Pagination, useToast } from "@/components/ui";
-import { Check, CheckSquare, ExternalLink, Eye, RefreshCw, Send, Square, X } from "lucide-react";
+import { Check, CheckSquare, ExternalLink, Eye, Send, Square, X } from "lucide-react";
 import {
   completePoJobs,
   confirmPoNumber,
   fetchPoDraftPreview,
   fetchPoTodo,
   manualConfirmPoSent,
-  syncPoTodo,
 } from "@/features/poTodo/poTodoApi";
 import type { ConfirmPoResponse, PoDraftPreview, PoTodoRow, PoTodoTab } from "@/features/poTodo/poTodo.types";
 import {
-  getPoTodoPageCacheKey,
   getPoTodoTableColSpan,
-  invalidatePoTodoPageCache,
-  isPoTodoPageCacheFresh,
   normalizePoNumberInput,
-  type PoTodoPageCacheEntry,
   shouldShowPoDraftColumn,
   shouldShowPoNumberColumn,
   shouldShowSentColumn,
@@ -29,7 +24,7 @@ const TABS: Array<{ key: PoTodoTab; label: string }> = [
   { key: "awaitingPo", label: "等待 PO" },
   { key: "invoiced", label: "Invoiced" },
 ];
-const PO_TODO_PAGE_SIZE = 15;
+const PO_TODO_PAGE_SIZE = 10;
 
 function formatDate(value?: string | null) {
   if (!value) return "-";
@@ -60,18 +55,28 @@ function stepSummary(result: ConfirmPoResponse | null) {
   return Object.entries(result.steps);
 }
 
+function tabForStatus(status: string): PoTodoTab | null {
+  switch (status) {
+    case "draft":
+      return "pendingSend";
+    case "awaitingReply":
+    case "pendingConfirmation":
+    case "escalationRequired":
+      return "awaitingPo";
+    case "poConfirmed":
+      return "invoiced";
+    default:
+      return null;
+  }
+}
+
 export function PoDashboardPreviewPage() {
   const toast = useToast();
-  const lastAutoSyncKeyRef = useRef<string | null>(null);
-  const pageCacheRef = useRef<Record<string, PoTodoPageCacheEntry>>({});
   const [activeTab, setActiveTab] = useState<PoTodoTab>("pendingSend");
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [rows, setRows] = useState<PoTodoRow[]>([]);
-  const [counts, setCounts] = useState<Record<PoTodoTab, number>>({ pendingSend: 0, awaitingPo: 0, invoiced: 0 });
+  const [allRows, setAllRows] = useState<PoTodoRow[]>([]);
+  const [lastGmailSyncedAt, setLastGmailSyncedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [syncProgress, setSyncProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [poInputs, setPoInputs] = useState<Record<number, string>>({});
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -80,124 +85,60 @@ export function PoDashboardPreviewPage() {
   const [previewLoadingJobId, setPreviewLoadingJobId] = useState<number | null>(null);
   const [confirmResult, setConfirmResult] = useState<ConfirmPoResponse | null>(null);
 
-  const applyCachedPage = useCallback((tab: PoTodoTab, page: number) => {
-    const cacheKey = getPoTodoPageCacheKey(tab, page);
-    const cached = pageCacheRef.current[cacheKey];
-    if (!cached || !isPoTodoPageCacheFresh(cached.cachedAt, Date.now())) {
-      return false;
-    }
-
-    setRows(cached.rows);
-    setCounts((prev) => ({ ...prev, [tab]: cached.total }));
-    setTotalPages(cached.totalPages);
-    if (cached.currentPage !== page) {
-      setCurrentPage(cached.currentPage);
-    }
-    setLoading(false);
-    setError(null);
-    return true;
-  }, []);
-
-  const invalidateCachedJobs = useCallback((jobIds: readonly number[], affectedTabs: readonly PoTodoTab[]) => {
-    pageCacheRef.current = invalidatePoTodoPageCache(pageCacheRef.current, jobIds, affectedTabs);
-    lastAutoSyncKeyRef.current = null;
-  }, []);
-
-  const loadTab = useCallback(async (tab: PoTodoTab, page: number) => {
+  const loadDashboard = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchPoTodo(tab, page, PO_TODO_PAGE_SIZE);
-      const resultPage = Number(result.currentPage) || page;
-      const resultTotalPages = Number(result.totalPages) || Math.max(1, Math.ceil(result.total / PO_TODO_PAGE_SIZE));
-      pageCacheRef.current[getPoTodoPageCacheKey(tab, resultPage)] = {
-        rows: result.items,
-        total: result.total,
-        totalPages: resultTotalPages,
-        currentPage: resultPage,
-        cachedAt: Date.now(),
-      };
-      setRows(result.items);
-      setCounts((prev) => ({ ...prev, [tab]: result.total }));
-      setTotalPages(resultTotalPages);
-      if (resultPage !== page) {
-        setCurrentPage(resultPage);
-      }
+      const result = await fetchPoTodo();
+      setAllRows(result.items);
+      setLastGmailSyncedAt(result.lastGmailSyncedAt ?? null);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load PO TODO list";
       setError(message);
-      setRows([]);
+      setAllRows([]);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const refreshAllCounts = useCallback(async () => {
-    const [pendingSend, awaitingPo, invoiced] = await Promise.all(TABS.map((tab) => fetchPoTodo(tab.key, 1, PO_TODO_PAGE_SIZE)));
-    setCounts({
-      pendingSend: pendingSend.total,
-      awaitingPo: awaitingPo.total,
-      invoiced: invoiced.total,
-    });
-  }, []);
-
-  const syncAndReload = useCallback(
-    async (showToast: boolean, tab: PoTodoTab, page: number, forceSync = false) => {
-      if (!forceSync && applyCachedPage(tab, page)) {
-        return;
-      }
-
-      setSyncing(true);
-      setLoading(true);
-      setRows([]);
-      setSelectedIds([]);
-      setSyncProgress(`正在同步第 ${page} 页 Gmail，最多 ${PO_TODO_PAGE_SIZE} 个 job...`);
-      try {
-        const sync = await syncPoTodo(tab, page, PO_TODO_PAGE_SIZE);
-        setSyncProgress(`同步完成 ${sync.checkedJobs} 个 job，正在加载列表...`);
-        await refreshAllCounts();
-        await loadTab(tab, page);
-        if (showToast) {
-          toast.success(`同步完成：${sync.checkedJobs} jobs, ${sync.syncedMessages} messages`);
-        }
-        if (sync.warnings.length > 0) {
-          toast.error(sync.warnings[0] ?? "PO sync warning");
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "PO sync failed";
-        setError(message);
-        setRows([]);
-        setLoading(false);
-        if (showToast) toast.error(message);
-      } finally {
-        setSyncing(false);
-        setSyncProgress(null);
-      }
-    },
-    [applyCachedPage, loadTab, refreshAllCounts, toast]
-  );
-
   useEffect(() => {
-    const key = `${activeTab}:${currentPage}`;
-    if (lastAutoSyncKeyRef.current === key) return;
-    lastAutoSyncKeyRef.current = key;
-    void syncAndReload(false, activeTab, currentPage);
-  }, [activeTab, currentPage, syncAndReload]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      void syncAndReload(false, activeTab, currentPage, true);
-    }, 60 * 60 * 1000);
-    return () => window.clearInterval(timer);
-  }, [activeTab, currentPage, syncAndReload]);
+    void loadDashboard();
+  }, [loadDashboard]);
 
   const handleTabChange = (tab: PoTodoTab) => {
     if (tab === activeTab) return;
     setActiveTab(tab);
     setCurrentPage(1);
-    setTotalPages(1);
     setSelectedIds([]);
   };
+
+  const rowsByTab = useMemo(() => {
+    const next: Record<PoTodoTab, PoTodoRow[]> = { pendingSend: [], awaitingPo: [], invoiced: [] };
+    for (const row of allRows) {
+      const tab = tabForStatus(row.status);
+      if (tab) next[tab].push(row);
+    }
+    return next;
+  }, [allRows]);
+  const counts = useMemo(
+    () => ({
+      pendingSend: rowsByTab.pendingSend.length,
+      awaitingPo: rowsByTab.awaitingPo.length,
+      invoiced: rowsByTab.invoiced.length,
+    }),
+    [rowsByTab]
+  );
+  const totalPages = Math.max(1, Math.ceil(counts[activeTab] / PO_TODO_PAGE_SIZE));
+  const rows = useMemo(() => {
+    const start = (currentPage - 1) * PO_TODO_PAGE_SIZE;
+    return rowsByTab[activeTab].slice(start, start + PO_TODO_PAGE_SIZE);
+  }, [activeTab, currentPage, rowsByTab]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const allSelected = useMemo(() => rows.length > 0 && rows.every((row) => selectedIds.includes(row.jobId)), [rows, selectedIds]);
   const showXeroColumn = shouldShowXeroColumn(activeTab);
@@ -229,10 +170,8 @@ export function PoDashboardPreviewPage() {
     setBusyJobId(row.jobId);
     try {
       await manualConfirmPoSent(row.jobId);
-      invalidateCachedJobs([row.jobId], ["pendingSend", "awaitingPo"]);
       toast.success("已标记发送");
-      await loadTab(activeTab, currentPage);
-      await refreshAllCounts();
+      await loadDashboard();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to mark sent");
     } finally {
@@ -251,12 +190,10 @@ export function PoDashboardPreviewPage() {
     setConfirmResult(null);
     try {
       const result = await confirmPoNumber(row.jobId, value);
-      setConfirmResult(result);
+        setConfirmResult(result);
       if (result.success) {
-        invalidateCachedJobs([row.jobId], ["awaitingPo", "invoiced"]);
         toast.success("PO 已确认");
-        await loadTab(activeTab, currentPage);
-        await refreshAllCounts();
+        await loadDashboard();
       } else {
         toast.error("PO 确认未完成");
       }
@@ -273,11 +210,9 @@ export function PoDashboardPreviewPage() {
     setBusyJobId(-1);
     try {
       const result = await completePoJobs(selectedIds);
-      invalidateCachedJobs(selectedIds, ["invoiced"]);
       toast.success(`完成 ${result.updated} 个，跳过 ${result.skipped} 个`);
       setSelectedIds([]);
-      await loadTab(activeTab, currentPage);
-      await refreshAllCounts();
+      await loadDashboard();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to complete selected jobs");
     } finally {
@@ -290,15 +225,8 @@ export function PoDashboardPreviewPage() {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-normal text-[var(--ds-text)]">PO TODO</h1>
+          <div className="mt-1 text-sm text-[var(--ds-muted)]">最后 Gmail 同步：{formatDate(lastGmailSyncedAt)}</div>
         </div>
-        <Button
-          variant="primary"
-          leftIcon={<RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />}
-          onClick={() => void syncAndReload(true, activeTab, currentPage, true)}
-          disabled={syncing}
-        >
-          {syncing ? "同步中" : "同步"}
-        </Button>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -362,14 +290,14 @@ export function PoDashboardPreviewPage() {
               </tr>
             </thead>
             <tbody>
-              {syncing || loading ? (
+              {loading ? (
                 <tr>
                   <td colSpan={tableColSpan} className="px-4 py-10 text-center text-sm text-[var(--ds-muted)]">
-                    {syncProgress ?? "Loading..."}
+                    Loading...
                   </td>
                 </tr>
               ) : null}
-              {!syncing && !loading ? rows.map((row) => {
+              {!loading ? rows.map((row) => {
                 const sent = isSent(row);
                 const xeroUrl = xeroInvoiceUrl(row.xeroInvoiceId);
                 const gmailUrl = gmailThreadUrl(row.gmailThreadId);
@@ -470,7 +398,7 @@ export function PoDashboardPreviewPage() {
             </tbody>
           </table>
         </div>
-        {!loading && !syncing && counts[activeTab] > 0 ? (
+        {!loading && counts[activeTab] > 0 ? (
           <Pagination
             currentPage={currentPage}
             totalPages={totalPages}

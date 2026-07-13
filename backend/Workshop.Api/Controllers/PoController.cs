@@ -18,7 +18,7 @@ public sealed class PoController : ControllerBase
     public async Task<IActionResult> GetTodo(
         [FromQuery] string? status,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 15,
+        [FromQuery] int pageSize = 500,
         CancellationToken ct = default)
     {
         var result = await _poTodoService.GetTodoAsync(status, page, pageSize, ct);

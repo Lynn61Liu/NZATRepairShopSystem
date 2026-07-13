@@ -20,7 +20,7 @@
         "Gmail__ClientId": "128878252141-qk2p5e97nvrfld0f0tnidcg127eklgi9.apps.googleusercontent.com",
         "Gmail__ClientSecret": "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",
         "Gmail__RedirectUri": "http://localhost:5227/api/gmail/oauth/callback",
-        "EStationMqtt__Enabled": "true",
+        "EStationMqtt__Enabled": "false",
         "EStationMqtt__BrokerHost": "localhost",
         "EStationMqtt__BrokerPort": "1883"
       }
@@ -36,7 +36,7 @@
         "Gmail__ClientId": "YOUR_LOCAL_GMAIL_CLIENT_ID",
         "Gmail__ClientSecret": "YOUR_LOCAL_GMAIL_CLIENT_SECRET",
         "Gmail__RedirectUri": "http://localhost:5227/api/gmail/oauth/callback",
-        "EStationMqtt__Enabled": "true",
+        "EStationMqtt__Enabled": "false",
         "EStationMqtt__BrokerHost": "localhost",
         "EStationMqtt__BrokerPort": "1883"
       }

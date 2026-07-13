@@ -162,7 +162,7 @@ builder.Services.AddScoped<IEStationMqttCommandPublisher, EStationMqttCommandPub
 builder.Services.AddScoped<JobLightBindingService>();
 builder.Services.AddHostedService<PoStateSchemaInitializerService>();
 builder.Services.AddHostedService<InvoiceOutboxBackgroundService>();
-builder.Services.AddHostedService<GmailBackgroundSyncService>();
+builder.Services.AddHostedService<PoTodoBackgroundSyncService>();
 builder.Services.AddHostedService<PoAutoFollowUpBackgroundService>();
 builder.Services.AddHostedService<EStationMqttListenerBackgroundService>();
 
