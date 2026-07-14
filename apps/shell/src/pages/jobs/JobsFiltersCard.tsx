@@ -77,6 +77,14 @@ export function JobsFiltersCard({ value, onChange, onReset, tagOptions }: Props)
           </div>
 
           <div className="col-span-12 md:col-span-3 lg:col-span-3">
+            <div className="mb-1 text-xs text-[rgba(0,0,0,0.55)]">客户</div>
+            <Input
+              value={value.customer}
+              onChange={(e) => onChange({ ...value, customer: e.target.value })}
+            />
+          </div>
+
+          <div className="col-span-12 md:col-span-3 lg:col-span-3">
             <div className="mb-1 text-xs text-[rgba(0,0,0,0.55)]">时间</div>
             <Select
               value={value.timeRange}
@@ -110,14 +118,6 @@ export function JobsFiltersCard({ value, onChange, onReset, tagOptions }: Props)
               </div>
             </>
           )}
-
-          <div className="col-span-12 md:col-span-3 lg:col-span-3">
-            <div className="mb-1 text-xs text-[rgba(0,0,0,0.55)]">客户</div>
-            <Input
-              value={value.customer}
-              onChange={(e) => onChange({ ...value, customer: e.target.value })}
-            />
-          </div>
 
           <div className="col-span-12 md:col-span-3 lg:col-span-3">
             <div className="mb-1 text-xs text-[rgba(0,0,0,0.55)]">Tag</div>

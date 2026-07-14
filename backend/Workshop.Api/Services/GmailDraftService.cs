@@ -59,7 +59,17 @@ public sealed class GmailDraftService
         if (!job.NeedsPo)
             return GmailDraftStatusResult.Fail(400, "Draft status is only available for PO jobs.");
 
-        var storedDraftId = await GetStoredDraftIdAsync(job.Id, ct);
+        var storedDraftState = await _db.JobPoStates.AsNoTracking()
+            .Where(x => x.JobId == job.Id)
+            .Select(x => new
+            {
+                x.GmailDraftId,
+                x.GmailDraftUpdatedAt,
+                x.FirstRequestSentAt,
+                x.LastRequestSentAt,
+            })
+            .FirstOrDefaultAsync(ct);
+        var storedDraftId = storedDraftState?.GmailDraftId;
         if (string.IsNullOrWhiteSpace(storedDraftId))
         {
             return GmailDraftStatusResult.Success(
@@ -70,6 +80,20 @@ public sealed class GmailDraftService
                 null,
                 null,
                 "No Gmail draft has been created yet.");
+        }
+
+        var requestSentAt = storedDraftState?.LastRequestSentAt ?? storedDraftState?.FirstRequestSentAt;
+        if (requestSentAt is { } sentAt
+            && (storedDraftState?.GmailDraftUpdatedAt is not { } draftUpdatedAt || sentAt >= draftUpdatedAt))
+        {
+            return GmailDraftStatusResult.Success(
+                "none",
+                "",
+                "",
+                "",
+                null,
+                null,
+                "The stored draft was already sent.");
         }
 
         var tokenResult = await _gmailTokenService.RefreshAccessTokenAsync(gmailAccountId, ct);

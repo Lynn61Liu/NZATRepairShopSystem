@@ -51,7 +51,7 @@ export function VehicleQuickLinks({ plate }: { plate?: string | null }) {
       key: "bnt",
       label: `打开 BNT，同时复制车牌 ${normalizedPlate}`,
       href: "https://ezyparts.bntnz.co.nz/",
-      iconUrl: "/vendor-icons/bnt.webp",
+      iconUrl: "/vendor-icons/bnt-static.webp",
       copyPlate: true,
     },
     {

@@ -12,11 +12,16 @@ public class PartsServicesService
 
     private readonly AppDbContext _db;
     private readonly GmailMessageSenderService _gmailMessageSenderService;
+    private readonly MechWorkflowService? _mechWorkflowService;
 
-    public PartsServicesService(AppDbContext db, GmailMessageSenderService gmailMessageSenderService)
+    public PartsServicesService(
+        AppDbContext db,
+        GmailMessageSenderService gmailMessageSenderService,
+        MechWorkflowService? mechWorkflowService = null)
     {
         _db = db;
         _gmailMessageSenderService = gmailMessageSenderService;
+        _mechWorkflowService = mechWorkflowService;
     }
 
     public async Task<WofServiceResult> GetServices(long jobId, CancellationToken ct)
@@ -52,6 +57,7 @@ public class PartsServicesService
                 jobId = jobId.ToString(CultureInfo.InvariantCulture),
                 description = x.Description,
                 status = ToStatusValue(x.Status),
+                completedAt = x.CompletedAt.HasValue ? FormatDateTime(x.CompletedAt.Value) : null,
                 createdAt = FormatDateTime(x.CreatedAt),
                 updatedAt = FormatDateTime(x.UpdatedAt),
                 notes = notesByService.TryGetValue(x.Id, out var list)
@@ -95,6 +101,7 @@ public class PartsServicesService
 
         _db.JobPartsServices.Add(service);
         await _db.SaveChangesAsync(ct);
+        if (_mechWorkflowService is not null) await _mechWorkflowService.SyncFromPartsAsync(jobId, ct);
 
         return WofServiceResult.Ok(new
         {
@@ -129,6 +136,7 @@ public class PartsServicesService
 
         service.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        if (_mechWorkflowService is not null) await _mechWorkflowService.SyncFromPartsAsync(jobId, ct);
 
         return WofServiceResult.Ok(new { success = true });
     }
@@ -141,8 +149,30 @@ public class PartsServicesService
 
         if (deleted == 0)
             return WofServiceResult.NotFound("Parts service not found.");
+        if (_mechWorkflowService is not null) await _mechWorkflowService.SyncFromPartsAsync(jobId, ct);
 
         return WofServiceResult.Ok(new { success = true });
+    }
+
+    public async Task<WofServiceResult> CompleteService(long jobId, long serviceId, CancellationToken ct)
+    {
+        var service = await _db.JobPartsServices
+            .FirstOrDefaultAsync(x => x.Id == serviceId && x.JobId == jobId, ct);
+        if (service is null)
+            return WofServiceResult.NotFound("Parts service not found.");
+        if (service.Status != PartsServiceStatus.PickupOrTransit)
+            return WofServiceResult.BadRequest("Only 待取/在途 parts can be marked as arrived.");
+
+        service.CompletedAt = DateTime.UtcNow;
+        service.UpdatedAt = service.CompletedAt.Value;
+        await _db.SaveChangesAsync(ct);
+        if (_mechWorkflowService is not null) await _mechWorkflowService.SyncFromPartsAsync(jobId, ct);
+
+        return WofServiceResult.Ok(new
+        {
+            success = true,
+            completedAt = FormatDateTime(service.CompletedAt.Value),
+        });
     }
 
     public async Task<WofServiceResult> CreateNote(long jobId, long serviceId, NoteRequest request, CancellationToken ct)
@@ -218,7 +248,7 @@ public class PartsServicesService
         var services = await (
             from ps in _db.JobPartsServices.AsNoTracking()
             join j in _db.Jobs.AsNoTracking() on ps.JobId equals j.Id
-            where j.Status == null || j.Status.ToLower() != "archived"
+            where (j.Status == null || j.Status.ToLower() != "archived") && ps.CompletedAt == null
             orderby ps.UpdatedAt descending, ps.Id descending
             select ps
         ).ToListAsync(ct);

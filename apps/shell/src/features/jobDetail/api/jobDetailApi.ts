@@ -44,6 +44,14 @@ export function updateJobNotes(jobId: string, notes: string) {
   });
 }
 
+export function updateJobPrivateNotes(jobId: string, privateNotes: string) {
+  return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}/private-notes`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ privateNotes }),
+  });
+}
+
 export type JobLightBindingResponse = {
   id: number;
   jobId: number;

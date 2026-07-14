@@ -15,6 +15,7 @@ public sealed class NewJobRequest
     public List<long> MechServiceCatalogItemIds { get; set; } = new();
     public List<long> PaintServiceCatalogItemIds { get; set; } = new();
     public string? Notes { get; set; }
+    public string? PrivateNotes { get; set; }
     public string? PartsDescription { get; set; }
     public List<string> PartsDescriptions { get; set; } = new();
     public int? PaintPanels { get; set; }

@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { Archive, Lightbulb, SprayCan, Trash2, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
-import { StatusPill, ProgressRing, TagsCell } from "@/features/jobs/components";
+import { StatusPill, TagsCell } from "@/features/jobs/components";
 import { getXeroInvoiceUrl, XeroIcon } from "@/components/common/XeroButton";
 import { GmailIcon } from "@/components/common/GmailSearchButton";
 import { getGmailPlateSearchUrl } from "@/components/common/gmailSearch";
@@ -22,6 +22,11 @@ import {
   shouldAutoCloseLightBindingDialog,
 } from "@/features/jobDetail/lightBindingDialog";
 import { requestJson } from "@/utils/api";
+import {
+  MECH_WORKFLOW_LABELS,
+  MECH_WORKFLOW_ORDER,
+  type MechWorkflowStatus,
+} from "@/features/mechWorkflow";
 import { JOB_TABLE_COLUMNS } from "./jobsTableLayout";
 export type JobsTableProps = {
   rows: JobRow[];
@@ -31,6 +36,7 @@ export type JobsTableProps = {
   onArchive: (id: string) => void | Promise<void>;
   onDelete: (id: string) => void | Promise<void>;
   onUpdateCreatedAt: (id: string, date: string) => boolean | Promise<boolean>;
+  onUpdateMechStatus?: (id: string, status: MechWorkflowStatus) => boolean | Promise<boolean>;
   onUpdatePaintStatus?: (id: string, stageIndex: number) => boolean | Promise<boolean>;
   onPrintMech: (id: string) => void | Promise<void>;
   onPrintPaint: (id: string) => void | Promise<void>;
@@ -165,6 +171,36 @@ function PaintStatusSelect({
   );
 }
 
+function MechStatusSelect({
+  row,
+  disabled,
+  onChange,
+}: {
+  row: JobRow;
+  disabled?: boolean;
+  onChange?: (status: MechWorkflowStatus) => boolean | Promise<boolean>;
+}) {
+  if (!row.mechStatus || !onChange) {
+    return <span className="text-xs text-[rgba(0,0,0,0.35)]">—</span>;
+  }
+
+  return (
+    <select
+      className="h-8 w-[124px] rounded-[8px] border border-blue-200 bg-blue-50 px-2 text-[11px] font-medium text-blue-700 outline-none disabled:cursor-wait disabled:opacity-60"
+      value={row.mechStatus}
+      disabled={disabled}
+      onChange={(event) => onChange(event.target.value as MechWorkflowStatus)}
+      title="修改机修流程状态"
+    >
+      {MECH_WORKFLOW_ORDER.map((status) => (
+        <option key={status} value={status}>
+          {MECH_WORKFLOW_LABELS[status]}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function parseCreatedAt(value?: string) {
   return parseTimestamp(value);
 }
@@ -198,6 +234,7 @@ export function JobsTable({
   onArchive,
   onDelete,
   onUpdateCreatedAt,
+  onUpdateMechStatus,
   onUpdatePaintStatus,
   onPrintMech,
   onPrintPaint,
@@ -208,6 +245,7 @@ export function JobsTable({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDate, setEditDate] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [savingMechId, setSavingMechId] = useState<string | null>(null);
   const [lightActionId, setLightActionId] = useState<string | null>(null);
   const [lightActionMessage, setLightActionMessage] = useState<{
     jobId: string;
@@ -359,6 +397,14 @@ export function JobsTable({
     }
   };
 
+  const updateMechStatus = async (row: JobRow, status: MechWorkflowStatus) => {
+    if (!onUpdateMechStatus || savingMechId) return false;
+    setSavingMechId(row.id);
+    const ok = await onUpdateMechStatus(row.id, status);
+    setSavingMechId(null);
+    return ok;
+  };
+
   const openBindDialog = (row: JobRow) => {
     setBindingTagInput("");
     setBindingError(null);
@@ -503,6 +549,10 @@ export function JobsTable({
         {/* rows */}
         {rows.map((r, index) => {
           const isSelected = selectedIds?.has(r.id) ?? false;
+          const mergedNotes = [r.notes, r.privateNotes]
+            .map((value) => value?.trim())
+            .filter(Boolean)
+            .join("\n");
           const timeInShop = getTimeInShop(r.createdAt);
           const timeClass =
             timeInShop.level === "danger"
@@ -617,7 +667,11 @@ export function JobsTable({
                 </div>
 
                 <div className="flex items-center justify-center">
-                  <ProgressRing value={r.mechPct} />
+                  <MechStatusSelect
+                    row={r}
+                    disabled={savingMechId === r.id}
+                    onChange={onUpdateMechStatus ? (status) => updateMechStatus(r, status) : undefined}
+                  />
                 </div>
 
                 <div className="flex items-center justify-center">
@@ -626,13 +680,13 @@ export function JobsTable({
 
                 <div className="flex min-w-0 items-start">
                   <div className="min-w-0 flex-1 text-left text-[rgba(0,0,0,0.50)]">
-                    {r.notes ? (
+                    {mergedNotes ? (
                       <span className="relative inline-flex max-w-full align-middle group">
-                        <span className="h-10 overflow-hidden leading-5" style={TWO_LINE_CLAMP_STYLE}>
-                          {r.notes}
+                        <span className="h-10 whitespace-pre-wrap overflow-hidden leading-5" style={TWO_LINE_CLAMP_STYLE}>
+                          {mergedNotes}
                         </span>
-                        <span className="pointer-events-none absolute left-0 top-full z-50 mt-2 w-[320px] rounded-lg border border-[rgba(0,0,0,0.12)] bg-white px-3 py-2 text-xs text-[rgba(0,0,0,0.75)] shadow-lg opacity-0 translate-y-1 transition group-hover:opacity-100 group-hover:translate-y-0">
-                          {r.notes}
+                        <span className="pointer-events-none absolute left-0 top-full z-50 mt-2 w-[320px] whitespace-pre-wrap rounded-lg border border-[rgba(0,0,0,0.12)] bg-white px-3 py-2 text-xs text-[rgba(0,0,0,0.75)] shadow-lg opacity-0 translate-y-1 transition group-hover:opacity-100 group-hover:translate-y-0">
+                          {mergedNotes}
                         </span>
                       </span>
                     ) : (

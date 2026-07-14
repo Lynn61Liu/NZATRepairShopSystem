@@ -7,15 +7,18 @@ public sealed class XeroInvoiceStatusSyncService
 {
     private readonly AppDbContext _db;
     private readonly JobInvoiceService _jobInvoiceService;
+    private readonly InvoiceOutboxService _invoiceOutboxService;
     private readonly ILogger<XeroInvoiceStatusSyncService> _logger;
 
     public XeroInvoiceStatusSyncService(
         AppDbContext db,
         JobInvoiceService jobInvoiceService,
+        InvoiceOutboxService invoiceOutboxService,
         ILogger<XeroInvoiceStatusSyncService> logger)
     {
         _db = db;
         _jobInvoiceService = jobInvoiceService;
+        _invoiceOutboxService = invoiceOutboxService;
         _logger = logger;
     }
 
@@ -76,12 +79,69 @@ public sealed class XeroInvoiceStatusSyncService
         }
 
         var requestedCount = requestedJobIds?.Distinct().Count() ?? jobIds.Count;
+        var requeued = 0;
+        var enqueueFailed = 0;
+        var skipped = 0;
+
+        // A manual batch status check also acts as a recovery pass for jobs whose
+        // original asynchronous Xero invoice creation never completed. Reuse the
+        // normal outbox flow so retries keep the same idempotency and rate-limiting
+        // behaviour as invoices created with a new job.
+        if (requestedJobIds is { Count: > 0 })
+        {
+            var requestedIds = requestedJobIds
+                .Where(x => x > 0)
+                .Distinct()
+                .ToArray();
+            var existingJobIds = await _db.Jobs.AsNoTracking()
+                .Where(x => requestedIds.Contains(x.Id))
+                .Select(x => x.Id)
+                .ToListAsync(ct);
+            var jobsWithXeroInvoices = jobIds.ToHashSet();
+
+            foreach (var jobId in existingJobIds.Where(x => !jobsWithXeroInvoices.Contains(x)))
+            {
+                try
+                {
+                    var enqueueResult = await _invoiceOutboxService.EnqueueCreateDraftAsync(jobId, ct);
+                    if (!enqueueResult.Ok)
+                    {
+                        enqueueFailed++;
+                        _logger.LogWarning(
+                            "Failed to requeue Xero invoice creation for job {JobId}: {Error}",
+                            jobId,
+                            enqueueResult.Error);
+                    }
+                    else if (enqueueResult.AlreadyHandled)
+                    {
+                        skipped++;
+                    }
+                    else
+                    {
+                        requeued++;
+                    }
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    enqueueFailed++;
+                    _logger.LogWarning(ex, "Failed to requeue Xero invoice creation for job {JobId}.", jobId);
+                }
+            }
+
+            skipped += requestedIds.Length - existingJobIds.Count;
+        }
+
         return new XeroInvoiceStatusBatchResult(
             requestedCount,
             items.Count,
             items.Count(x => x.Ok),
-            Math.Max(0, requestedCount - items.Count),
-            items.Count(x => !x.Ok),
+            skipped,
+            items.Count(x => !x.Ok) + enqueueFailed,
+            requeued,
             items);
     }
 }
@@ -94,4 +154,5 @@ public sealed record XeroInvoiceStatusBatchResult(
     int Succeeded,
     int Skipped,
     int Failed,
+    int Requeued,
     IReadOnlyList<XeroInvoiceStatusSyncItem> Items);

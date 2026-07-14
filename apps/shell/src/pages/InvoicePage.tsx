@@ -137,6 +137,16 @@ type EftposXeroBatchResult = {
   }>;
 };
 
+type EftposXeroBatchHistory = {
+  paymentDate: string;
+  batchPaymentId: string;
+  invoiceCount: number;
+  invoiceNumbers: string[];
+  bankAmount: number;
+  accountName: string;
+  postedAt: string;
+};
+
 type DateFilterPreset = "7d" | "1m" | "custom";
 type PaymentWayFilter = "all" | "epost" | "cash";
 type PaymarkActionMode = "match" | "quick" | "note";
@@ -369,6 +379,7 @@ export function InvoicePage() {
   const [activePaymarkId, setActivePaymarkId] = useState<string | null>(null);
   const [paymarkActionMode, setPaymarkActionMode] = useState<PaymarkActionMode>("match");
   const [paymarkActionSaving, setPaymarkActionSaving] = useState(false);
+  const [paymarkSettlementId, setPaymarkSettlementId] = useState<string | null>(null);
   const [paymarkActionError, setPaymarkActionError] = useState("");
   const [paymarkNote, setPaymarkNote] = useState("");
   const [paymarkQuickOptions, setPaymarkQuickOptions] = useState<PaymarkQuickJobOption[]>([]);
@@ -385,6 +396,7 @@ export function InvoicePage() {
   const [eftposBatchResults, setEftposBatchResults] = useState<Record<string, EftposXeroBatchResult | null>>({});
   const [eftposBatchErrors, setEftposBatchErrors] = useState<Record<string, string>>({});
   const [eftposBatchPostingDate, setEftposBatchPostingDate] = useState<string | null>(null);
+  const [eftposBatchHistory, setEftposBatchHistory] = useState<EftposXeroBatchHistory[]>([]);
   const [preVehicleLookup, setPreVehicleLookup] = useState<VehicleLookupState>({
     loading: false,
     error: "",
@@ -400,7 +412,7 @@ export function InvoicePage() {
     setLoading(true);
     setError("");
     setActionError("");
-    const res = await requestJson<{ payments?: InvoicePaymentRow[] }>("/api/invoice-payments");
+    const res = await requestJson<{ payments?: InvoicePaymentRow[]; eftposBatches?: EftposXeroBatchHistory[] }>("/api/invoice-payments");
 
     if (!res.ok) {
       setError(res.error || "Failed to load invoice payments.");
@@ -410,6 +422,7 @@ export function InvoicePage() {
 
     const payments = Array.isArray(res.data?.payments) ? res.data!.payments : [];
     setRows(sortInvoicePaymentRows(payments));
+    setEftposBatchHistory(Array.isArray(res.data?.eftposBatches) ? res.data!.eftposBatches : []);
     setExpandedDates(
       payments.reduce<Record<string, boolean>>((acc, row, index) => {
         const groupDate = resolvePaymentGroupDate(row);
@@ -852,6 +865,37 @@ export function InvoicePage() {
     }
   };
 
+  const retryPaymarkSettlement = async (row: PaymarkTransactionRow) => {
+    setPaymarkSettlementId(row.id);
+    setPaymarkError("");
+    setPaymarkMessage("");
+    try {
+      const res = await requestJson<{
+        transaction?: PaymarkTransactionRow;
+        paymentRecorded?: boolean;
+        archived?: boolean;
+        message?: string;
+      }>(`/api/paymark-transactions/${encodeURIComponent(row.id)}/settle`, {
+        method: "POST",
+      });
+
+      if (!res.ok || !res.data?.transaction) {
+        setPaymarkError(res.error || "Failed to update Paymark settlement.");
+        return;
+      }
+
+      updatePaymarkRow(res.data.transaction);
+      setPaymarkMessage(res.data.message || "Paymark settlement updated.");
+      if (res.data.paymentRecorded) {
+        await loadInvoicePayments();
+      }
+    } catch (err) {
+      setPaymarkError(err instanceof Error ? err.message : "Failed to update Paymark settlement.");
+    } finally {
+      setPaymarkSettlementId(null);
+    }
+  };
+
   const createQuickPaymarkJob = async (row: PaymarkTransactionRow) => {
     if (!quickJobForm.plate.trim()) {
       setPaymarkActionError("Rego/VIN/Chassis is required.");
@@ -995,6 +1039,7 @@ export function InvoicePage() {
 
       setEftposBatchResults((prev) => ({ ...prev, [group.date]: res.data!.result! }));
       await loadInvoicePayments();
+      setEftposBatchResults((prev) => ({ ...prev, [group.date]: null }));
     } catch (err) {
       setEftposBatchErrors((prev) => ({
         ...prev,
@@ -1282,6 +1327,17 @@ export function InvoicePage() {
                     </div>
                     <div className="break-words text-[var(--ds-muted)]">{row.localNote || "-"}</div>
                     <div className="flex flex-wrap justify-end gap-2">
+                      {row.matchedJobId && !row.paymentRecorded && row.matchedInvoiceStatus?.toUpperCase() === "AUTHORISED" ? (
+                        <button
+                          type="button"
+                          onClick={() => void retryPaymarkSettlement(row)}
+                          disabled={paymarkSettlementId === row.id}
+                          className="inline-flex h-8 items-center gap-1 rounded-[8px] border border-amber-200 bg-amber-50 px-2.5 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-wait disabled:opacity-70"
+                        >
+                          <RefreshCw className={["h-3.5 w-3.5", paymarkSettlementId === row.id ? "animate-spin" : ""].join(" ")} />
+                          {paymarkSettlementId === row.id ? "更新中..." : "更新结算"}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => openPaymarkAction(row, "match")}
@@ -1467,17 +1523,33 @@ export function InvoicePage() {
         ? pagedGroups.map((group) => {
             const isExpanded = expandedDates[group.date] ?? false;
             const paymentSummary = summarizePayments(group.items);
-            const eftposInvoiceNumbers = getUniqueInvoiceNumbers(group.items);
+            const postedBatches = eftposBatchHistory.filter((batch) => batch.paymentDate === group.date);
+            const postedInvoiceNumbers = new Set(
+              postedBatches.flatMap((batch) => batch.invoiceNumbers).map((value) => value.trim().toUpperCase())
+            );
+            const unpostedEftposItems = group.items.filter(
+              (row) => normalizePaymentWay(row.paymentWay) === "epost"
+                && !postedInvoiceNumbers.has(row.invoiceNumber.trim().toUpperCase())
+            );
+            const unpostedEftposTotal = summarizePayments(unpostedEftposItems).eftpos;
+            const eftposInvoiceNumbers = getUniqueInvoiceNumbers(unpostedEftposItems);
             const eftposBatchResult = eftposBatchResults[group.date];
             const eftposBatchError = eftposBatchErrors[group.date];
-            const eftposBankAmount = getEftposBatchBankAmount(group.date, paymentSummary.eftpos);
-            const canRunEftposBatch = eftposInvoiceNumbers.length > 0 && paymentSummary.eftpos > 0;
+            const eftposBankAmount = getEftposBatchBankAmount(group.date, unpostedEftposTotal);
+            const canRunEftposBatch = eftposInvoiceNumbers.length > 0 && unpostedEftposTotal > 0;
             return (
               <Card key={group.date} className="overflow-hidden">
                 <div className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
                   <div className="flex-1">
                     <div>
-                      <div className="text-lg font-semibold text-[var(--ds-text)]">{formatNzDateTitle(group.date)}</div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="text-lg font-semibold text-[var(--ds-text)]">{formatNzDateTitle(group.date)}</div>
+                        {postedBatches.length > 0 ? (
+                          <span className="inline-flex items-center rounded-[999px] border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                            ✓ Xero Batch Posted{postedBatches.length > 1 ? ` × ${postedBatches.length}` : ""}
+                          </span>
+                        ) : null}
+                      </div>
                       <div className="mt-1 text-sm text-[var(--ds-muted)]">Invoice 总数：{group.items.length}</div>
                     </div>
                   </div>
@@ -1486,6 +1558,7 @@ export function InvoicePage() {
                     <div className="inline-flex items-center gap-2 rounded-[999px] border border-blue-100 bg-blue-50 px-3 py-1.5 text-sm">
                       <span className="font-medium text-blue-700">Eftpos</span>
                       <span className="font-semibold text-blue-900">{formatCurrencyBadge(paymentSummary.eftpos)}</span>
+                      {postedBatches.length > 0 ? <span className="font-semibold text-emerald-700">✓ Posted</span> : null}
                     </div>
                     <div className="inline-flex items-center gap-2 rounded-[999px] border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-sm">
                       <span className="font-medium text-emerald-700">Cash</span>
@@ -1495,7 +1568,7 @@ export function InvoicePage() {
                       <span className="font-medium text-[var(--ds-muted)]">Total</span>
                       <span className="font-semibold text-[var(--ds-text)]">{formatCurrencyBadge(paymentSummary.total)}</span>
                     </div>
-                    <div className="flex items-center gap-2 rounded-[10px] border border-[rgba(0,0,0,0.10)] bg-white px-2 py-1.5">
+                    {canRunEftposBatch ? <div className="flex items-center gap-2 rounded-[10px] border border-[rgba(0,0,0,0.10)] bg-white px-2 py-1.5">
                       <span className="whitespace-nowrap text-xs font-semibold text-[var(--ds-muted)]">POS bank</span>
                       <Input
                         type="number"
@@ -1509,10 +1582,10 @@ export function InvoicePage() {
                         }}
                         className="h-8 w-[110px] text-right"
                       />
-                    </div>
-                    <button
+                    </div> : null}
+                    {canRunEftposBatch ? <button
                       type="button"
-                      onClick={() => void runEftposXeroBatch(group, paymentSummary.eftpos)}
+                      onClick={() => void runEftposXeroBatch({ date: group.date, items: unpostedEftposItems }, unpostedEftposTotal)}
                       disabled={
                         !canRunEftposBatch ||
                         eftposBatchPostingDate === group.date ||
@@ -1521,7 +1594,7 @@ export function InvoicePage() {
                       className="inline-flex h-10 items-center rounded-[10px] border border-emerald-100 bg-emerald-50 px-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {eftposBatchPostingDate === group.date ? "Checking & posting..." : "Check & Post"}
-                    </button>
+                    </button> : null}
                     <button
                       type="button"
                       aria-label={isExpanded ? "Collapse section" : "Expand section"}
@@ -1536,23 +1609,34 @@ export function InvoicePage() {
                 {eftposBatchError ? (
                   <div className="border-t border-red-100 bg-red-50 px-5 py-3 text-sm text-red-700">{eftposBatchError}</div>
                 ) : null}
-                {eftposBatchResult?.ok ? (
-                  <div className="border-t border-blue-100 bg-blue-50 px-5 py-3 text-sm text-blue-800">
-                    <div className="font-semibold">
-                      {eftposBatchResult.posted ? "Xero batch posted" : "Ready for Xero batch"}
-                      {eftposBatchResult.batchPaymentId ? ` · ${eftposBatchResult.batchPaymentId}` : ""}
-                    </div>
-                    <div className="mt-1">
-                      {eftposBatchResult.invoices?.length ?? 0} invoice(s) · Xero due{" "}
-                      {formatCurrencyBadge(eftposBatchResult.xeroAmountDueTotal)} · POS bank{" "}
-                      {formatCurrencyBadge(eftposBatchResult.bankAmount)}
-                      {eftposBatchResult.account?.name ? ` · ${eftposBatchResult.account.name}` : ""}
-                    </div>
-                  </div>
-                ) : null}
-
                 {isExpanded ? (
                   <div className="border-t border-[var(--ds-border)]">
+                    {postedBatches.length > 0 || eftposBatchResult?.ok ? (
+                      <div className="border-b border-[var(--ds-border)] bg-slate-50 px-5 py-4">
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-[0.04em] text-[var(--ds-muted)]">Xero Batch History</div>
+                        <div className="grid gap-2 lg:grid-cols-2">
+                          {postedBatches.map((batch) => (
+                            <div key={batch.batchPaymentId} className="rounded-[10px] border border-emerald-200 bg-white px-3 py-2.5">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-sm font-semibold text-emerald-700">✓ Posted</span>
+                                <span className="font-mono text-[11px] text-[var(--ds-muted)]">{batch.batchPaymentId}</span>
+                              </div>
+                              <div className="mt-1.5 text-sm text-[var(--ds-text)]">
+                                {batch.invoiceCount} invoice(s) · {formatCurrencyBadge(batch.bankAmount)}
+                              </div>
+                              <div className="mt-0.5 text-xs text-[var(--ds-muted)]">
+                                {[batch.accountName, batch.postedAt].filter(Boolean).join(" · ")}
+                              </div>
+                            </div>
+                          ))}
+                          {eftposBatchResult?.ok && !eftposBatchResult.posted ? (
+                            <div className="rounded-[10px] border border-blue-200 bg-white px-3 py-2.5 text-sm text-blue-800">
+                              Ready for Xero batch · {eftposBatchResult.invoices?.length ?? 0} invoice(s) · {formatCurrencyBadge(eftposBatchResult.bankAmount)}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="grid grid-cols-[110px_150px_1fr_1fr_1fr_120px_120px_140px_240px_1fr] gap-3 bg-[rgba(0,0,0,0.03)] px-5 py-3 text-xs font-semibold uppercase tracking-[0.04em] text-[var(--ds-muted)]">
                       <div>Job ID</div>
                       <div>Invoice Number</div>

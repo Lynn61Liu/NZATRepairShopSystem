@@ -16,6 +16,7 @@ import {
   fetchJob,
   fetchTags,
   updateJobNotes,
+  updateJobPrivateNotes,
   updateJobTags,
   updateJobStatus,
   updateJobCustomer,
@@ -411,6 +412,25 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
       toast.success("备注已更新");
       notifyPaintBoardRefresh();
       return { success: true, message: "备注已更新" };
+    },
+    [jobId, toast]
+  );
+
+  const saveJobPrivateNotes = useCallback(
+    async (privateNotes: string) => {
+      if (!jobId) {
+        return { success: false, message: "缺少工单 ID" };
+      }
+
+      const res = await updateJobPrivateNotes(jobId, privateNotes);
+      if (!res.ok) {
+        toast.error(res.error || "保存其他备注失败");
+        return { success: false, message: res.error || "保存其他备注失败" };
+      }
+
+      setJobData((prev) => (prev ? { ...prev, privateNotes } : prev));
+      toast.success("其他备注已更新");
+      return { success: true, message: "其他备注已更新" };
     },
     [jobId, toast]
   );
@@ -1214,6 +1234,7 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
     detachJobXeroInvoice,
     saveTags,
     saveJobNotes,
+    saveJobPrivateNotes,
     createPaintService: createPaintServiceRow,
     updatePaintStage: updatePaintStageRow,
     updatePaintPanels: updatePaintPanelsRow,

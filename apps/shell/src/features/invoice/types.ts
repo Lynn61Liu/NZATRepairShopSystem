@@ -108,6 +108,13 @@ export type GmailThreadPayload = {
   hasExternalDraftSend: boolean;
 };
 
+export type PersistedPoRequestSummary = {
+  correlationId?: string | null;
+  firstRequestSentAt?: string | null;
+  lastRequestSentAt?: string | null;
+  gmailThreadId?: string | null;
+};
+
 export type WorkflowStep = {
   id: number;
   title: string;

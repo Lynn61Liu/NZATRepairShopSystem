@@ -264,6 +264,53 @@ public sealed class JobInvoiceService
         return await SyncDraftForJobAsync(jobInvoice, job, request, jobInvoice.InvoiceNote, sanitizeLineItems: false, ct);
     }
 
+    public async Task<JobInvoiceCreateResult> UpdatePoReferenceAsync(long jobId, string poNumber, CancellationToken ct)
+    {
+        var syncResult = await SyncFromXeroAsync(jobId, ct);
+        if (!syncResult.Ok)
+            return syncResult;
+
+        var invoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (invoice is null)
+            return JobInvoiceCreateResult.Fail(404, "Job invoice not found.");
+        if (!Guid.TryParse(invoice.ExternalInvoiceId, out var invoiceId))
+            return JobInvoiceCreateResult.Fail(400, "Missing Xero invoice id.");
+
+        var status = invoice.ExternalStatus?.Trim().ToUpperInvariant() ?? "";
+        if (status is "PAID" or "VOIDED" or "DELETED")
+            return JobInvoiceCreateResult.Fail(409, $"Xero invoice is {status} and cannot be processed from PO TODO.");
+
+        var reference = PoReferenceBuilder.BuildReference(invoice.Reference, poNumber);
+
+        if (string.Equals(invoice.Reference?.Trim(), reference.Trim(), StringComparison.OrdinalIgnoreCase))
+            return JobInvoiceCreateResult.Success(invoice, alreadyExists: true);
+
+        var update = await _xeroInvoiceService.UpdateInvoiceReferenceAsync(invoiceId, reference, ct);
+        if (!update.Ok)
+            return JobInvoiceCreateResult.Fail(update.StatusCode, update.Error ?? "Failed to update Xero invoice reference.", update.Payload);
+
+        var verify = await SyncFromXeroAsync(jobId, ct);
+        if (!verify.Ok)
+            return verify;
+
+        invoice = await _db.JobInvoices.FirstAsync(x => x.JobId == jobId, ct);
+        return string.Equals(invoice.Reference?.Trim(), reference.Trim(), StringComparison.OrdinalIgnoreCase)
+            ? JobInvoiceCreateResult.Success(invoice, alreadyExists: false, payload: update.Payload)
+            : JobInvoiceCreateResult.Fail(409, "Xero reference update could not be verified.");
+    }
+
+    public async Task<JobInvoiceCreateResult> EmailInvoiceAsync(long jobId, CancellationToken ct)
+    {
+        var invoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (invoice is null || !Guid.TryParse(invoice.ExternalInvoiceId, out var invoiceId))
+            return JobInvoiceCreateResult.Fail(404, "Xero invoice not found.");
+
+        var result = await _xeroInvoiceService.EmailInvoiceAsync(invoiceId, ct);
+        return result.Ok
+            ? JobInvoiceCreateResult.Success(invoice, alreadyExists: false, payload: result.Payload)
+            : JobInvoiceCreateResult.Fail(result.StatusCode, result.Error ?? "Failed to email Xero invoice.", result.Payload);
+    }
+
     public async Task<JobInvoiceCreateResult> MarkInvoiceWaitingPaymentAsync(long jobId, CancellationToken ct)
     {
         var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);

@@ -169,6 +169,7 @@ CREATE TABLE jobs (
   vehicle_id BIGINT,
   customer_id BIGINT,
   notes TEXT,
+  private_notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -240,6 +241,7 @@ CREATE TABLE job_parts_services (
   job_id BIGINT NOT NULL,
   description TEXT NOT NULL,
   status parts_service_status NOT NULL,
+  completed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -259,6 +261,15 @@ CREATE TABLE job_mech_services (
   job_id BIGINT NOT NULL,
   description TEXT NOT NULL,
   cost NUMERIC,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE job_mech_workflows (
+  id BIGSERIAL PRIMARY KEY,
+  job_id BIGINT NOT NULL UNIQUE REFERENCES jobs(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'waiting_repair',
+  parts_arrived_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

@@ -20,7 +20,7 @@ export const JOB_TABLE_COLUMNS: JobTableColumn[] = [
   { key: "plate", label: "Rego/VIN/Chassis", width: 158, minWidth: 138 },
   { key: "model", label: "Make & Model", width: 166, minWidth: 136 },
   { key: "wof", label: "WOF", width: 78, minWidth: 70 },
-  { key: "mech", label: "Mech", width: 66, minWidth: 60 },
+  { key: "mech", label: "Mech", width: 132, minWidth: 124 },
   { key: "paint", label: "Paint", width: 108, minWidth: 98 },
   { key: "notes", label: "备注", width: 250, minWidth: 180 },
   { key: "xero", label: "Xero", width: 54, minWidth: 50 },

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, useRef, type ClipboardEvent, type DragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { ChevronDown, Clock3, FileSearch, Mail, MailCheck, MessageSquareText, Paperclip, Send, Settings2, X } from "lucide-react";
+import { ChevronDown, Clock3, ExternalLink, FileSearch, Mail, MailCheck, MessageSquareText, Paperclip, Send, Settings2, X } from "lucide-react";
 import { Button, Card, Input, Select } from "@/components/ui";
 import { buildSharedEmailSignatureHtml } from "@/features/email/emailSignature";
 import { withApiBase } from "@/utils/api";
+import { formatNzDateTime } from "@/utils/date";
 import type { PoDraftState } from "@/features/invoice/hooks/usePoEmailDraftActions";
 import { PoDetectionPanel } from "./PoDetectionPanel";
 import { StatusBadge } from "./StatusBadge";
@@ -398,6 +399,13 @@ export function PoRequestPanel({
     () => timelineEvents.filter((event) => ["sent", "reminder", "reply"].includes(event.type)),
     [timelineEvents]
   );
+  const latestSystemSentEvent = threadEvents.find(
+    (event) => event.type === "sent" && event.isSystemInitiated
+  );
+  const gmailThreadId = threadEvents.find((event) => event.threadId?.trim())?.threadId?.trim() || "";
+  const gmailThreadUrl = gmailThreadId
+    ? `https://mail.google.com/mail/u/0/#inbox/${encodeURIComponent(gmailThreadId)}`
+    : "";
   const isDraftAvailable = draftState.mode === "available";
   const isDraftMissing = draftState.mode === "missing";
   const isDraftLoading = draftState.mode === "loading";
@@ -911,6 +919,28 @@ export function PoRequestPanel({
       {!readOnly && externalSendDetected ? (
         <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           A sent Gmail message already exists for this PO thread. Generating a draft will refresh the active Gmail draft session if needed.
+        </div>
+      ) : null}
+
+      {latestSystemSentEvent ? (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <MailCheck className="h-5 w-5 text-emerald-700" />
+            <div>
+              <div className="text-sm font-semibold text-emerald-900">系统已发送 PO Request</div>
+              <div className="text-xs text-emerald-700">发送时间：{formatNzDateTime(latestSystemSentEvent.timestamp)}</div>
+            </div>
+          </div>
+          {gmailThreadUrl ? (
+            <Button
+              href={gmailThreadUrl}
+              target="_blank"
+              rel="noreferrer"
+              rightIcon={<ExternalLink className="h-4 w-4" />}
+            >
+              Thread
+            </Button>
+          ) : null}
         </div>
       ) : null}
 

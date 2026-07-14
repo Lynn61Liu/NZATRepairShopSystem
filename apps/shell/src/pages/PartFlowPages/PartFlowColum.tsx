@@ -10,6 +10,7 @@ interface PartFlowColumnProps {
   onMoveCard: (cardId: string, newStatus: Status) => void;
   onDeleteCard: (cardId: string) => void;
   onArchiveCard: (cardId: string) => void;
+  onCompleteCard: (cardId: string) => void;
   onAddNote: (cardId: string, noteText: string) => void;
   onDeleteNote: (cardId: string, noteId: string) => void;
   onArrivalNoticeSent: (cardId: string, arrivalNotice: ArrivalNotice) => void;
@@ -48,6 +49,7 @@ export function PartFlowColumn({
   onMoveCard,
   onDeleteCard,
   onArchiveCard,
+  onCompleteCard,
   onAddNote,
   onDeleteNote,
   onArrivalNoticeSent
@@ -91,6 +93,7 @@ export function PartFlowColumn({
             card={card}
             onDelete={onDeleteCard}
             onArchive={onArchiveCard}
+            onComplete={onCompleteCard}
             onAddNote={onAddNote}
             onDeleteNote={onDeleteNote}
             onArrivalNoticeSent={onArrivalNoticeSent}

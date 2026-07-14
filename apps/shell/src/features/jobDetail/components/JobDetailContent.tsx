@@ -117,6 +117,7 @@ type JobDetailContentProps = {
   tagOptions?: TagOption[];
   onSaveTags?: (tagIds: string[]) => Promise<{ success: boolean; message?: string; tags?: string[] }>;
   onSaveNotes?: (notes: string) => Promise<{ success: boolean; message?: string }>;
+  onSavePrivateNotes?: (privateNotes: string) => Promise<{ success: boolean; message?: string }>;
   isSidebarOpen: boolean;
   onToggleSidebar: () => void;
 };
@@ -175,6 +176,7 @@ export function JobDetailContent({
   tagOptions,
   onSaveTags,
   onSaveNotes,
+  onSavePrivateNotes,
   isSidebarOpen,
   onToggleSidebar,
 }: JobDetailContentProps) {
@@ -234,6 +236,7 @@ export function JobDetailContent({
           tagOptions={tagOptions}
           onSaveTags={onSaveTags}
           onSaveNotes={onSaveNotes}
+          onSavePrivateNotes={onSavePrivateNotes}
         />
       }
       sidebar={

@@ -219,6 +219,54 @@ public sealed class PaymarkTransactionsController : ControllerBase
         });
     }
 
+    [HttpPost("{id:long}/settle")]
+    public async Task<IActionResult> RetrySettlement(long id, CancellationToken ct)
+    {
+        var row = await _db.PaymarkTransactions.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (row is null)
+            return NotFound(new { error = "Paymark transaction not found." });
+        if (!row.MatchedJobId.HasValue)
+            return BadRequest(new { error = "Match this Paymark transaction to a job before updating settlement." });
+
+        var jobId = row.MatchedJobId.Value;
+        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == jobId, ct);
+        if (job is null)
+            return NotFound(new { error = "Matched job not found." });
+
+        var invoice = await _db.JobInvoices.AsNoTracking().FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (invoice is null)
+            return Conflict(new { error = "The matched job invoice is not ready yet." });
+        if (!string.Equals(invoice.ExternalStatus, "AUTHORISED", StringComparison.OrdinalIgnoreCase))
+            return Conflict(new { error = $"The matched job invoice is {invoice.ExternalStatus ?? "not ready"}; AUTHORISED is required." });
+
+        var paymentAlreadyRecorded = await _db.JobPayments.AnyAsync(x => x.JobId == jobId, ct);
+        if (paymentAlreadyRecorded && string.Equals(job.Status, "Archived", StringComparison.OrdinalIgnoreCase))
+        {
+            return Ok(new
+            {
+                transaction = await MapTransactionAsync(row, ct),
+                paymentRecorded = true,
+                archived = true,
+                message = "Paymark payment was already recorded.",
+            });
+        }
+
+        var settlement = await TryRecordPaymarkPaymentAndArchiveAsync(row, job, ct);
+        if (!settlement.Ok)
+            return StatusCode(settlement.StatusCode, new { error = settlement.Error });
+
+        row.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new
+        {
+            transaction = await MapTransactionAsync(row, ct),
+            paymentRecorded = settlement.PaymentRecorded,
+            archived = settlement.Archived,
+            message = settlement.Message,
+        });
+    }
+
     [HttpPost("{id:long}/quick-job")]
     public async Task<IActionResult> CreateQuickJob(long id, [FromBody] PaymarkQuickJobRequest? request, CancellationToken ct)
     {

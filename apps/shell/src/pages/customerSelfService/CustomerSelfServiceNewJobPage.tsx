@@ -898,6 +898,26 @@ function ReviewStep({
   onBack: () => void;
   onSubmit: () => void;
 }) {
+  const contactRows: [string, ReactNode][] = form.hasWof
+    ? [
+        ["Name", form.name],
+        ["Phone", form.phone],
+        ["Email", valueOrDash(form.email)],
+        ["Address", valueOrDash(form.address)],
+      ]
+    : [
+        ["Name", form.name],
+        ["Phone", form.phone],
+        ["Quote / 报价", form.requiresQuote ? "是" : "否"],
+      ];
+
+  if (!form.hasWof && form.requiresQuote) {
+    contactRows.push(
+      ["报价内容", valueOrDash(form.quotePartsContent)],
+      ["Email", valueOrDash(form.quoteEmail)]
+    );
+  }
+
   return (
     <StepShell icon={<ClipboardCheck size={34} />} title="Review and submit" subtitle="Please check the details before creating the job.">
       <div className="flex flex-col gap-4">
@@ -910,28 +930,7 @@ function ReviewStep({
           </div>
         </ReviewBlock>
         <ReviewBlock label="Contact">
-          <DetailsTable
-            rows={
-              form.hasWof
-                ? [
-                  ["Name", form.name],
-                  ["Phone", form.phone],
-                  ["Email", valueOrDash(form.email)],
-                  ["Address", valueOrDash(form.address)],
-                ]
-                : [
-                  ["Name", form.name],
-                  ["Phone", form.phone],
-                  ["Quote / 报价", form.requiresQuote ? "是" : "否"],
-                  ...(form.requiresQuote
-                    ? [
-                        ["报价内容", valueOrDash(form.quotePartsContent)],
-                        ["Email", valueOrDash(form.quoteEmail)],
-                      ]
-                    : []),
-                ]
-            }
-          />
+          <DetailsTable rows={contactRows} />
         </ReviewBlock>
         {submitError ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{submitError}</div> : null}
         <div className="flex gap-3 pt-2">

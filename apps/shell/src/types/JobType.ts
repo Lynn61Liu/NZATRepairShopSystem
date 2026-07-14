@@ -1,3 +1,5 @@
+import type { MechWorkflowStatus } from "@/features/mechWorkflow";
+
 export type JobStatus =
   | "In Progress"
   | "Completed"
@@ -18,6 +20,7 @@ export type JobRow = {
   wofPct: number | null;
   wofStatus?: "Todo" | "Checked" | "Recorded" | null;
   mechPct: number | null;
+  mechStatus?: MechWorkflowStatus | null;
   paintPct: number | null;
   paintStatus?: string | null;
   paintCurrentStage?: number | null;
@@ -25,6 +28,7 @@ export type JobRow = {
   customerCode?: string;
   customerPhone: string;
   notes?: string;
+  privateNotes?: string;
   externalInvoiceId?: string;
   xeroStatus?: string | null;
   createdAt: string; 

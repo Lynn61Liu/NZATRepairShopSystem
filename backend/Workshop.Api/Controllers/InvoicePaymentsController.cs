@@ -34,6 +34,7 @@ public class InvoicePaymentsController : ControllerBase
         return Ok(new
         {
             payments = rows.Select(MapPaymentRow),
+            eftposBatches = BuildEftposBatchSummaries(rows),
         });
     }
 
@@ -114,14 +115,19 @@ public class InvoicePaymentsController : ControllerBase
                IssueDate = invoice.InvoiceDate,
                Reference = invoice.Reference ?? "",
                PaymentWay = payment.Method,
+               Provider = payment.Provider,
+               ExternalPaymentId = payment.ExternalPaymentId,
+               AccountName = payment.AccountName,
                PaymentDate = payment.PaymentDate,
                Amount = payment.Amount,
                Note = payment.Reference ?? "",
                JobNote = job.Notes ?? "",
                ExternalStatus = payment.ExternalStatus ?? "",
+               PaymentResponsePayloadJson = payment.ResponsePayloadJson,
                ResponsePayloadJson = invoice.ResponsePayloadJson,
                RequestPayloadJson = invoice.RequestPayloadJson,
                CreatedAt = payment.CreatedAt,
+               UpdatedAt = payment.UpdatedAt,
            };
 
     private static object MapPaymentRow(InvoicePaymentQueryRow row)
@@ -146,6 +152,92 @@ public class InvoicePaymentsController : ControllerBase
             row.ExternalStatus,
             createdAt = DateTimeHelper.FormatNz(row.CreatedAt),
         };
+
+    private static IReadOnlyList<object> BuildEftposBatchSummaries(IReadOnlyCollection<InvoicePaymentQueryRow> rows)
+        => rows
+            .Where(row => string.Equals(row.PaymentWay, "epost", StringComparison.OrdinalIgnoreCase))
+            .Where(row => string.Equals(row.Provider, "xero", StringComparison.OrdinalIgnoreCase))
+            .Select(row => new
+            {
+                Row = row,
+                BatchPaymentId = ExtractBatchPaymentId(row.PaymentResponsePayloadJson) ?? row.ExternalPaymentId,
+            })
+            .Where(item => !string.IsNullOrWhiteSpace(item.BatchPaymentId))
+            .GroupBy(item => new { item.Row.PaymentDate, item.BatchPaymentId })
+            .Select(group => new
+            {
+                group.Key.PaymentDate,
+                group.Key.BatchPaymentId,
+                InvoiceNumbers = group.Select(item => item.Row.InvoiceNumber)
+                    .Where(value => !string.IsNullOrWhiteSpace(value))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(value => value)
+                    .ToArray(),
+                BankAmount = group.Sum(item => item.Row.Amount),
+                AccountName = group.Select(item => item.Row.AccountName)
+                    .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? "",
+                PostedAt = group.Max(item => item.Row.UpdatedAt),
+            })
+            .OrderByDescending(batch => batch.PaymentDate)
+            .ThenByDescending(batch => batch.PostedAt)
+            .Select(batch => (object)new
+            {
+                paymentDate = batch.PaymentDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                batchPaymentId = batch.BatchPaymentId,
+                invoiceCount = batch.InvoiceNumbers.Length,
+                invoiceNumbers = batch.InvoiceNumbers,
+                bankAmount = batch.BankAmount,
+                accountName = batch.AccountName,
+                postedAt = DateTimeHelper.FormatNz(batch.PostedAt),
+            })
+            .ToList();
+
+    private static string? ExtractBatchPaymentId(string? payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+            return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(payloadJson);
+            if (!TryGetPropertyIgnoreCase(document.RootElement, "BatchPayments", out var batches)
+                || batches.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            var batch = batches.EnumerateArray().FirstOrDefault();
+            if (batch.ValueKind == JsonValueKind.Undefined
+                || !TryGetPropertyIgnoreCase(batch, "BatchPaymentID", out var id))
+            {
+                return null;
+            }
+
+            return id.ValueKind == JsonValueKind.String ? id.GetString() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = property.Value;
+                    return true;
+                }
+            }
+        }
+
+        value = default;
+        return false;
+    }
 
     private static string FormatPaymentDateTime(DateOnly paymentDate, DateTime createdAtUtc)
     {
@@ -202,14 +294,19 @@ public class InvoicePaymentsController : ControllerBase
         public DateOnly? IssueDate { get; init; }
         public string Reference { get; init; } = "";
         public string PaymentWay { get; init; } = "";
+        public string Provider { get; init; } = "";
+        public string? ExternalPaymentId { get; init; }
+        public string? AccountName { get; init; }
         public DateOnly PaymentDate { get; init; }
         public decimal Amount { get; init; }
         public string Note { get; init; } = "";
         public string JobNote { get; init; } = "";
         public string ExternalStatus { get; init; } = "";
+        public string? PaymentResponsePayloadJson { get; init; }
         public string? ResponsePayloadJson { get; init; }
         public string? RequestPayloadJson { get; init; }
         public DateTime CreatedAt { get; init; }
+        public DateTime UpdatedAt { get; init; }
     }
 
     public sealed class UpdatePaymentDateRequest

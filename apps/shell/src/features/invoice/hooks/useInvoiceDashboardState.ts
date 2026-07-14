@@ -15,6 +15,7 @@ import type {
   ReferencePreviewSource,
   TaxRateOption,
   GmailThreadPayload,
+  PersistedPoRequestSummary,
   XeroStateOption,
   XeroInvoiceStatus,
 } from "../types";
@@ -251,6 +252,7 @@ type UseInvoiceDashboardStateArgs = {
   persistedPoNumber?: string | null;
   persistedInvoiceReference?: string | null;
   persistedInvoice?: JobInvoiceData | null;
+  persistedPoRequest?: PersistedPoRequestSummary | null;
   enabled?: boolean;
   needsPo?: boolean;
 };
@@ -447,6 +449,20 @@ function buildStableAlphaSuffix(seed: string) {
   return suffix;
 }
 
+function buildPersistedPoTimeline(summary?: PersistedPoRequestSummary | null): EmailTimelineEvent[] {
+  const sentAt = summary?.lastRequestSentAt?.trim() || summary?.firstRequestSentAt?.trim() || "";
+  if (!sentAt) return [];
+
+  return [{
+    id: `persisted-po-sent-${sentAt}`,
+    type: "sent",
+    timestamp: sentAt,
+    description: "PO request email sent by the system",
+    threadId: summary?.gmailThreadId?.trim() || undefined,
+    isSystemInitiated: true,
+  }];
+}
+
 function resolveXeroStateOption(xeroStatus: XeroInvoiceStatus, latestPaymentMethod?: string) : XeroStateOption {
   if (xeroStatus === "PAID") {
     const method = latestPaymentMethod?.trim().toLowerCase();
@@ -464,6 +480,7 @@ export function useInvoiceDashboardState({
   persistedPoNumber,
   persistedInvoiceReference,
   persistedInvoice,
+  persistedPoRequest,
   enabled = true,
   needsPo = false,
 }: UseInvoiceDashboardStateArgs = {}) {
@@ -471,7 +488,7 @@ export function useInvoiceDashboardState({
   const [invoice, setInvoice] = useState(initialInvoiceState);
   const [sourceInvoice, setSourceInvoice] = useState<JobInvoiceData | null | undefined>(persistedInvoice);
   const [items, setItems] = useState<InvoiceItem[]>(() => parsePersistedItems(persistedInvoice));
-  const [timeline, setTimeline] = useState<EmailTimelineEvent[]>([]);
+  const [timeline, setTimeline] = useState<EmailTimelineEvent[]>(() => buildPersistedPoTimeline(persistedPoRequest));
   const [detections, setDetections] = useState<PoDetection[]>([]);
   const [selectedDetectionId, setSelectedDetectionId] = useState<string | null>(null);
   const [hasExternalDraftSend, setHasExternalDraftSend] = useState(false);
@@ -479,8 +496,8 @@ export function useInvoiceDashboardState({
   const [pullingInvoicePdf, setPullingInvoicePdf] = useState(false);
   const [updatingXeroState, setUpdatingXeroState] = useState(false);
   const [manualPoNumber, setManualPoNumber] = useState("");
-  const [poPanelLoading, setPoPanelLoading] = useState(true);
-  const [poPanelInitialized, setPoPanelInitialized] = useState(false);
+  const [poPanelLoading, setPoPanelLoading] = useState(() => buildPersistedPoTimeline(persistedPoRequest).length === 0);
+  const [poPanelInitialized, setPoPanelInitialized] = useState(() => buildPersistedPoTimeline(persistedPoRequest).length > 0);
   const [poPanelRefreshing, setPoPanelRefreshing] = useState(false);
   const [merchantRecipientsLoading, setMerchantRecipientsLoading] = useState(true);
   const [savedPoNumber, setSavedPoNumber] = useState(persistedPoNumber?.trim() || "");
@@ -860,16 +877,17 @@ export function useInvoiceDashboardState({
     }));
     setSourceInvoice(persistedInvoice);
     setItems(parsePersistedItems(persistedInvoice));
-    setTimeline([]);
+    const persistedTimeline = buildPersistedPoTimeline(persistedPoRequest);
+    setTimeline(persistedTimeline);
     setDetections([]);
     setSelectedDetectionId(null);
     setHasExternalDraftSend(false);
     setManualPoNumber((persistedPoNumber?.trim() || "") || (!persistedInvoice ? getLegacyPoFromReference(persistedInvoiceReference?.trim() || "") : ""));
-    setPoPanelLoading(true);
-    setPoPanelInitialized(false);
+    setPoPanelLoading(persistedTimeline.length === 0);
+    setPoPanelInitialized(persistedTimeline.length > 0);
     setPoPanelRefreshing(false);
     setMerchantRecipientsLoading(true);
-  }, [persistedInvoice, persistedInvoiceReference, persistedPoNumber, resolvedCorrelationId, savedPoNumber]);
+  }, [persistedInvoice, persistedInvoiceReference, persistedPoNumber, persistedPoRequest, resolvedCorrelationId, savedPoNumber]);
 
   useEffect(() => {
     setSavedPoNumber(persistedPoNumber?.trim() || "");
@@ -903,9 +921,12 @@ export function useInvoiceDashboardState({
 
     const refreshThreadEvents = async () => {
       const existingThreadEvents = timelineRef.current.filter((event) => ["sent", "reminder", "reply"].includes(event.type));
+      const hasExistingSystemSend = existingThreadEvents.some(
+        (event) => event.type === "sent" && event.isSystemInitiated
+      );
 
-      if (!poPanelInitializedRef.current && merchantRecipientsLoadingRef.current) {
-        setPoPanelLoading(true);
+      if (merchantRecipientsLoadingRef.current) {
+        setPoPanelLoading(!hasExistingSystemSend);
         return;
       }
 
@@ -916,7 +937,7 @@ export function useInvoiceDashboardState({
         return;
       }
 
-      if (!invoice.selectedMerchantEmail || !invoice.correlationId) {
+      if (!invoice.selectedMerchantEmail && !invoice.correlationId) {
         setTimeline((prev) => prev.filter((event) => !["sent", "reminder", "reply"].includes(event.type)));
         setDetections([]);
         setHasExternalDraftSend(false);
@@ -931,17 +952,29 @@ export function useInvoiceDashboardState({
       } else {
         setPoPanelRefreshing(true);
       }
-      const res = await requestJson<GmailThreadPayload>(
-        `/api/gmail/thread?counterpartyEmail=${encodeURIComponent(invoice.selectedMerchantEmail)}&correlationId=${encodeURIComponent(invoice.correlationId)}`
+      const threadQuery = `counterpartyEmail=${encodeURIComponent(invoice.selectedMerchantEmail)}&correlationId=${encodeURIComponent(invoice.correlationId)}`;
+      const cachedRes = await requestJson<GmailThreadPayload>(`/api/gmail/thread?${threadQuery}&cachedOnly=true`);
+      let threadData = cachedRes.ok && cachedRes.data && Array.isArray(cachedRes.data.events)
+        ? cachedRes.data
+        : null;
+      const cachedThreadEvents = threadData?.events?.length ? threadData.events : existingThreadEvents;
+      const hasPersistedSystemSend = cachedThreadEvents.some(
+        (event) => event.type === "sent" && event.isSystemInitiated
       );
 
-      if (!res.ok || !res.data || !Array.isArray(res.data.events) || cancelled) {
+      if (!hasPersistedSystemSend) {
+        const liveRes = await requestJson<GmailThreadPayload>(`/api/gmail/thread?${threadQuery}`);
+        threadData = liveRes.ok && liveRes.data && Array.isArray(liveRes.data.events)
+          ? liveRes.data
+          : null;
+      }
+
+      if (!threadData || cancelled) {
         setPoPanelLoading(false);
         setPoPanelInitialized(true);
         setPoPanelRefreshing(false);
         return;
       }
-      const threadData = res.data;
       const effectiveThreadEvents = threadData.events.length > 0 ? threadData.events : existingThreadEvents;
       const nextDetections =
         Array.isArray(threadData.detections)

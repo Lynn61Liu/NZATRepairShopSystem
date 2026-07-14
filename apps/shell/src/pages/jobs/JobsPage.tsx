@@ -30,6 +30,7 @@ import {
   updateJobTags,
 } from "@/features/jobDetail/api/jobDetailApi";
 import { fetchPaintService, updatePaintStage } from "@/features/paint/api/paintApi";
+import { updateMechWorkflow, type MechWorkflowStatus } from "@/features/mechWorkflow";
 import { parseTimestamp } from "@/utils/date";
 import type { SilentPrintRouteKey } from "@/features/printing/silentPrint.routes";
 import type { JobRow } from "@/types/JobType";
@@ -58,6 +59,7 @@ type XeroStatusSyncResponse = {
   succeeded: number;
   skipped: number;
   failed: number;
+  requeued: number;
 };
 
 type TagsApiRow = {
@@ -338,7 +340,13 @@ export function JobsPage() {
 
       const result = data as XeroStatusSyncResponse;
       if (result.failed > 0) {
-        toast.error(`Xero 状态已更新 ${result.succeeded} 个，失败 ${result.failed} 个`);
+        toast.error(
+          `Xero 状态已更新 ${result.succeeded} 个，重新请求创建 ${result.requeued} 个，失败 ${result.failed} 个`
+        );
+      } else if (result.requeued > 0) {
+        toast.success(
+          `Xero 状态已更新 ${result.succeeded} 个，已重新请求创建 ${result.requeued} 个缺失发票`
+        );
       } else if (result.skipped > 0) {
         toast.success(`Xero 状态已更新 ${result.succeeded} 个，${result.skipped} 个没有关联发票`);
       } else {
@@ -526,6 +534,30 @@ export function JobsPage() {
     [loadJobs, setAllRows, toast]
   );
 
+  const handleUpdateMechStatus = useCallback(
+    async (id: string, status: MechWorkflowStatus) => {
+      const res = await updateMechWorkflow(id, status, { direct: true });
+      if (!res.ok || !res.data) {
+        setLoadError(res.error || "更新机修状态失败");
+        toast.error(res.error || "更新机修状态失败");
+        return false;
+      }
+
+      setAllRows((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? { ...item, mechStatus: res.data?.status ?? status }
+            : item
+        )
+      );
+      localStorage.setItem("mech-board:workflow-updated", String(Date.now()));
+      window.dispatchEvent(new Event("mech-board:workflow-updated"));
+      toast.success("机修状态已更新");
+      return true;
+    },
+    [setAllRows, toast]
+  );
+
   const resolveJobSheetData = useCallback(
     async (id: string) => {
       const jobRes = await fetchJob(id);
@@ -678,6 +710,7 @@ export function JobsPage() {
               onArchive={handleArchive}
               onDelete={openDeleteDialog}
               onUpdateCreatedAt={handleUpdateCreatedAt}
+              onUpdateMechStatus={handleUpdateMechStatus}
               onUpdatePaintStatus={handleUpdatePaintStatus}
               onPrintMech={handlePrintMech}
               onPrintPaint={handlePrintPaint}

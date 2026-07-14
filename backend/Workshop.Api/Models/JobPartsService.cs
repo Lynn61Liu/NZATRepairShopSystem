@@ -8,6 +8,7 @@ public class JobPartsService
     public long JobId { get; set; }
     public string Description { get; set; } = "";
     public PartsServiceStatus Status { get; set; }
+    public DateTime? CompletedAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

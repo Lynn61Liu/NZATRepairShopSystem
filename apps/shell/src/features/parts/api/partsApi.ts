@@ -31,6 +31,13 @@ export function deletePartsService(jobId: string, serviceId: string) {
   });
 }
 
+export function completePartsService(jobId: string, serviceId: string) {
+  return requestJson<{ success: boolean; completedAt: string }>(
+    `/api/jobs/${encodeURIComponent(jobId)}/parts-services/${encodeURIComponent(serviceId)}/complete`,
+    { method: "POST" }
+  );
+}
+
 export function createPartsNote(jobId: string, serviceId: string, note: string) {
   return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}/parts-services/${encodeURIComponent(serviceId)}/notes`, {
     method: "POST",

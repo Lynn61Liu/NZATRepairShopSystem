@@ -147,6 +147,7 @@ public sealed class NewJobCreationService
             Customer = customer,
             CustomerId = customer?.Id ?? jobCustomerId,
             Notes = req.Notes?.Trim(),
+            PrivateNotes = req.PrivateNotes?.Trim(),
             CreatedAt = now,
             UpdatedAt = now,
         };

@@ -73,6 +73,7 @@ export function JobDetailPage() {
     detachJobXeroInvoice,
     saveTags,
     saveJobNotes,
+    saveJobPrivateNotes,
     createPaintService,
     updatePaintStage,
     updatePaintPanels,
@@ -183,6 +184,7 @@ export function JobDetailPage() {
         tagOptions={tagOptions}
         onSaveTags={saveTags}
         onSaveNotes={saveJobNotes}
+        onSavePrivateNotes={saveJobPrivateNotes}
         onRefreshVehicle={refreshVehicleInfo}
         onSyncVehicleNzta={syncVehicleNztaInfo}
         onSaveVehicle={saveVehicleInfo}

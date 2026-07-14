@@ -7,6 +7,7 @@ import { HTML5Backend } from "react-dnd-html5-backend";
 import { fetchPartFlow } from "@/features/partFlow/api/partFlowApi";
 import {
   createPartsNote,
+  completePartsService,
   deletePartsNote,
   deletePartsService,
   updatePartsService,
@@ -112,6 +113,18 @@ console.log(`===star fun ===Moving card ${cardId} to status ${newStatus}=====`);
     });
   };
 
+  const completeCard = async (cardId: string) => {
+    const card = cards.find((item) => item.id === cardId);
+    if (!card) return;
+    const res = await completePartsService(card.jobId, card.id);
+    if (!res.ok) {
+      toast.error(res.error || "标记配件到达失败");
+      return;
+    }
+    await loadCards();
+    toast.success("配件已到，机修看板已同步");
+  };
+
   const addNote = async (cardId: string, noteText: string) => {
     const card = cards.find((item) => item.id === cardId);
     if (!card) return;
@@ -170,6 +183,7 @@ console.log(`===star fun ===Moving card ${cardId} to status ${newStatus}=====`);
             onMoveCard={moveCard}
             onDeleteCard={deleteCard}
             onArchiveCard={archiveCard}
+            onCompleteCard={completeCard}
             onAddNote={addNote}
             onDeleteNote={deleteNote}
             onArrivalNoticeSent={updateArrivalNotice}
@@ -184,6 +198,7 @@ console.log(`===star fun ===Moving card ${cardId} to status ${newStatus}=====`);
               onMoveCard={moveCard}
               onDeleteCard={deleteCard}
               onArchiveCard={archiveCard}
+              onCompleteCard={completeCard}
               onAddNote={addNote}
               onDeleteNote={deleteNote}
               onArrivalNoticeSent={updateArrivalNotice}
