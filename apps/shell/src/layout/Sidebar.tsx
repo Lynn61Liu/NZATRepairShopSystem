@@ -1,9 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { subscribeWorklogCostAlert } from "@/utils/refreshSignals";
-import { usePoUnreadSummary } from "@/features/jobs";
-import { requestJson } from "@/utils/api";
-import { WOF_SIDEBAR_REFRESH_MS } from "./sidebarRefreshIntervals";
 import {
   ArrowLeftRight,
   CalendarClock,
@@ -67,10 +64,8 @@ export function Sidebar() {
     const stored = localStorage.getItem("worklog:cost-alert");
     return stored ? Number(stored) || 0 : 0;
   });
-  const [wofTodoCount, setWofTodoCount] = useState(0);
   const [settingsCollapsed, setSettingsCollapsed] = useState(true);
   const [courtesyCarCollapsed, setCourtesyCarCollapsed] = useState(true);
-  const poUnreadSummary = usePoUnreadSummary();
   const location = useLocation();
 
   const mainItems: SidebarItem[] = [
@@ -79,8 +74,8 @@ export function Sidebar() {
     { to: "/car-on-yard", label: "Car On Yard", icon: CarFront },
     { to: "/parts-flow", label: "报价-配件", icon: Cog },
     { to: "/invoice", label: "发票", icon: CircleDollarSign },
-    { to: "/wof-schedule", label: "WOF 排班表", icon: CalendarClock, badge: wofTodoCount },
-    { to: "/po-dashboard-preview", label: "PO", icon: ReceiptText, badge: poUnreadSummary.totalUnreadReplies },
+    { to: "/wof-schedule", label: "WOF 排班表", icon: CalendarClock },
+    { to: "/po-dashboard-preview", label: "PO", icon: ReceiptText },
     { to: "/paint-tech", label: "喷漆看板", icon: Paintbrush2 },
     { to: "/mech-board", label: "机修看板", icon: Wrench },
     { to: "/device-communication", label: "找钥匙", icon: KeyRound },
@@ -112,35 +107,6 @@ export function Sidebar() {
 
   useEffect(() => {
     return subscribeWorklogCostAlert((count) => setWorklogAlertCount(count));
-  }, []);
-
-  // --- 保留正式版中的 WOF 排班表计数逻辑 ---
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      const res = await requestJson<{ jobs?: Array<unknown> }>("/api/jobs/wof-schedule");
-      if (!res.ok || cancelled) return;
-      const count = Array.isArray(res.data?.jobs)
-        ? res.data.jobs.filter((job) => {
-            if (typeof job !== "object" || job === null) return false;
-            const status = (job as { wofStatus?: unknown }).wofStatus;
-            return status === "Todo" || status === "Checked";
-          }).length
-        : 0;
-      setWofTodoCount(count);
-    };
-
-    const initialTimer = window.setTimeout(() => void load(), 300);
-    const timer = window.setInterval(() => {
-      void load();
-    }, WOF_SIDEBAR_REFRESH_MS);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(initialTimer);
-      window.clearInterval(timer);
-    };
   }, []);
 
   return (
