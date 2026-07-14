@@ -10,6 +10,7 @@ namespace Workshop.Api.Services;
 public sealed class JobPoStateService
 {
     private const string EscalationReason = "No supplier reply after 2 follow-ups.";
+    private const string GryCustomerCode = "GRY";
 
     private readonly AppDbContext _db;
     private readonly BusinessHoursService _businessHoursService;
@@ -32,6 +33,7 @@ public sealed class JobPoStateService
                 x.Id,
                 x.NeedsPo,
                 x.PoNumber,
+                CustomerCode = x.Customer == null ? null : x.Customer.BusinessCode,
             })
             .ToListAsync(ct);
 
@@ -54,7 +56,7 @@ public sealed class JobPoStateService
             {
                 JobId = job.Id,
                 CorrelationId = correlationId,
-                Status = string.IsNullOrWhiteSpace(job.PoNumber) ? JobPoStateStatus.Draft : JobPoStateStatus.PoConfirmed,
+                Status = GetInitialStatus(job.PoNumber, job.CustomerCode),
                 ConfirmedPoNumber = string.IsNullOrWhiteSpace(job.PoNumber) ? null : job.PoNumber.Trim(),
                 FollowUpEnabled = _options.Enabled,
                 CreatedAt = DateTime.UtcNow,
@@ -68,7 +70,9 @@ public sealed class JobPoStateService
 
     public async Task SyncStateForJobAsync(long jobId, CancellationToken ct)
     {
-        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == jobId, ct);
+        var job = await _db.Jobs
+            .Include(x => x.Customer)
+            .FirstOrDefaultAsync(x => x.Id == jobId, ct);
         if (job is null || !job.NeedsPo || IsArchivedStatus(job.Status))
         {
             await RemoveStatesForJobAsync(jobId, ct);
@@ -231,7 +235,9 @@ public sealed class JobPoStateService
         }
         else
         {
-            state.Status = JobPoStateStatus.Draft;
+            state.Status = IsGryCustomerCode(job.Customer?.BusinessCode)
+                ? JobPoStateStatus.PendingConfirmation
+                : JobPoStateStatus.Draft;
             state.FollowUpCount = 0;
             state.LastFollowUpSentAt = null;
             state.NextFollowUpDueAt = null;
@@ -268,6 +274,19 @@ public sealed class JobPoStateService
         }
 
         return $"PO-{jobId.ToString(CultureInfo.InvariantCulture)}-{new string(suffixChars)}";
+    }
+
+    public static bool IsGryCustomerCode(string? customerCode) =>
+        string.Equals(customerCode?.Trim(), GryCustomerCode, StringComparison.OrdinalIgnoreCase);
+
+    public static JobPoStateStatus GetInitialStatus(string? poNumber, string? customerCode)
+    {
+        if (!string.IsNullOrWhiteSpace(poNumber))
+            return JobPoStateStatus.PoConfirmed;
+
+        return IsGryCustomerCode(customerCode)
+            ? JobPoStateStatus.PendingConfirmation
+            : JobPoStateStatus.Draft;
     }
 
     public static long? TryExtractJobIdFromCorrelationId(string? correlationId)

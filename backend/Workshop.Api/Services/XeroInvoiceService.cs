@@ -9,7 +9,7 @@ namespace Workshop.Api.Services;
 
 public sealed class XeroInvoiceService
 {
-    private const int InvoiceIdsBatchSize = 100;
+    private const int InvoiceIdsBatchSize = 20;
 
     private static readonly JsonSerializerOptions XeroWriteOptions = new()
     {
@@ -254,19 +254,34 @@ public sealed class XeroInvoiceService
 
         var client = _httpClientFactory.CreateClient();
         var mergedInvoices = new List<JsonElement>();
+        var batchIndex = 0;
 
         foreach (var invoiceIdBatch in distinctInvoiceIds.Chunk(InvoiceIdsBatchSize))
         {
-            var ids = string.Join(",", invoiceIdBatch.Select(x => x.ToString()));
-            var requestUri = $"https://api.xero.com/api.xro/2.0/Invoices?IDs={Uri.EscapeDataString(ids)}";
+            batchIndex++;
+            var batch = invoiceIdBatch.ToArray();
+            var ids = string.Join(",", batch.Select(x => Uri.EscapeDataString(x.ToString())));
+            var requestUri = $"https://api.xero.com/api.xro/2.0/Invoices?IDs={ids}";
             using var httpRequest = new HttpRequestMessage(HttpMethod.Get, requestUri);
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenResult.AccessToken);
             httpRequest.Headers.Add("xero-tenant-id", tokenResult.TenantId);
             httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
+            _logger.LogInformation(
+                "Xero invoice read batch started. BatchIndex={BatchIndex}, BatchSize={BatchSize}, TotalInvoiceIds={TotalInvoiceIds}",
+                batchIndex,
+                batch.Length,
+                distinctInvoiceIds.Length);
+
             using var response = await client.SendAsync(httpRequest, ct);
             var responseBody = await response.Content.ReadAsStringAsync(ct);
             var parsedResponse = DeserializePayload(responseBody);
+
+            _logger.LogInformation(
+                "Xero invoice read batch completed. BatchIndex={BatchIndex}, BatchSize={BatchSize}, StatusCode={StatusCode}",
+                batchIndex,
+                batch.Length,
+                (int)response.StatusCode);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -280,7 +295,14 @@ public sealed class XeroInvoiceService
             mergedInvoices.AddRange(ExtractInvoices(responseBody));
         }
 
-        return XeroInvoiceGetResult.Success(new XeroInvoicesReadPayload { Invoices = mergedInvoices }, tokenResult.TenantId);
+        _logger.LogInformation(
+            "Xero invoice read completed. RequestedInvoiceIds={RequestedInvoiceIds}, ReturnedInvoices={ReturnedInvoices}",
+            distinctInvoiceIds.Length,
+            mergedInvoices.Count);
+
+        return XeroInvoiceGetResult.Success(
+            new Dictionary<string, object> { ["Invoices"] = mergedInvoices },
+            tokenResult.TenantId);
     }
 
     public async Task<XeroInvoicePdfResult> GetInvoicePdfByIdAsync(Guid invoiceId, CancellationToken ct)
@@ -636,10 +658,6 @@ public sealed class XeroInvoiceService
         public decimal? DiscountAmount { get; set; }
     }
 
-    private sealed class XeroInvoicesReadPayload
-    {
-        public List<JsonElement> Invoices { get; init; } = [];
-    }
 }
 
 public sealed class XeroInvoiceCreateOptions

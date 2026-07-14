@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button, Card, Pagination, useToast } from "@/components/ui";
-import { Check, CheckSquare, ExternalLink, Eye, Send, Square, X } from "lucide-react";
+import { Ban, Check, CheckSquare, ExternalLink, Eye, Square, X } from "lucide-react";
 import {
   completePoJobs,
   confirmPoNumber,
@@ -85,8 +85,11 @@ export function PoDashboardPreviewPage() {
   const [previewLoadingJobId, setPreviewLoadingJobId] = useState<number | null>(null);
   const [confirmResult, setConfirmResult] = useState<ConfirmPoResponse | null>(null);
 
-  const loadDashboard = useCallback(async () => {
-    setLoading(true);
+  const loadDashboard = useCallback(async (options?: { background?: boolean }) => {
+    const background = options?.background === true;
+    if (!background) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const result = await fetchPoTodo();
@@ -95,9 +98,13 @@ export function PoDashboardPreviewPage() {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load PO TODO list";
       setError(message);
-      setAllRows([]);
+      if (!background) {
+        setAllRows([]);
+      }
     } finally {
-      setLoading(false);
+      if (!background) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -145,6 +152,7 @@ export function PoDashboardPreviewPage() {
   const showPoDraftColumn = shouldShowPoDraftColumn(activeTab);
   const showSentColumn = shouldShowSentColumn(activeTab);
   const showPoNumberColumn = shouldShowPoNumberColumn(activeTab);
+  const showIgnoreColumn = activeTab === "pendingSend";
   const tableColSpan = getPoTodoTableColSpan(activeTab);
 
   const toggleAll = () => {
@@ -171,7 +179,7 @@ export function PoDashboardPreviewPage() {
     try {
       await manualConfirmPoSent(row.jobId);
       toast.success("已标记发送");
-      await loadDashboard();
+      await loadDashboard({ background: true });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to mark sent");
     } finally {
@@ -190,10 +198,10 @@ export function PoDashboardPreviewPage() {
     setConfirmResult(null);
     try {
       const result = await confirmPoNumber(row.jobId, value);
-        setConfirmResult(result);
+      setConfirmResult(result);
       if (result.success) {
         toast.success("PO 已确认");
-        await loadDashboard();
+        await loadDashboard({ background: true });
       } else {
         toast.error("PO 确认未完成");
       }
@@ -212,9 +220,27 @@ export function PoDashboardPreviewPage() {
       const result = await completePoJobs(selectedIds);
       toast.success(`完成 ${result.updated} 个，跳过 ${result.skipped} 个`);
       setSelectedIds([]);
-      await loadDashboard();
+      await loadDashboard({ background: true });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to complete selected jobs");
+    } finally {
+      setBusyJobId(null);
+    }
+  };
+
+  const handleIgnoreJob = async (row: PoTodoRow) => {
+    setBusyJobId(row.jobId);
+    try {
+      const result = await completePoJobs([row.jobId]);
+      if (result.updated > 0) {
+        toast.success("已忽略");
+        setSelectedIds((prev) => prev.filter((id) => id !== row.jobId));
+        await loadDashboard({ background: true });
+      } else {
+        toast.error("未能忽略该 job");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to ignore job");
     } finally {
       setBusyJobId(null);
     }
@@ -287,6 +313,7 @@ export function PoDashboardPreviewPage() {
                 {showSentColumn ? <th className="px-3 py-3">是否发送</th> : null}
                 {showPoNumberColumn ? <th className="px-3 py-3">PO</th> : null}
                 {activeTab === "invoiced" ? <th className="px-3 py-3">Gmail</th> : null}
+                {showIgnoreColumn ? <th className="px-3 py-3">操作</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -347,31 +374,27 @@ export function PoDashboardPreviewPage() {
                         {sent ? (
                           <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">已发送</span>
                         ) : (
-                          <Button leftIcon={<Send className="h-4 w-4" />} onClick={() => void handleManualSent(row)} disabled={busyJobId === row.jobId}>
-                            已发送
+                          <Button onClick={() => void handleManualSent(row)} disabled={busyJobId === row.jobId}>
+                            标记为发送
                           </Button>
                         )}
                       </td>
                     ) : null}
                     {showPoNumberColumn ? (
                       <td className="px-3 py-3">
-                        {activeTab === "invoiced" ? (
-                          <div className="font-semibold text-slate-700">{row.confirmedPoNumber || row.detectedPoNumber || "-"}</div>
-                        ) : (
-                          <div className="flex min-w-[180px] gap-2">
-                            <input
-                              value={poInputs[row.jobId] ?? normalizePoNumberInput(row.detectedPoNumber ?? "")}
-                              onChange={(event) => setPoInputs((prev) => ({ ...prev, [row.jobId]: normalizePoNumberInput(event.target.value) }))}
-                              inputMode="numeric"
-                              pattern="[0-9]*"
-                              className="h-9 w-28 rounded-[8px] border border-[var(--ds-border)] px-2 text-sm outline-none focus:border-[var(--ds-primary)]"
-                              placeholder="PO #"
-                            />
-                            <Button variant="primary" onClick={() => void handleConfirmPo(row)} disabled={busyJobId === row.jobId}>
-                              确认
-                            </Button>
-                          </div>
-                        )}
+                        <div className="flex min-w-[180px] gap-2">
+                          <input
+                            value={poInputs[row.jobId] ?? normalizePoNumberInput(row.detectedPoNumber ?? "")}
+                            onChange={(event) => setPoInputs((prev) => ({ ...prev, [row.jobId]: normalizePoNumberInput(event.target.value) }))}
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            className="h-9 w-28 rounded-[8px] border border-[var(--ds-border)] px-2 text-sm outline-none focus:border-[var(--ds-primary)]"
+                            placeholder="PO #"
+                          />
+                          <Button variant="primary" onClick={() => void handleConfirmPo(row)} disabled={busyJobId === row.jobId}>
+                            确认
+                          </Button>
+                        </div>
                       </td>
                     ) : null}
                     {activeTab === "invoiced" ? (
@@ -383,6 +406,17 @@ export function PoDashboardPreviewPage() {
                         ) : (
                           <span className="text-slate-400">-</span>
                         )}
+                      </td>
+                    ) : null}
+                    {showIgnoreColumn ? (
+                      <td className="px-3 py-3">
+                        <Button
+                          leftIcon={<Ban className="h-4 w-4" />}
+                          onClick={() => void handleIgnoreJob(row)}
+                          disabled={busyJobId === row.jobId}
+                        >
+                          忽略
+                        </Button>
                       </td>
                     ) : null}
                   </tr>

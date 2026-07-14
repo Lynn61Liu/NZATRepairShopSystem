@@ -79,6 +79,7 @@ public sealed class NewJobCreationService
         using var tx = await _db.Database.BeginTransactionAsync(ct);
 
         Customer? customer = null;
+        string? jobCustomerCode = null;
         if (!isBusiness)
         {
             if (req.Customer.ExistingCustomerId.HasValue)
@@ -92,11 +93,13 @@ public sealed class NewJobCreationService
                 if (!string.IsNullOrWhiteSpace(customerNotes))
                     existingCustomer.Notes = customerNotes;
 
+                jobCustomerCode = existingCustomer.BusinessCode;
                 customer = null;
             }
             else
             {
                 customer = BuildCustomer(req.Customer);
+                jobCustomerCode = customer.BusinessCode;
             }
         }
 
@@ -114,6 +117,7 @@ public sealed class NewJobCreationService
                 throw new InvalidOperationException("Selected customer is not a business customer. Please reselect the merchant.");
 
             jobCustomerId = businessCustomerId;
+            jobCustomerCode = businessCustomer.BusinessCode;
             if (!string.IsNullOrWhiteSpace(customerNotes))
                 businessCustomer.Notes = customerNotes;
         }
@@ -130,12 +134,13 @@ public sealed class NewJobCreationService
             };
         }
 
+        var isGryCustomer = JobPoStateService.IsGryCustomerCode(jobCustomerCode);
         var job = new Job
         {
             Id = reservedJobId,
             Status = "InProgress",
             IsUrgent = false,
-            NeedsPo = req.NeedsPo ?? false,
+            NeedsPo = (req.NeedsPo ?? false) || isGryCustomer,
             UseServiceCatalogMapping = req.UseServiceCatalogMapping,
             Vehicle = vehicle.Id > 0 ? null : vehicle,
             VehicleId = vehicle.Id > 0 ? vehicle.Id : null,
@@ -147,6 +152,19 @@ public sealed class NewJobCreationService
         };
 
         _db.Jobs.Add(job);
+        if (isGryCustomer)
+        {
+            _db.JobPoStates.Add(new JobPoState
+            {
+                JobId = job.Id,
+                CorrelationId = JobPoStateService.BuildCorrelationId(job.Id),
+                Status = JobPoStateService.GetInitialStatus(job.PoNumber, jobCustomerCode),
+                FollowUpEnabled = true,
+                CreatedAt = now,
+                UpdatedAt = now,
+                LastSyncedAt = now,
+            });
+        }
 
         var wofCreated = HasRequestedOrSelectedService(
             req.Services,

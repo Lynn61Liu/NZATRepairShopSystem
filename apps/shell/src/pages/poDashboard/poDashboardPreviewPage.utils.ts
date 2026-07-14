@@ -17,6 +17,7 @@ export function shouldShowPoNumberColumn(tab: PoTodoTab) {
 }
 
 export function getPoTodoTableColSpan(tab: PoTodoTab) {
+  if (tab === "pendingSend") return 10;
   if (tab === "invoiced") return 8;
   return shouldShowPoNumberColumn(tab) ? 10 : 9;
 }

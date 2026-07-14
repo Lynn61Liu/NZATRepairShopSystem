@@ -43,13 +43,15 @@ public sealed class PoTodoServiceTests
     }
 
     [Fact]
-    public async Task CompleteAsync_OnlyCompletesPoConfirmedRows()
+    public async Task CompleteAsync_CompletesActivePoRows()
     {
         await using var db = CreateDb();
         var now = DateTime.UtcNow;
         db.Jobs.AddRange(
             new Job { Id = 5201, NeedsPo = true, CreatedAt = now, UpdatedAt = now },
-            new Job { Id = 5202, NeedsPo = true, CreatedAt = now, UpdatedAt = now });
+            new Job { Id = 5202, NeedsPo = true, CreatedAt = now, UpdatedAt = now },
+            new Job { Id = 5203, NeedsPo = true, CreatedAt = now, UpdatedAt = now },
+            new Job { Id = 5204, NeedsPo = false, CreatedAt = now, UpdatedAt = now });
         db.JobPoStates.AddRange(
             new JobPoState { JobId = 5201, CorrelationId = "PO-5201-X", Status = JobPoStateStatus.PoConfirmed, CreatedAt = now, UpdatedAt = now },
             new JobPoState { JobId = 5202, CorrelationId = "PO-5202-X", Status = JobPoStateStatus.AwaitingReply, CreatedAt = now, UpdatedAt = now });
@@ -57,11 +59,14 @@ public sealed class PoTodoServiceTests
 
         var service = CreateService(db);
 
-        var result = await service.CompleteAsync([5201, 5202], CancellationToken.None);
+        var result = await service.CompleteAsync([5201, 5202, 5203, 5204], CancellationToken.None);
 
-        result.Updated.Should().Be(1);
+        result.Updated.Should().Be(3);
+        result.Skipped.Should().Be(1);
         (await db.JobPoStates.SingleAsync(x => x.JobId == 5201)).Status.Should().Be(JobPoStateStatus.Completed);
-        (await db.JobPoStates.SingleAsync(x => x.JobId == 5202)).Status.Should().Be(JobPoStateStatus.AwaitingReply);
+        (await db.JobPoStates.SingleAsync(x => x.JobId == 5202)).Status.Should().Be(JobPoStateStatus.Completed);
+        (await db.JobPoStates.SingleAsync(x => x.JobId == 5203)).Status.Should().Be(JobPoStateStatus.Completed);
+        (await db.JobPoStates.AnyAsync(x => x.JobId == 5204)).Should().BeFalse();
     }
 
     [Fact]

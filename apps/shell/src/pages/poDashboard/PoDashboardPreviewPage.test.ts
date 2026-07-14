@@ -14,7 +14,7 @@ import {
 
 test("pending send tab hides the PO number column", () => {
   assert.equal(shouldShowPoNumberColumn("pendingSend"), false);
-  assert.equal(getPoTodoTableColSpan("pendingSend"), 9);
+  assert.equal(getPoTodoTableColSpan("pendingSend"), 10);
 });
 
 test("awaiting PO tab keeps the PO number column", () => {

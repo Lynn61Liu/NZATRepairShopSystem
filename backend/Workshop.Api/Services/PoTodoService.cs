@@ -308,32 +308,125 @@ public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToke
 //end test xero update po
     private async Task SyncDraftPoInvoicesFromXeroAndCompleteReadyAsync(List<string> warnings, CancellationToken ct)
     {
+        static string? TruncateForLog(string? value, int maxLength = 300)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return value;
+
+            var trimmed = value.Trim();
+            return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength] + "...";
+        }
+
+        _logger?.LogInformation("PO todo Xero draft invoice sync started.");
+
         if (_jobInvoiceService is null)
         {
             warnings.Add("Xero invoice service is unavailable for PO draft completion sync.");
+            _logger?.LogWarning("PO todo Xero draft invoice sync skipped: JobInvoiceService is unavailable.");
             return;
         }
 
-        var draftInvoiceTargets = await (
+        var draftInvoiceCandidateRows = await (
                 from job in _db.Jobs.AsNoTracking()
                 join state in _db.JobPoStates.AsNoTracking() on job.Id equals state.JobId
                 join invoice in _db.JobInvoices.AsNoTracking() on job.Id equals invoice.JobId
+                join vehicle in _db.Vehicles.AsNoTracking() on job.VehicleId equals vehicle.Id into vehicleJoin
+                from vehicle in vehicleJoin.DefaultIfEmpty()
+                join customer in _db.Customers.AsNoTracking() on job.CustomerId equals customer.Id into customerJoin
+                from customer in customerJoin.DefaultIfEmpty()
                 where job.NeedsPo
                 where state.Status == JobPoStateStatus.Draft
                 where invoice.ExternalInvoiceId != null && invoice.ExternalInvoiceId != ""
-                select new JobInvoiceXeroSyncTarget(job.Id, invoice.Id, invoice.ExternalInvoiceId!))
+                where invoice.ExternalStatus != null && invoice.ExternalStatus!.Trim().ToUpper() == "DRAFT"
+                where invoice.Reference != null && invoice.Reference!.Trim() != ""
+                orderby invoice.Reference!.ToLower().Contains("pending"), invoice.UpdatedAt descending, job.Id descending
+                select new
+                {
+                    JobId = job.Id,
+                    Plate = vehicle != null ? vehicle.Plate : null,
+                    VehicleMake = vehicle != null ? vehicle.Make : null,
+                    VehicleModel = vehicle != null ? vehicle.Model : null,
+                    VehicleYear = vehicle != null ? vehicle.Year : null,
+                    MerchantName = customer != null ? customer.Name : null,
+                    MerchantCode = customer != null ? customer.BusinessCode : null,
+                    JobNotes = job.Notes,
+                    PoStatus = state.Status,
+                    JobInvoiceId = invoice.Id,
+                    ExternalInvoiceId = invoice.ExternalInvoiceId!,
+                    ExternalInvoiceNumber = invoice.ExternalInvoiceNumber,
+                    XeroStatus = invoice.ExternalStatus,
+                    XeroReference = invoice.Reference,
+                    InvoiceUpdatedAt = invoice.UpdatedAt,
+                })
             .Distinct()
-            .ToArrayAsync(ct);
-    var draftInvoiceTargetsLength = draftInvoiceTargets.Length;
+            .ToListAsync(ct);
+
+        _logger?.LogInformation(
+            "PO todo Xero draft invoice sync found {CandidateCount} candidates. HasReference={HasReferenceCount}, PendingReference={PendingReferenceCount}.",
+            draftInvoiceCandidateRows.Count,
+            draftInvoiceCandidateRows.Count(x => !x.XeroReference!.Contains("pending", StringComparison.OrdinalIgnoreCase)),
+            draftInvoiceCandidateRows.Count(x => x.XeroReference!.Contains("pending", StringComparison.OrdinalIgnoreCase)));
+
+        foreach (var candidate in draftInvoiceCandidateRows)
+        {
+            var referenceState = candidate.XeroReference!.Contains("pending", StringComparison.OrdinalIgnoreCase)
+                ? "(pending reference)"
+                : "(has reference)";
+            var vehicleModel = string.Join(
+                " ",
+                new[]
+                {
+                    candidate.VehicleMake,
+                    candidate.VehicleModel,
+                    candidate.VehicleYear?.ToString(),
+                }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+            _logger?.LogInformation(
+                "PO todo Xero draft invoice sync candidate. JobId={JobId}, Plate={Plate}, VehicleModel={VehicleModel}, MerchantName={MerchantName}, MerchantCode={MerchantCode}, ReferenceState={ReferenceState}, XeroStatus={XeroStatus}, XeroReference={XeroReference}, ExternalInvoiceNumber={ExternalInvoiceNumber}, ExternalInvoiceId={ExternalInvoiceId}, InvoiceUpdatedAt={InvoiceUpdatedAt}, JobNotes={JobNotes}",
+                candidate.JobId,
+                candidate.Plate,
+                vehicleModel,
+                candidate.MerchantName,
+                candidate.MerchantCode,
+                referenceState,
+                candidate.XeroStatus,
+                candidate.XeroReference,
+                candidate.ExternalInvoiceNumber,
+                candidate.ExternalInvoiceId,
+                candidate.InvoiceUpdatedAt,
+                TruncateForLog(candidate.JobNotes));
+        }
+        var draftInvoiceCandidateLength = draftInvoiceCandidateRows.Count;
+
+        var draftInvoiceTargets = draftInvoiceCandidateRows
+            .Select(x => new JobInvoiceXeroSyncTarget(x.JobId, x.JobInvoiceId, x.ExternalInvoiceId))
+            .Distinct()
+            .ToArray();
+
         if (draftInvoiceTargets.Length == 0)
+        {
+            _logger?.LogInformation("PO todo Xero draft invoice sync finished: no matching draft Xero invoices to sync.");
             return;
+        }
 
         try
         {
             var syncResult = await _jobInvoiceService.SyncFromXeroAsync(draftInvoiceTargets, ct);
+            _logger?.LogInformation(
+                "PO todo Xero draft invoice sync Xero batch completed. Ok={Ok}, StatusCode={StatusCode}, RequestedJobs={RequestedJobs}, SyncedInvoices={SyncedInvoices}, Error={Error}",
+                syncResult.Ok,
+                syncResult.StatusCode,
+                syncResult.RequestedJobs,
+                syncResult.SyncedInvoices,
+                syncResult.Error);
+
             if (!syncResult.Ok)
             {
                 warnings.Add(syncResult.Error ?? "Failed to sync draft PO invoices from Xero.");
+                _logger?.LogWarning(
+                    "PO todo Xero draft invoice sync stopped after failed Xero batch. StatusCode={StatusCode}, Error={Error}",
+                    syncResult.StatusCode,
+                    syncResult.Error);
                 return;
             }
         }
@@ -364,7 +457,12 @@ public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToke
             .ToListAsync(ct);
 
         if (readyStates.Count == 0)
+        {
+            _logger?.LogInformation(
+                "PO todo Xero draft invoice sync finished: Xero references synced, but no PO draft states are ready to complete. CandidateJobs={CandidateJobs}.",
+                draftJobIds.Length);
             return;
+        }
 
         var now = DateTime.UtcNow;
         foreach (var state in readyStates)
@@ -375,6 +473,11 @@ public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToke
         }
 
         await _db.SaveChangesAsync(ct);
+
+        _logger?.LogInformation(
+            "PO todo Xero draft invoice sync completed {CompletedCount} PO states. JobIds={JobIds}",
+            readyStates.Count,
+            string.Join(",", readyStates.Select(x => x.JobId)));
     }
 
     private async Task<PoTodoSyncResult> SyncTargetsAsync(
@@ -527,14 +630,21 @@ public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToke
         if (distinctJobIds.Length == 0)
             return new PoTodoCompleteResult(0, 0);
 
-        var states = await _db.JobPoStates
-            .Where(x => distinctJobIds.Contains(x.JobId))
+        var activeJobIds = await _db.Jobs
+            .Where(x => distinctJobIds.Contains(x.Id))
+            .Where(x => x.NeedsPo)
+            .Where(x => x.Status == null || x.Status.ToLower() != "archived")
+            .Select(x => x.Id)
             .ToListAsync(ct);
         var now = DateTime.UtcNow;
         var updated = 0;
 
-        foreach (var state in states.Where(x => x.Status == JobPoStateStatus.PoConfirmed))
+        foreach (var jobId in activeJobIds)
         {
+            var state = await EnsureStateAsync(jobId, now, ct);
+            if (state.Status == JobPoStateStatus.Completed)
+                continue;
+
             state.Status = JobPoStateStatus.Completed;
             state.CompletedAt = now;
             state.UpdatedAt = now;

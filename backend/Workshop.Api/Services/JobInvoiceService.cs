@@ -1997,7 +1997,7 @@ public sealed class JobInvoiceService
                 string raw when !string.IsNullOrWhiteSpace(raw) => JsonDocument.Parse(raw),
                 _ => JsonDocument.Parse(JsonSerializer.Serialize(payload, JsonOptions)),
             };
-            if (!document.RootElement.TryGetProperty("Invoices", out var invoices) || invoices.ValueKind != JsonValueKind.Array)
+            if (!TryGetInvoices(document.RootElement, out var invoices))
                 return baseRequest;
 
             var invoice = invoices.EnumerateArray().FirstOrDefault();
@@ -2185,7 +2185,7 @@ public sealed class JobInvoiceService
         try
         {
             using var document = JsonDocument.Parse(json);
-            if (!document.RootElement.TryGetProperty("Invoices", out var invoices) || invoices.ValueKind != JsonValueKind.Array)
+            if (!TryGetInvoices(document.RootElement, out var invoices))
                 return [];
 
             return invoices.EnumerateArray()
@@ -2238,7 +2238,7 @@ public sealed class JobInvoiceService
         try
         {
             using var document = JsonDocument.Parse(json);
-            if (!document.RootElement.TryGetProperty("Invoices", out var invoices) || invoices.ValueKind != JsonValueKind.Array)
+            if (!TryGetInvoices(document.RootElement, out var invoices))
                 return [];
 
             var payloadsByInvoiceId = new Dictionary<Guid, object>();
@@ -2247,9 +2247,9 @@ public sealed class JobInvoiceService
                 if (!Guid.TryParse(TryGetString(invoice, "InvoiceID"), out var invoiceId))
                     continue;
 
-                payloadsByInvoiceId[invoiceId] = new SingleXeroInvoicePayload
+                payloadsByInvoiceId[invoiceId] = new Dictionary<string, object>
                 {
-                    Invoices = [invoice.Clone()],
+                    ["Invoices"] = new[] { invoice.Clone() },
                 };
             }
 
@@ -2269,6 +2269,31 @@ public sealed class JobInvoiceService
         return value.GetString();
     }
 
+    private static bool TryGetInvoices(JsonElement element, out JsonElement invoices)
+    {
+        if (element.TryGetProperty("Invoices", out invoices) && invoices.ValueKind == JsonValueKind.Array)
+            return true;
+
+        if (element.TryGetProperty("invoices", out invoices) && invoices.ValueKind == JsonValueKind.Array)
+            return true;
+
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, "Invoices", StringComparison.OrdinalIgnoreCase) &&
+                    property.Value.ValueKind == JsonValueKind.Array)
+                {
+                    invoices = property.Value;
+                    return true;
+                }
+            }
+        }
+
+        invoices = default;
+        return false;
+    }
+
     private sealed class ExtractedInvoiceSummary
     {
         public string? InvoiceId { get; init; }
@@ -2279,10 +2304,6 @@ public sealed class JobInvoiceService
         public DateOnly? Date { get; init; }
     }
 
-    private sealed class SingleXeroInvoicePayload
-    {
-        public List<JsonElement> Invoices { get; init; } = [];
-    }
 }
 
 public sealed class JobInvoiceCreateResult
