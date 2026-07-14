@@ -33,6 +33,31 @@ public sealed class JobPoStateServiceTests
     }
 
     [Fact]
+    public async Task EnsureStatesForNeedsPoJobsAsync_CreatesPendingConfirmationForGryCustomer()
+    {
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        db.Customers.Add(new Customer { Id = 4998, Type = "Business", Name = "Gry", BusinessCode = "GRY" });
+        db.Jobs.Add(new Job
+        {
+            Id = 4998,
+            CustomerId = 4998,
+            NeedsPo = true,
+            Status = "InProgress",
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db, enabled: true);
+
+        await service.EnsureStatesForNeedsPoJobsAsync(CancellationToken.None);
+
+        var state = await db.JobPoStates.SingleAsync(x => x.JobId == 4998);
+        state.Status.Should().Be(JobPoStateStatus.PendingConfirmation);
+    }
+
+    [Fact]
     public async Task SyncStateForJobAsync_RemovesStateForArchivedJobs()
     {
         await using var db = CreateDb();
@@ -63,6 +88,32 @@ public sealed class JobPoStateServiceTests
         await service.SyncStateForJobAsync(5000, CancellationToken.None);
 
         (await db.JobPoStates.AnyAsync(x => x.JobId == 5000)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task SyncStateForJobAsync_KeepsGryCustomerPendingConfirmationWithoutPo()
+    {
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        db.Customers.Add(new Customer { Id = 4997, Type = "Business", Name = "Gry", BusinessCode = "GRY" });
+        db.Jobs.Add(new Job
+        {
+            Id = 4997,
+            CustomerId = 4997,
+            NeedsPo = true,
+            Status = "InProgress",
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db, enabled: true);
+
+        await service.SyncStateForJobAsync(4997, CancellationToken.None);
+
+        var state = await db.JobPoStates.SingleAsync(x => x.JobId == 4997);
+        state.Status.Should().Be(JobPoStateStatus.PendingConfirmation);
+        state.NextFollowUpDueAt.Should().BeNull();
     }
 
     [Fact]

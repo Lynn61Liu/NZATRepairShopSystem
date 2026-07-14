@@ -131,6 +131,103 @@ public sealed class GmailThreadSyncService
             return GmailThreadSyncResult.Failed(tokenResult.Error ?? "Unable to refresh Gmail access token.");
         }
 
+        var client = _httpClientFactory.CreateClient();
+        return await SyncThreadWithTokenAsync(
+            normalizedCounterpartyEmail,
+            normalizedCorrelationId,
+            normalizedLimit,
+            tokenResult,
+            client,
+            ct);
+    }
+
+    public async Task<IReadOnlyList<GmailThreadBatchSyncResult>> SyncThreadsAsync(
+        IReadOnlyList<GmailThreadBatchSyncTarget> targets,
+        int limit,
+        long? gmailAccountId,
+        CancellationToken ct)
+    {
+        if (targets.Count == 0)
+            return [];
+
+        var normalizedLimit = Math.Clamp(limit, 1, 50);
+        var tokenResult = await _gmailTokenService.RefreshAccessTokenAsync(gmailAccountId, ct);
+        if (!tokenResult.Ok)
+        {
+            foreach (var target in targets)
+            {
+                _logger.LogWarning(
+                    "Gmail batch sync token refresh failed for {CorrelationId}/{CounterpartyEmail}: {Error}",
+                    NormalizeCorrelationId(target.CorrelationId),
+                    NormalizeCounterpartyEmail(target.CounterpartyEmail),
+                    tokenResult.Error);
+            }
+
+            return targets
+                .Select(target => new GmailThreadBatchSyncResult(
+                    target.TargetId,
+                    GmailThreadSyncResult.Failed(tokenResult.Error ?? "Unable to refresh Gmail access token.")))
+                .ToList();
+        }
+
+        var client = _httpClientFactory.CreateClient();
+        var results = new List<GmailThreadBatchSyncResult>(targets.Count);
+
+        foreach (var target in targets)
+        {
+            var normalizedCounterpartyEmail = NormalizeCounterpartyEmail(target.CounterpartyEmail);
+            var normalizedCorrelationId = NormalizeCorrelationId(target.CorrelationId);
+
+            try
+            {
+                var result = await SyncThreadWithTokenAsync(
+                    normalizedCounterpartyEmail,
+                    normalizedCorrelationId,
+                    normalizedLimit,
+                    tokenResult,
+                    client,
+                    ct);
+                results.Add(new GmailThreadBatchSyncResult(target.TargetId, result));
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Gmail batch sync failed for {CorrelationId}/{CounterpartyEmail}.",
+                    normalizedCorrelationId,
+                    normalizedCounterpartyEmail);
+                results.Add(new GmailThreadBatchSyncResult(
+                    target.TargetId,
+                    GmailThreadSyncResult.Failed(ex.Message)));
+            }
+        }
+
+        return results;
+    }
+
+    private async Task<GmailThreadSyncResult> SyncThreadWithTokenAsync(
+        string normalizedCounterpartyEmail,
+        string? normalizedCorrelationId,
+        int normalizedLimit,
+        GmailTokenRefreshResult tokenResult,
+        HttpClient client,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedCounterpartyEmail) && string.IsNullOrWhiteSpace(normalizedCorrelationId))
+            return GmailThreadSyncResult.Failed("counterpartyEmail or correlationId is required.");
+
+        if (!string.IsNullOrWhiteSpace(normalizedCorrelationId))
+        {
+            var isInactive = await _db.InactiveGmailCorrelations.AsNoTracking()
+                .AnyAsync(x => x.CorrelationId == normalizedCorrelationId, ct);
+            if (isInactive)
+                return GmailThreadSyncResult.SkippedResult("Correlation is inactive. Gmail sync skipped.");
+        }
+
         var counterpartyEmails = SplitEmailAddresses(normalizedCounterpartyEmail);
         var knownThreadIds = string.IsNullOrWhiteSpace(normalizedCorrelationId)
             ? []
@@ -152,7 +249,6 @@ public sealed class GmailThreadSyncService
             queryTerms.Add($"\"{normalizedCorrelationId}\"");
 
         var gmailQuery = string.Join(" ", queryTerms);
-        var client = _httpClientFactory.CreateClient();
         var synced = 0;
 
         if (knownThreadIds.Count > 0)
@@ -692,6 +788,15 @@ public sealed class GmailThreadSyncService
         string CounterpartyEmail,
         string CorrelationId,
         DateTime LastUpdatedAtUtc);
+
+    public sealed record GmailThreadBatchSyncTarget(
+        long TargetId,
+        string? CounterpartyEmail,
+        string? CorrelationId);
+
+    public sealed record GmailThreadBatchSyncResult(
+        long TargetId,
+        GmailThreadSyncResult Result);
 
     public sealed class GmailThreadSyncResult
     {

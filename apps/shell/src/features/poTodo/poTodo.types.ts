@@ -30,12 +30,7 @@ export type PoTodoListResponse = {
   currentPage: number;
   pageSize: number;
   totalPages: number;
-};
-
-export type PoTodoSyncResponse = {
-  checkedJobs: number;
-  syncedMessages: number;
-  warnings: string[];
+  lastGmailSyncedAt?: string | null;
 };
 
 export type PoTodoActionResponse = {
