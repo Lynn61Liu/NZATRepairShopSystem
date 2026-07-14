@@ -18,7 +18,7 @@ public sealed class PoController : ControllerBase
     public async Task<IActionResult> GetTodo(
         [FromQuery] string? status,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 15,
+        [FromQuery] int pageSize = 500,
         CancellationToken ct = default)
     {
         var result = await _poTodoService.GetTodoAsync(status, page, pageSize, ct);
@@ -88,7 +88,24 @@ public sealed class PoController : ControllerBase
             items,
         });
     }
+ 
+ // RUN ONETIME TO SYNC ALL EXISTING JOBS WITH GMAIL
+ [HttpPost("todo/sync-dashboard")]
+public async Task<IActionResult> SyncDashboard(CancellationToken ct = default)
+{
+    var result = await _poTodoService.SyncDashboardGmailAsync(ct);
+    return Ok(result);
+}
 
+// end api
+// TEST XERO SYNC FRO PO
+[HttpPost("todo/test-draft-xero")]
+public async Task<IActionResult> SyncDraftXero(CancellationToken ct = default)
+{
+    var result = await _poTodoService.DebugSyncDraftPoInvoicesFromXeroAsync(ct);
+    return Ok(result);
+}
+// END TEST XERO SYNC FRO PO
     [HttpPost("todo/sync")]
     public async Task<IActionResult> Sync(
         [FromQuery] string? status,

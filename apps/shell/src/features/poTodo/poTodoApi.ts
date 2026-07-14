@@ -5,24 +5,23 @@ import type {
   PoDraftPreview,
   PoTodoActionResponse,
   PoTodoListResponse,
-  PoTodoSyncResponse,
   PoTodoTab,
 } from "./poTodo.types";
 
-export async function fetchPoTodo(tab: PoTodoTab, page = 1, pageSize = 15): Promise<PoTodoListResponse> {
+export async function fetchPoTodo(tab?: PoTodoTab, page = 1, pageSize = 15): Promise<PoTodoListResponse> {
+  if (!tab) {
+    const res = await requestJson<PoTodoListResponse>("/api/po/todo");
+    if (!res.ok || !res.data) {
+      throw new Error(res.error || "Failed to load PO TODO list");
+    }
+    return res.data;
+  }
+
   const query = new URLSearchParams({ status: tab, page: String(page), pageSize: String(pageSize) });
-  const res = await requestJson<PoTodoListResponse>(`/api/po/todo?${query.toString()}`);
+  const queryString = query.toString();
+  const res = await requestJson<PoTodoListResponse>(`/api/po/todo${queryString ? `?${queryString}` : ""}`);
   if (!res.ok || !res.data) {
     throw new Error(res.error || "Failed to load PO TODO list");
-  }
-  return res.data;
-}
-
-export async function syncPoTodo(tab: PoTodoTab, page = 1, pageSize = 15): Promise<PoTodoSyncResponse> {
-  const query = new URLSearchParams({ status: tab, page: String(page), pageSize: String(pageSize) });
-  const res = await requestJson<PoTodoSyncResponse>(`/api/po/todo/sync?${query.toString()}`, { method: "POST" });
-  if (!res.ok || !res.data) {
-    throw new Error(res.error || "Failed to sync PO TODO list");
   }
   return res.data;
 }

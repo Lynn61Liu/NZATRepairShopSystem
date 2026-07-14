@@ -17,7 +17,7 @@ import { PartFlowPage } from "./pages/PartFlowPages/PartFlowPage";
 import { PaintBoardPage } from "./pages/paint/PaintBoardPage";
 import { PaintTechBoardPage } from "./pages/paint/PaintTechBoardPage";
 import { WorklogPage } from "./pages/worklog/WorklogPage";
-import { PoDashboardPreviewPage } from "./pages/PoDashboardPreviewPage";
+import { PoDashboardPreviewPage } from "./pages/poDashboard/PoDashboardPreviewPage";
 import { WofSchedulePage } from "./pages/WofSchedulePage"; // 保留原有的 WofSchedule
 import { ToastProvider } from "@/components/ui";
 import { CustomerSelfServiceNewJobPage } from "./pages/customerSelfService/CustomerSelfServiceNewJobPage";

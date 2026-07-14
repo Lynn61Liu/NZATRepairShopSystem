@@ -43,13 +43,15 @@ public sealed class PoTodoServiceTests
     }
 
     [Fact]
-    public async Task CompleteAsync_OnlyCompletesPoConfirmedRows()
+    public async Task CompleteAsync_CompletesActivePoRows()
     {
         await using var db = CreateDb();
         var now = DateTime.UtcNow;
         db.Jobs.AddRange(
             new Job { Id = 5201, NeedsPo = true, CreatedAt = now, UpdatedAt = now },
-            new Job { Id = 5202, NeedsPo = true, CreatedAt = now, UpdatedAt = now });
+            new Job { Id = 5202, NeedsPo = true, CreatedAt = now, UpdatedAt = now },
+            new Job { Id = 5203, NeedsPo = true, CreatedAt = now, UpdatedAt = now },
+            new Job { Id = 5204, NeedsPo = false, CreatedAt = now, UpdatedAt = now });
         db.JobPoStates.AddRange(
             new JobPoState { JobId = 5201, CorrelationId = "PO-5201-X", Status = JobPoStateStatus.PoConfirmed, CreatedAt = now, UpdatedAt = now },
             new JobPoState { JobId = 5202, CorrelationId = "PO-5202-X", Status = JobPoStateStatus.AwaitingReply, CreatedAt = now, UpdatedAt = now });
@@ -57,11 +59,14 @@ public sealed class PoTodoServiceTests
 
         var service = CreateService(db);
 
-        var result = await service.CompleteAsync([5201, 5202], CancellationToken.None);
+        var result = await service.CompleteAsync([5201, 5202, 5203, 5204], CancellationToken.None);
 
-        result.Updated.Should().Be(1);
+        result.Updated.Should().Be(3);
+        result.Skipped.Should().Be(1);
         (await db.JobPoStates.SingleAsync(x => x.JobId == 5201)).Status.Should().Be(JobPoStateStatus.Completed);
-        (await db.JobPoStates.SingleAsync(x => x.JobId == 5202)).Status.Should().Be(JobPoStateStatus.AwaitingReply);
+        (await db.JobPoStates.SingleAsync(x => x.JobId == 5202)).Status.Should().Be(JobPoStateStatus.Completed);
+        (await db.JobPoStates.SingleAsync(x => x.JobId == 5203)).Status.Should().Be(JobPoStateStatus.Completed);
+        (await db.JobPoStates.AnyAsync(x => x.JobId == 5204)).Should().BeFalse();
     }
 
     [Fact]
@@ -361,6 +366,7 @@ public sealed class PoTodoServiceTests
         await using var db = CreateDb();
         var now = DateTime.UtcNow;
         string? xeroReference = null;
+        long? waitingPaymentJobId = null;
         long? gmailAccountId = null;
         string? gmailThreadId = null;
         string? gmailMessageId = null;
@@ -417,6 +423,11 @@ public sealed class PoTodoServiceTests
                 xeroReference = reference;
                 return Task.FromResult(JobInvoiceCreateResult.Success(null, false));
             },
+            markInvoiceWaitingPaymentAsync: (jobId, _) =>
+            {
+                waitingPaymentJobId = jobId;
+                return Task.FromResult(JobInvoiceCreateResult.Success(null, true));
+            },
             addInvoicedLabelAsync: (accountId, threadId, messageId, _) =>
             {
                 gmailAccountId = accountId;
@@ -432,6 +443,7 @@ public sealed class PoTodoServiceTests
         result.InvoiceReference.Should().Be("PO 12345 ABC123");
         result.Steps.Values.Select(x => x.Status).Should().OnlyContain(x => x == "success");
         xeroReference.Should().Be("PO 12345 ABC123");
+        waitingPaymentJobId.Should().Be(5502);
         gmailAccountId.Should().Be(7);
         gmailThreadId.Should().Be("thread-5502");
         gmailMessageId.Should().Be("message-5502");
@@ -452,7 +464,7 @@ public sealed class PoTodoServiceTests
     }
 
     [Fact]
-    public async Task ConfirmPoAsync_RestoresLocalReference_WhenGmailFailsAfterXeroSuccess()
+    public async Task ConfirmPoAsync_SavesPoAndState_WhenGmailFailsAfterXeroSuccess()
     {
         await using var db = CreateDb();
         var now = DateTime.UtcNow;
@@ -485,22 +497,87 @@ public sealed class PoTodoServiceTests
                 invoice.Reference = reference;
                 await db.SaveChangesAsync(ct);
                 return JobInvoiceCreateResult.Success(invoice, false);
+            },
+            markInvoiceWaitingPaymentAsync: (jobId, _) =>
+            {
+                jobId.Should().Be(5503);
+                return Task.FromResult(JobInvoiceCreateResult.Success(null, true));
             });
 
         var result = await service.ConfirmPoAsync(5503, "12345", CancellationToken.None);
 
-        result.Success.Should().BeFalse();
+        result.Success.Should().BeTrue();
         result.Steps["xero"].Status.Should().Be("success");
         result.Steps["gmail"].Status.Should().Be("failed");
-        result.Steps["savePo"].Status.Should().Be("pending");
-        result.Steps["poState"].Status.Should().Be("pending");
+        result.Steps["savePo"].Status.Should().Be("success");
+        result.Steps["poState"].Status.Should().Be("success");
 
-        var restoredJob = await db.Jobs.SingleAsync(x => x.Id == 5503);
-        restoredJob.PoNumber.Should().BeNull();
-        restoredJob.InvoiceReference.Should().Be("PO stale ABC123");
+        var confirmedJob = await db.Jobs.SingleAsync(x => x.Id == 5503);
+        confirmedJob.PoNumber.Should().Be("12345");
+        confirmedJob.InvoiceReference.Should().Be("PO 12345 ABC123");
 
-        var restoredInvoice = await db.JobInvoices.SingleAsync(x => x.JobId == 5503);
-        restoredInvoice.Reference.Should().Be("PO Pending ABC123");
+        var updatedInvoice = await db.JobInvoices.SingleAsync(x => x.JobId == 5503);
+        updatedInvoice.Reference.Should().Be("PO 12345 ABC123");
+
+        var state = await db.JobPoStates.SingleAsync(x => x.JobId == 5503);
+        state.Status.Should().Be(JobPoStateStatus.PoConfirmed);
+        state.ConfirmedPoNumber.Should().Be("12345");
+    }
+
+    [Fact]
+    public async Task ConfirmPoAsync_SavesPoAndState_WhenWaitingPaymentUpdateFails()
+    {
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        db.Jobs.Add(new Job
+        {
+            Id = 5504,
+            NeedsPo = true,
+            InvoiceReference = "PO stale ABC123",
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        db.JobInvoices.Add(new JobInvoice
+        {
+            JobId = 5504,
+            ExternalInvoiceId = Guid.NewGuid().ToString(),
+            ExternalStatus = "DRAFT",
+            Reference = "PO Pending ABC123",
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(
+            db,
+            updateDraftReferenceAsync: async (jobId, reference, ct) =>
+            {
+                var job = await db.Jobs.SingleAsync(x => x.Id == jobId, ct);
+                var invoice = await db.JobInvoices.SingleAsync(x => x.JobId == jobId, ct);
+                job.InvoiceReference = reference;
+                invoice.Reference = reference;
+                await db.SaveChangesAsync(ct);
+                return JobInvoiceCreateResult.Success(invoice, false);
+            },
+            markInvoiceWaitingPaymentAsync: (_, _) =>
+                Task.FromResult(JobInvoiceCreateResult.Fail(400, "Failed to update Xero invoice to Waiting Payment.")));
+
+        var result = await service.ConfirmPoAsync(5504, "12345", CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+        result.Steps["xero"].Status.Should().Be("success");
+        result.Steps["xeroStatus"].Status.Should().Be("failed");
+        result.Steps["gmail"].Status.Should().Be("failed");
+        result.Steps["savePo"].Status.Should().Be("success");
+        result.Steps["poState"].Status.Should().Be("success");
+
+        var job = await db.Jobs.SingleAsync(x => x.Id == 5504);
+        job.PoNumber.Should().Be("12345");
+        job.InvoiceReference.Should().Be("PO 12345 ABC123");
+
+        var state = await db.JobPoStates.SingleAsync(x => x.JobId == 5504);
+        state.Status.Should().Be(JobPoStateStatus.PoConfirmed);
+        state.ConfirmedPoNumber.Should().Be("12345");
     }
 
     [Fact]
@@ -639,7 +716,8 @@ public sealed class PoTodoServiceTests
         AppDbContext db,
         bool includeStateSyncService = false,
         Func<long, string, CancellationToken, Task<JobInvoiceCreateResult>>? updateDraftReferenceAsync = null,
-        Func<long?, string?, string?, CancellationToken, Task<GmailLabelResult>>? addInvoicedLabelAsync = null)
+        Func<long?, string?, string?, CancellationToken, Task<GmailLabelResult>>? addInvoicedLabelAsync = null,
+        Func<long, CancellationToken, Task<JobInvoiceCreateResult>>? markInvoiceWaitingPaymentAsync = null)
     {
         var stateSyncService = includeStateSyncService
             ? new JobPoStateService(
@@ -647,6 +725,15 @@ public sealed class PoTodoServiceTests
                 new BusinessHoursService(Microsoft.Extensions.Options.Options.Create(new Workshop.Api.Options.PoFollowUpOptions())),
                 Microsoft.Extensions.Options.Options.Create(new Workshop.Api.Options.PoFollowUpOptions()))
             : null;
-        return new PoTodoService(db, null!, stateSyncService, null!, null!, null!, updateDraftReferenceAsync, addInvoicedLabelAsync);
+        return new PoTodoService(
+            db,
+            null!,
+            stateSyncService,
+            null!,
+            null!,
+            null!,
+            updateDraftReferenceAsync,
+            addInvoicedLabelAsync,
+            markInvoiceWaitingPaymentAsync);
     }
 }
