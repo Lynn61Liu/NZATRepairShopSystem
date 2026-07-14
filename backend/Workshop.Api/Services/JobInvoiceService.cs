@@ -1147,17 +1147,15 @@ public sealed class JobInvoiceService
 
     private async Task<JobInvoiceCreateResult> SyncInvoiceStatusAsync(JobInvoice jobInvoice, string targetStatus, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(jobInvoice.ExternalInvoiceId) || !Guid.TryParse(jobInvoice.ExternalInvoiceId, out var invoiceId))
+            return JobInvoiceCreateResult.Fail(400, "Missing Xero invoice id.");
+
         var request = BuildRequestFromPayload(jobInvoice.ResponsePayloadJson, jobInvoice);
+        request.InvoiceId = invoiceId;
         request.Status = targetStatus;
         request.DueDate ??= request.Date ?? jobInvoice.InvoiceDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
 
-        var syncResult = await _xeroInvoiceService.CreateInvoiceAsync(
-            request,
-            new XeroInvoiceCreateOptions
-            {
-                SummarizeErrors = true,
-            },
-            ct);
+        var syncResult = await _xeroInvoiceService.UpdateInvoiceStatusAsync(invoiceId, targetStatus, request.DueDate, ct);
 
         if (!syncResult.Ok)
         {

@@ -135,7 +135,7 @@ public sealed class XeroInvoiceService
                 "xero_api_error");
             return XeroInvoiceCreateResult.Fail(
                 (int)response.StatusCode,
-                responseBody,
+                SummarizeXeroError(parsedResponse) ?? responseBody,
                 parsedResponse,
                 tokenResult.TenantId,
                 tokenResult.RefreshToken,
@@ -151,6 +151,92 @@ public sealed class XeroInvoiceService
             true,
             (int)response.StatusCode,
             "success");
+        return XeroInvoiceCreateResult.Success(
+            parsedResponse,
+            tokenResult.TenantId,
+            tokenResult.RefreshToken,
+            tokenResult.RefreshTokenUpdated,
+            tokenResult.Scope,
+            tokenResult.ExpiresIn);
+    }
+
+    public async Task<XeroInvoiceCreateResult> UpdateInvoiceStatusAsync(
+        Guid invoiceId,
+        string targetStatus,
+        DateOnly? dueDate,
+        CancellationToken ct)
+    {
+        var missing = new List<string>();
+        if (string.IsNullOrWhiteSpace(_configuration.ClientId)) missing.Add("Xero:ClientId");
+        if (string.IsNullOrWhiteSpace(_configuration.ClientSecret)) missing.Add("Xero:ClientSecret");
+        if (missing.Count > 0)
+        {
+            return XeroInvoiceCreateResult.Fail(
+                400,
+                "Missing Xero configuration for invoice status update.",
+                new { missing },
+                "");
+        }
+
+        var tokenResult = await _xeroTokenService.RefreshAccessTokenAsync(ct);
+        if (!tokenResult.Ok)
+        {
+            return XeroInvoiceCreateResult.Fail(
+                tokenResult.StatusCode,
+                tokenResult.Error ?? "Failed to refresh Xero access token.",
+                null,
+                tokenResult.TenantId);
+        }
+
+        if (string.IsNullOrWhiteSpace(tokenResult.TenantId))
+        {
+            return XeroInvoiceCreateResult.Fail(
+                400,
+                "Missing Xero tenant id for invoice status update.",
+                new { missing = new[] { "Xero:TenantId" } },
+                "");
+        }
+
+        var requestUri = BuildRequestUri(summarizeErrors: true, unitdp: null);
+        var payload = JsonSerializer.Serialize(
+            new XeroInvoiceStatusUpdateEnvelope
+            {
+                Invoices =
+                [
+                    new XeroInvoiceStatusUpdate
+                    {
+                        InvoiceID = invoiceId,
+                        Status = targetStatus,
+                        DueDate = dueDate,
+                    },
+                ],
+            },
+            XeroWriteOptions);
+
+        var client = _httpClientFactory.CreateClient();
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, requestUri);
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenResult.AccessToken);
+        httpRequest.Headers.Add("xero-tenant-id", tokenResult.TenantId);
+        httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        httpRequest.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+
+        using var response = await client.SendAsync(httpRequest, ct);
+        var responseBody = await response.Content.ReadAsStringAsync(ct);
+        var parsedResponse = DeserializePayload(responseBody);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return XeroInvoiceCreateResult.Fail(
+                (int)response.StatusCode,
+                SummarizeXeroError(parsedResponse) ?? responseBody,
+                parsedResponse,
+                tokenResult.TenantId,
+                tokenResult.RefreshToken,
+                tokenResult.RefreshTokenUpdated,
+                tokenResult.Scope,
+                tokenResult.ExpiresIn);
+        }
+
         return XeroInvoiceCreateResult.Success(
             parsedResponse,
             tokenResult.TenantId,
@@ -450,6 +536,72 @@ public sealed class XeroInvoiceService
         }
     }
 
+    private static string? SummarizeXeroError(object? payload)
+    {
+        try
+        {
+            using var document = payload switch
+            {
+                null => null,
+                JsonElement element => JsonDocument.Parse(element.GetRawText()),
+                string raw when !string.IsNullOrWhiteSpace(raw) => JsonDocument.Parse(raw),
+                _ => JsonDocument.Parse(JsonSerializer.Serialize(payload, JsonOptions)),
+            };
+            if (document is null)
+                return null;
+
+            var messages = new List<string>();
+            CollectValidationMessages(document.RootElement, messages);
+            if (messages.Count > 0)
+                return string.Join(" ", messages.Distinct(StringComparer.OrdinalIgnoreCase));
+
+            if (document.RootElement.TryGetProperty("Message", out var messageProp) &&
+                messageProp.ValueKind == JsonValueKind.String)
+            {
+                return messageProp.GetString();
+            }
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    private static void CollectValidationMessages(JsonElement element, List<string> messages)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (property.NameEquals("ValidationErrors") && property.Value.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var error in property.Value.EnumerateArray())
+                        {
+                            if (error.TryGetProperty("Message", out var messageProp) &&
+                                messageProp.ValueKind == JsonValueKind.String &&
+                                !string.IsNullOrWhiteSpace(messageProp.GetString()))
+                            {
+                                messages.Add(messageProp.GetString()!.Trim());
+                            }
+                        }
+                    }
+                    else
+                    {
+                        CollectValidationMessages(property.Value, messages);
+                    }
+                }
+
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                    CollectValidationMessages(item, messages);
+                break;
+        }
+    }
+
     private static List<JsonElement> ExtractInvoices(string payload)
     {
         if (string.IsNullOrWhiteSpace(payload))
@@ -554,6 +706,24 @@ public sealed class XeroInvoiceService
     {
         [JsonPropertyName("Invoices")]
         public List<XeroInvoice> Invoices { get; set; } = [];
+    }
+
+    private sealed class XeroInvoiceStatusUpdateEnvelope
+    {
+        [JsonPropertyName("Invoices")]
+        public List<XeroInvoiceStatusUpdate> Invoices { get; set; } = [];
+    }
+
+    private sealed class XeroInvoiceStatusUpdate
+    {
+        [JsonPropertyName("InvoiceID")]
+        public Guid InvoiceID { get; set; }
+
+        [JsonPropertyName("Status")]
+        public string Status { get; set; } = "";
+
+        [JsonPropertyName("DueDate")]
+        public DateOnly? DueDate { get; set; }
     }
 
     private sealed class XeroInvoice

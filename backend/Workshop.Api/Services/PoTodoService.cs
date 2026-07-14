@@ -1050,10 +1050,10 @@ public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToke
 
     private static Dictionary<string, PoTodoStepResult> CreateConfirmPoSteps() => new()
     {
-        ["savePo"] = PoTodoStepResult.Pending("Waiting to save PO."),
         ["xero"] = PoTodoStepResult.Pending("Waiting to update Xero reference."),
         ["xeroStatus"] = PoTodoStepResult.Pending("Waiting to update Xero invoice to Waiting Payment."),
         ["gmail"] = PoTodoStepResult.Pending("Waiting to add Gmail label."),
+        ["savePo"] = PoTodoStepResult.Pending("Waiting to save PO."),
         ["poState"] = PoTodoStepResult.Pending("Waiting to update PO state."),
     };
 
