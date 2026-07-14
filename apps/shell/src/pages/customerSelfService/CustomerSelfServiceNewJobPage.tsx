@@ -819,9 +819,9 @@ function QuoteStep({
               <input
                 value={form.quoteEmail}
                 onChange={(event) => onChange({ quoteEmail: event.target.value })}
-                autoComplete="email"
+                autoComplete="email "
                 inputMode="email"
-                placeholder="name@example.com"
+                placeholder="name@example.com (选填 Optional)"
                 className={fieldClass(false)}
               />
             </Field>
@@ -900,21 +900,21 @@ function ReviewStep({
 }) {
   const contactRows: [string, ReactNode][] = form.hasWof
     ? [
-        ["Name", form.name],
-        ["Phone", form.phone],
-        ["Email", valueOrDash(form.email)],
-        ["Address", valueOrDash(form.address)],
+        ["Name名字", form.name],
+        ["Phone电话", form.phone],
+        ["Email邮箱", valueOrDash(form.email)],
+        ["Address地址", valueOrDash(form.address)],
       ]
     : [
-        ["Name", form.name],
-        ["Phone", form.phone],
-        ["Quote / 报价", form.requiresQuote ? "是" : "否"],
+        ["Name名字", form.name],
+        ["Phone电话", form.phone],
+        ["Quote报价", form.requiresQuote ? "是Yes" : "否No"],
       ];
 
   if (!form.hasWof && form.requiresQuote) {
     contactRows.push(
-      ["报价内容", valueOrDash(form.quotePartsContent)],
-      ["Email", valueOrDash(form.quoteEmail)]
+      ["报价内容QuoteDetails", valueOrDash(form.quotePartsContent)],
+      ["Email邮箱", valueOrDash(form.quoteEmail)]
     );
   }
 
