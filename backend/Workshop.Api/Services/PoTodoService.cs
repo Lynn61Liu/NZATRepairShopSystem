@@ -14,6 +14,7 @@ public sealed class PoTodoService
     private readonly GmailLabelService? _gmailLabelService;
     private readonly JobInvoiceService? _jobInvoiceService;
     private readonly Func<long, string, CancellationToken, Task<JobInvoiceCreateResult>>? _updateDraftReferenceAsync;
+    private readonly Func<long, CancellationToken, Task<JobInvoiceCreateResult>>? _markInvoiceWaitingPaymentAsync;
     private readonly Func<long?, string?, string?, CancellationToken, Task<GmailLabelResult>>? _addInvoicedLabelAsync;
     private readonly ILogger<PoTodoService>? _logger;
 
@@ -25,7 +26,8 @@ public sealed class PoTodoService
         JobInvoiceService? jobInvoiceService,
         ILogger<PoTodoService>? logger,
         Func<long, string, CancellationToken, Task<JobInvoiceCreateResult>>? updateDraftReferenceAsync = null,
-        Func<long?, string?, string?, CancellationToken, Task<GmailLabelResult>>? addInvoicedLabelAsync = null)
+        Func<long?, string?, string?, CancellationToken, Task<GmailLabelResult>>? addInvoicedLabelAsync = null,
+        Func<long, CancellationToken, Task<JobInvoiceCreateResult>>? markInvoiceWaitingPaymentAsync = null)
     {
         _db = db;
         _gmailThreadSyncService = gmailThreadSyncService;
@@ -33,6 +35,7 @@ public sealed class PoTodoService
         _gmailLabelService = gmailLabelService;
         _jobInvoiceService = jobInvoiceService;
         _updateDraftReferenceAsync = updateDraftReferenceAsync;
+        _markInvoiceWaitingPaymentAsync = markInvoiceWaitingPaymentAsync;
         _addInvoicedLabelAsync = addInvoicedLabelAsync;
         _logger = logger;
     }
@@ -734,10 +737,6 @@ public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToke
             .ThenByDescending(x => x.Id)
             .FirstOrDefaultAsync(ct);
         var nextReference = PoReferenceBuilder.BuildReference(invoice?.Reference ?? job.InvoiceReference, normalizedPo);
-        var originalJobPoNumber = job.PoNumber;
-        var originalJobInvoiceReference = job.InvoiceReference;
-        var originalInvoiceId = invoice?.Id;
-        var originalInvoiceReference = invoice?.Reference;
 
         steps["xero"] = PoTodoStepResult.Running("Updating Xero reference.");
         JobInvoiceCreateResult xero;
@@ -763,6 +762,36 @@ public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToke
         }
         steps["xero"] = PoTodoStepResult.Success("Xero reference updated.");
 
+        steps["xeroStatus"] = PoTodoStepResult.Running("Updating Xero invoice to Waiting Payment.");
+        JobInvoiceCreateResult xeroStatus;
+        try
+        {
+            xeroStatus = await MarkInvoiceWaitingPaymentAsync(jobId, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "PO confirm Xero Waiting Payment update failed for job {JobId}.", jobId);
+            steps["xeroStatus"] = PoTodoStepResult.Failed(ex.Message);
+            xeroStatus = JobInvoiceCreateResult.Fail(500, ex.Message);
+        }
+
+        if (!xeroStatus.Ok)
+        {
+            _logger?.LogWarning(
+                "PO confirm Xero Waiting Payment update failed for job {JobId}: {Error}",
+                jobId,
+                xeroStatus.Error);
+            steps["xeroStatus"] = PoTodoStepResult.Failed(xeroStatus.Error ?? "Failed to update Xero invoice to Waiting Payment.");
+        }
+        else
+        {
+            steps["xeroStatus"] = PoTodoStepResult.Success("Xero invoice updated to Waiting Payment.");
+        }
+
         var latestLog = await _db.GmailMessageLogs.AsNoTracking()
             .Where(x => x.CorrelationId == JobPoStateService.BuildCorrelationId(jobId))
             .ToListAsync(ct);
@@ -775,52 +804,34 @@ public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToke
         if (string.IsNullOrWhiteSpace(gmailLog?.GmailThreadId) && string.IsNullOrWhiteSpace(gmailLog?.GmailMessageId))
         {
             steps["gmail"] = PoTodoStepResult.Failed("Gmail thread or message was not found.");
-            await RestoreLocalReferencesAsync(
-                jobId,
-                originalInvoiceId,
-                originalJobPoNumber,
-                originalJobInvoiceReference,
-                originalInvoiceReference,
-                ct);
-            return new ConfirmPoResult(false, jobId, normalizedPo, nextReference, steps);
         }
+        else
+        {
+            GmailLabelResult gmail;
+            try
+            {
+                gmail = await AddInvoicedLabelAsync(gmailLog.GmailAccountId, gmailLog.GmailThreadId, gmailLog.GmailMessageId, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "PO confirm Gmail label update failed for job {JobId}.", jobId);
+                steps["gmail"] = PoTodoStepResult.Failed(ex.Message);
+                gmail = GmailLabelResult.Fail(500, ex.Message);
+            }
 
-        GmailLabelResult gmail;
-        try
-        {
-            gmail = await AddInvoicedLabelAsync(gmailLog.GmailAccountId, gmailLog.GmailThreadId, gmailLog.GmailMessageId, ct);
+            if (!gmail.Ok)
+            {
+                steps["gmail"] = PoTodoStepResult.Failed(gmail.Error ?? "Failed to add Gmail label.");
+            }
+            else
+            {
+                steps["gmail"] = PoTodoStepResult.Success("Gmail label added.");
+            }
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(ex, "PO confirm Gmail label update failed for job {JobId}.", jobId);
-            steps["gmail"] = PoTodoStepResult.Failed(ex.Message);
-            await RestoreLocalReferencesAsync(
-                jobId,
-                originalInvoiceId,
-                originalJobPoNumber,
-                originalJobInvoiceReference,
-                originalInvoiceReference,
-                ct);
-            return new ConfirmPoResult(false, jobId, normalizedPo, nextReference, steps);
-        }
-
-        if (!gmail.Ok)
-        {
-            steps["gmail"] = PoTodoStepResult.Failed(gmail.Error ?? "Failed to add Gmail label.");
-            await RestoreLocalReferencesAsync(
-                jobId,
-                originalInvoiceId,
-                originalJobPoNumber,
-                originalJobInvoiceReference,
-                originalInvoiceReference,
-                ct);
-            return new ConfirmPoResult(false, jobId, normalizedPo, nextReference, steps);
-        }
-        steps["gmail"] = PoTodoStepResult.Success("Gmail label added.");
 
         steps["savePo"] = PoTodoStepResult.Running("Saving PO number.");
         steps["poState"] = PoTodoStepResult.Running("Updating PO state.");
@@ -868,6 +879,16 @@ public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToke
         return _jobInvoiceService is null
             ? JobInvoiceCreateResult.Fail(500, "Xero invoice service is unavailable.")
             : await _jobInvoiceService.UpdateDraftReferenceAsync(jobId, reference, ct);
+    }
+
+    private async Task<JobInvoiceCreateResult> MarkInvoiceWaitingPaymentAsync(long jobId, CancellationToken ct)
+    {
+        if (_markInvoiceWaitingPaymentAsync is not null)
+            return await _markInvoiceWaitingPaymentAsync(jobId, ct);
+
+        return _jobInvoiceService is null
+            ? JobInvoiceCreateResult.Fail(500, "Xero invoice service is unavailable.")
+            : await _jobInvoiceService.MarkInvoiceWaitingPaymentAsync(jobId, ct);
     }
 
     private async Task<GmailLabelResult> AddInvoicedLabelAsync(
@@ -1031,6 +1052,7 @@ public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToke
     {
         ["savePo"] = PoTodoStepResult.Pending("Waiting to save PO."),
         ["xero"] = PoTodoStepResult.Pending("Waiting to update Xero reference."),
+        ["xeroStatus"] = PoTodoStepResult.Pending("Waiting to update Xero invoice to Waiting Payment."),
         ["gmail"] = PoTodoStepResult.Pending("Waiting to add Gmail label."),
         ["poState"] = PoTodoStepResult.Pending("Waiting to update PO state."),
     };

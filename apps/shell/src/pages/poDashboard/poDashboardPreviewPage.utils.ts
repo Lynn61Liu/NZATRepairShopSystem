@@ -16,10 +16,14 @@ export function shouldShowPoNumberColumn(tab: PoTodoTab) {
   return tab === "awaitingPo";
 }
 
+export function shouldShowCompletionActionColumn(tab: PoTodoTab) {
+  return tab === "pendingSend" || tab === "awaitingPo";
+}
+
 export function getPoTodoTableColSpan(tab: PoTodoTab) {
   if (tab === "pendingSend") return 10;
   if (tab === "invoiced") return 8;
-  return shouldShowPoNumberColumn(tab) ? 10 : 9;
+  return 11;
 }
 
 export function normalizePoNumberInput(value: string) {

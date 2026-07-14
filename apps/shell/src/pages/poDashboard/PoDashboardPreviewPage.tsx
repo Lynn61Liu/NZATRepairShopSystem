@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { StepProgressDialog, type StepProgressItem } from "@/components/common/StepProgressDialog";
 import { Button, Card, Pagination, useToast } from "@/components/ui";
 import { Ban, Check, CheckSquare, ExternalLink, Eye, Square, X } from "lucide-react";
 import {
@@ -9,10 +10,12 @@ import {
   fetchPoTodo,
   manualConfirmPoSent,
 } from "@/features/poTodo/poTodoApi";
-import type { ConfirmPoResponse, PoDraftPreview, PoTodoRow, PoTodoTab } from "@/features/poTodo/poTodo.types";
+import type { PoDraftPreview, PoTodoRow, PoTodoTab } from "@/features/poTodo/poTodo.types";
+import { createConfirmingPoSteps, getConfirmPoErrorMessage, resolveConfirmPoSteps } from "./confirmPoDialogState";
 import {
   getPoTodoTableColSpan,
   normalizePoNumberInput,
+  shouldShowCompletionActionColumn,
   shouldShowPoDraftColumn,
   shouldShowPoNumberColumn,
   shouldShowSentColumn,
@@ -50,11 +53,6 @@ function isSent(row: PoTodoRow) {
   return Boolean(row.lastRequestSentAt || row.firstRequestSentAt || row.sentSource);
 }
 
-function stepSummary(result: ConfirmPoResponse | null) {
-  if (!result) return [];
-  return Object.entries(result.steps);
-}
-
 function tabForStatus(status: string): PoTodoTab | null {
   switch (status) {
     case "draft":
@@ -75,7 +73,6 @@ export function PoDashboardPreviewPage() {
   const [activeTab, setActiveTab] = useState<PoTodoTab>("pendingSend");
   const [currentPage, setCurrentPage] = useState(1);
   const [allRows, setAllRows] = useState<PoTodoRow[]>([]);
-  const [lastGmailSyncedAt, setLastGmailSyncedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [poInputs, setPoInputs] = useState<Record<number, string>>({});
@@ -83,7 +80,10 @@ export function PoDashboardPreviewPage() {
   const [busyJobId, setBusyJobId] = useState<number | null>(null);
   const [preview, setPreview] = useState<PoDraftPreview | null>(null);
   const [previewLoadingJobId, setPreviewLoadingJobId] = useState<number | null>(null);
-  const [confirmResult, setConfirmResult] = useState<ConfirmPoResponse | null>(null);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [confirmDialogSteps, setConfirmDialogSteps] = useState<StepProgressItem[]>(() => createConfirmingPoSteps());
+  const [confirmDialogBusy, setConfirmDialogBusy] = useState(false);
+  const [confirmDialogError, setConfirmDialogError] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async (options?: { background?: boolean }) => {
     const background = options?.background === true;
@@ -94,7 +94,6 @@ export function PoDashboardPreviewPage() {
     try {
       const result = await fetchPoTodo();
       setAllRows(result.items);
-      setLastGmailSyncedAt(result.lastGmailSyncedAt ?? null);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load PO TODO list";
       setError(message);
@@ -152,7 +151,7 @@ export function PoDashboardPreviewPage() {
   const showPoDraftColumn = shouldShowPoDraftColumn(activeTab);
   const showSentColumn = shouldShowSentColumn(activeTab);
   const showPoNumberColumn = shouldShowPoNumberColumn(activeTab);
-  const showIgnoreColumn = activeTab === "pendingSend";
+  const showCompletionActionColumn = shouldShowCompletionActionColumn(activeTab);
   const tableColSpan = getPoTodoTableColSpan(activeTab);
 
   const toggleAll = () => {
@@ -195,20 +194,34 @@ export function PoDashboardPreviewPage() {
     }
 
     setBusyJobId(row.jobId);
-    setConfirmResult(null);
+    setConfirmDialogOpen(true);
+    setConfirmDialogBusy(true);
+    setConfirmDialogError(null);
+    setConfirmDialogSteps(createConfirmingPoSteps());
     try {
       const result = await confirmPoNumber(row.jobId, value);
-      setConfirmResult(result);
+      const failedMessage = getConfirmPoErrorMessage(result.steps);
+      setConfirmDialogSteps(resolveConfirmPoSteps(result.steps, result.success));
+      setConfirmDialogError(failedMessage);
       if (result.success) {
-        toast.success("PO 已确认");
+        if (failedMessage) {
+          toast.info("PO 已确认，部分步骤需要手动处理");
+        } else {
+          toast.success("PO 已确认");
+        }
         await loadDashboard({ background: true });
       } else {
-        toast.error("PO 确认未完成");
+        const message = failedMessage || "PO 确认未完成";
+        toast.error(message);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to confirm PO");
+      const message = err instanceof Error ? err.message : "Failed to confirm PO";
+      setConfirmDialogSteps(resolveConfirmPoSteps(undefined, false));
+      setConfirmDialogError(message);
+      toast.error(message);
     } finally {
       setBusyJobId(null);
+      setConfirmDialogBusy(false);
     }
   };
 
@@ -228,19 +241,20 @@ export function PoDashboardPreviewPage() {
     }
   };
 
-  const handleIgnoreJob = async (row: PoTodoRow) => {
+  const handleCompleteAction = async (row: PoTodoRow) => {
+    const isAwaitingPo = activeTab === "awaitingPo";
     setBusyJobId(row.jobId);
     try {
       const result = await completePoJobs([row.jobId]);
       if (result.updated > 0) {
-        toast.success("已忽略");
+        toast.success(isAwaitingPo ? "已完成" : "已忽略");
         setSelectedIds((prev) => prev.filter((id) => id !== row.jobId));
         await loadDashboard({ background: true });
       } else {
-        toast.error("未能忽略该 job");
+        toast.error(isAwaitingPo ? "未能完成该 job" : "未能忽略该 job");
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to ignore job");
+      toast.error(err instanceof Error ? err.message : isAwaitingPo ? "Failed to complete job" : "Failed to ignore job");
     } finally {
       setBusyJobId(null);
     }
@@ -251,7 +265,6 @@ export function PoDashboardPreviewPage() {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-normal text-[var(--ds-text)]">PO TODO</h1>
-          <div className="mt-1 text-sm text-[var(--ds-muted)]">最后 Gmail 同步：{formatDate(lastGmailSyncedAt)}</div>
         </div>
       </div>
 
@@ -313,7 +326,7 @@ export function PoDashboardPreviewPage() {
                 {showSentColumn ? <th className="px-3 py-3">是否发送</th> : null}
                 {showPoNumberColumn ? <th className="px-3 py-3">PO</th> : null}
                 {activeTab === "invoiced" ? <th className="px-3 py-3">Gmail</th> : null}
-                {showIgnoreColumn ? <th className="px-3 py-3">操作</th> : null}
+                {showCompletionActionColumn ? <th className="px-3 py-3">操作</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -408,14 +421,14 @@ export function PoDashboardPreviewPage() {
                         )}
                       </td>
                     ) : null}
-                    {showIgnoreColumn ? (
+                    {showCompletionActionColumn ? (
                       <td className="px-3 py-3">
                         <Button
-                          leftIcon={<Ban className="h-4 w-4" />}
-                          onClick={() => void handleIgnoreJob(row)}
+                          leftIcon={activeTab === "awaitingPo" ? <Check className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
+                          onClick={() => void handleCompleteAction(row)}
                           disabled={busyJobId === row.jobId}
                         >
-                          忽略
+                          {activeTab === "awaitingPo" ? "完成" : "忽略"}
                         </Button>
                       </td>
                     ) : null}
@@ -443,25 +456,14 @@ export function PoDashboardPreviewPage() {
         ) : null}
       </Card>
 
-      {confirmResult ? (
-        <Card className="p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="font-semibold text-[var(--ds-text)]">Confirm PO</div>
-            <button type="button" onClick={() => setConfirmResult(null)} className="rounded-full p-1 text-slate-500 hover:bg-slate-100">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="grid gap-2 md:grid-cols-4">
-            {stepSummary(confirmResult).map(([key, step]) => (
-              <div key={key} className="rounded-[8px] border border-[var(--ds-border)] p-3">
-                <div className="text-xs font-semibold uppercase text-[var(--ds-muted)]">{key}</div>
-                <div className="mt-1 font-semibold text-[var(--ds-text)]">{step.status}</div>
-                <div className="mt-1 text-xs text-[var(--ds-muted)]">{step.message}</div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      ) : null}
+      <StepProgressDialog
+        open={confirmDialogOpen}
+        title="确认 PO 状态"
+        steps={confirmDialogSteps}
+        errorMessage={confirmDialogError}
+        isBusy={confirmDialogBusy}
+        onClose={() => setConfirmDialogOpen(false)}
+      />
 
       {preview ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">

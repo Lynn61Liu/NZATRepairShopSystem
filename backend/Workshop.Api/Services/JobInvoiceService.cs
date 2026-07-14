@@ -264,6 +264,36 @@ public sealed class JobInvoiceService
         return await SyncDraftForJobAsync(jobInvoice, job, request, jobInvoice.InvoiceNote, sanitizeLineItems: false, ct);
     }
 
+    public async Task<JobInvoiceCreateResult> MarkInvoiceWaitingPaymentAsync(long jobId, CancellationToken ct)
+    {
+        var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (jobInvoice is null)
+            return JobInvoiceCreateResult.Fail(404, "Job invoice not found.");
+
+        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == jobId, ct);
+        if (job is null)
+            return JobInvoiceCreateResult.Fail(404, "Job not found.");
+
+        if (string.Equals(jobInvoice.ExternalStatus, "PAID", StringComparison.OrdinalIgnoreCase))
+            return JobInvoiceCreateResult.Fail(400, "This Xero invoice is already Paid.");
+
+        if (string.Equals(jobInvoice.ExternalStatus, "AUTHORISED", StringComparison.OrdinalIgnoreCase))
+            return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true);
+
+        if (string.IsNullOrWhiteSpace(jobInvoice.ExternalInvoiceId) || !Guid.TryParse(jobInvoice.ExternalInvoiceId, out _))
+            return JobInvoiceCreateResult.Fail(400, "Missing Xero invoice id.");
+
+        var statusResult = await SyncInvoiceStatusAsync(jobInvoice, "AUTHORISED", ct);
+        if (!statusResult.Ok)
+            return statusResult;
+
+        job.InvoiceReference = jobInvoice.Reference;
+        job.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return statusResult;
+    }
+
     public async Task<JobInvoiceCreateResult> SyncDraftForJobAsync(long jobId, SyncJobInvoiceDraftRequest payload, CancellationToken ct)
     {
         var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
