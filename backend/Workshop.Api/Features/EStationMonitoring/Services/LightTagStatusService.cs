@@ -7,6 +7,8 @@ namespace Workshop.Api.Features.EStationMonitoring.Services;
 
 public sealed class LightTagStatusService
 {
+    private static readonly TimeSpan StatusRefreshInterval = TimeSpan.FromSeconds(10);
+
     private readonly AppDbContext _db;
 
     public LightTagStatusService(AppDbContext db)
@@ -42,6 +44,7 @@ public sealed class LightTagStatusService
         {
             var tagId = item.TagID.Trim().ToUpperInvariant();
             var tag = await _db.LightTags.FirstOrDefaultAsync(x => x.TagId == tagId, ct);
+            var isNew = tag is null;
             if (tag is null)
             {
                 tag = new LightTag
@@ -56,23 +59,50 @@ public sealed class LightTagStatusService
                 ? EStationDeviceValueMapper.ToColorName(item.Colors[0])
                 : "Unknown";
 
-            tag.StationId = stationId;
-            tag.CurrentGroup = item.Group;
-            tag.CurrentColor = color;
-            tag.IsLightOn = color is not "Off" and not "Unknown";
-            tag.BatteryRaw = item.Battery;
-            tag.BatteryVoltage = EStationDeviceValueMapper.ToVoltage(item.Battery);
-            tag.BatteryPercent = EStationDeviceValueMapper.ToBatteryPercent(item.Battery);
-            tag.RfPowerSend = item.RfPowerSend;
-            tag.RfPowerRecv = item.RfPowerRecv;
-            tag.FirmwareVersion = NullIfBlank(item.Version);
-            tag.LastResultType = item.ResultType;
+            var isLightOn = color is not "Off" and not "Unknown";
+            var batteryVoltage = EStationDeviceValueMapper.ToVoltage(item.Battery);
+            var batteryPercent = EStationDeviceValueMapper.ToBatteryPercent(item.Battery);
+            var firmwareVersion = NullIfBlank(item.Version);
+            var stateChanged = isNew ||
+                tag.StationId != stationId ||
+                tag.CurrentGroup != item.Group ||
+                tag.CurrentColor != color ||
+                tag.IsLightOn != isLightOn ||
+                tag.BatteryRaw != item.Battery ||
+                tag.BatteryVoltage != batteryVoltage ||
+                tag.BatteryPercent != batteryPercent ||
+                tag.RfPowerSend != item.RfPowerSend ||
+                tag.RfPowerRecv != item.RfPowerRecv ||
+                tag.FirmwareVersion != firmwareVersion ||
+                tag.LastResultType != item.ResultType ||
+                tag.LastPayloadStatus != EStationProcessingStatus.Processed;
+            var shouldRefreshSeenAt = tag.LastSeenAt is null || now - tag.LastSeenAt.Value >= StatusRefreshInterval;
+
+            if (!stateChanged && !shouldRefreshSeenAt)
+                continue;
+
+            if (stateChanged)
+            {
+                tag.StationId = stationId;
+                tag.CurrentGroup = item.Group;
+                tag.CurrentColor = color;
+                tag.IsLightOn = isLightOn;
+                tag.BatteryRaw = item.Battery;
+                tag.BatteryVoltage = batteryVoltage;
+                tag.BatteryPercent = batteryPercent;
+                tag.RfPowerSend = item.RfPowerSend;
+                tag.RfPowerRecv = item.RfPowerRecv;
+                tag.FirmwareVersion = firmwareVersion;
+                tag.LastResultType = item.ResultType;
+                tag.LastPayloadStatus = EStationProcessingStatus.Processed;
+            }
+
             tag.LastSeenAt = now;
-            tag.LastPayloadStatus = EStationProcessingStatus.Processed;
             tag.UpdatedAt = now;
         }
 
-        await _db.SaveChangesAsync(ct);
+        if (_db.ChangeTracker.HasChanges())
+            await _db.SaveChangesAsync(ct);
     }
 
     public async Task<List<LightTagStatusResponse>> GetLightTagsAsync(

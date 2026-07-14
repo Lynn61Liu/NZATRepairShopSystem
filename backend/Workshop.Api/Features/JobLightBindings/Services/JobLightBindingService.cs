@@ -147,9 +147,13 @@ public sealed class JobLightBindingService
     {
         var normalizedStationId = Normalize(stationId);
         var now = EnsureUtc(receivedAt);
+        var changed = false;
 
         foreach (var item in dto.Results)
         {
+            if (item.ResultType != EStationDeviceValueMapper.CommunicationResultType)
+                continue;
+
             var tagId = Normalize(item.TagID);
             if (string.IsNullOrWhiteSpace(tagId) || tagId.Length > 32)
             {
@@ -172,7 +176,7 @@ public sealed class JobLightBindingService
             {
                 if (binding is null)
                 {
-                    _logger.LogWarning(
+                    _logger.LogDebug(
                         "No pending binding matched station {StationId}, tag {TagId}, group {GroupNo}.",
                         normalizedStationId,
                         tagId,
@@ -194,6 +198,7 @@ public sealed class JobLightBindingService
             binding.FailureReason = null;
             binding.LastResultAt = now;
             binding.UpdatedAt = now;
+            changed = true;
 
             _logger.LogInformation(
                 "Confirmed light binding {BindingId} for job {JobId} plate {Plate} station {StationId} tag {TagId} group {GroupNo}.",
@@ -205,7 +210,8 @@ public sealed class JobLightBindingService
                 binding.GroupNo);
         }
 
-        await _db.SaveChangesAsync(ct);
+        if (changed)
+            await _db.SaveChangesAsync(ct);
     }
 
     public async Task<List<JobLightBindingResponse>> GetJobBindingsAsync(long jobId, CancellationToken ct)

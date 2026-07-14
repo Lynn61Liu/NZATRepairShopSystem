@@ -32,11 +32,10 @@ public sealed class EStationMqttMessageProcessor
     public async Task ProcessAsync(string topic, string payload, DateTime receivedAt, CancellationToken ct)
     {
         var parsed = EStationMqttTopicRouter.Parse(topic);
-        var log = await _logService.CreateAsync(topic, payload, parsed.MessageType, parsed.StationId, receivedAt, ct);
 
         if (!parsed.IsValid || string.IsNullOrWhiteSpace(parsed.StationId))
         {
-            await _logService.MarkFailedAsync(log.Id, EStationProcessingStatus.InvalidTopic, "Unsupported eStation MQTT topic.", ct);
+            await LogFailureAsync(topic, payload, parsed.MessageType, parsed.StationId, receivedAt, EStationProcessingStatus.InvalidTopic, "Unsupported eStation MQTT topic.", ct);
             return;
         }
 
@@ -48,49 +47,68 @@ public sealed class EStationMqttMessageProcessor
                     var heartbeat = JsonSerializer.Deserialize<EStationHeartbeatDto>(payload, JsonOptions);
                     if (heartbeat is null)
                     {
-                        await _logService.MarkFailedAsync(log.Id, EStationProcessingStatus.InvalidPayload, "Heartbeat payload is empty.", ct);
+                        await LogFailureAsync(topic, payload, parsed.MessageType, parsed.StationId, receivedAt, EStationProcessingStatus.InvalidPayload, "Heartbeat payload is empty.", ct);
                         return;
                     }
 
                     await _stationStatusService.HandleHeartbeatAsync(parsed.StationId, heartbeat, receivedAt, ct);
-                    await _logService.MarkProcessedAsync(log.Id, null, ct);
                     return;
 
                 case EStationMqttMessageType.Result:
                     var result = JsonSerializer.Deserialize<TaskResultDto>(payload, JsonOptions);
                     if (result is null)
                     {
-                        await _logService.MarkFailedAsync(log.Id, EStationProcessingStatus.InvalidPayload, "Result payload is empty.", ct);
+                        await LogFailureAsync(topic, payload, parsed.MessageType, parsed.StationId, receivedAt, EStationProcessingStatus.InvalidPayload, "Result payload is empty.", ct);
                         return;
                     }
 
-                    // Confirm binding first so a later tag/status validation failure does not hide the bind result.
-                    await _jobLightBindingService.HandleResultAsync(parsed.StationId, result, receivedAt, ct);
+                    var hasCommunicationResult = result.Results.Any(x => x.ResultType == EStationDeviceValueMapper.CommunicationResultType);
+                    if (hasCommunicationResult)
+                    {
+                        await _jobLightBindingService.HandleResultAsync(parsed.StationId, result, receivedAt, ct);
+                    }
+
                     await _lightTagStatusService.HandleResultAsync(parsed.StationId, result, receivedAt, ct);
-                    await _stationStatusService.UpdateCountsFromResultAsync(parsed.StationId, result.TotalCount, result.SendCount, receivedAt, ct);
-                    await _logService.MarkProcessedAsync(log.Id, result.Results.Count == 1 ? result.Results[0].TagID : null, ct);
+                    if (hasCommunicationResult)
+                    {
+                        await _stationStatusService.UpdateCountsFromResultAsync(parsed.StationId, result.TotalCount, result.SendCount, receivedAt, ct);
+                    }
+
                     return;
 
                 default:
-                    await _logService.MarkFailedAsync(log.Id, EStationProcessingStatus.InvalidTopic, "Unsupported eStation MQTT message type.", ct);
+                    await LogFailureAsync(topic, payload, parsed.MessageType, parsed.StationId, receivedAt, EStationProcessingStatus.InvalidTopic, "Unsupported eStation MQTT message type.", ct);
                     return;
             }
         }
         catch (JsonException ex)
         {
-            await _logService.MarkFailedAsync(log.Id, EStationProcessingStatus.InvalidPayload, ex.Message, ct);
+            await LogFailureAsync(topic, payload, parsed.MessageType, parsed.StationId, receivedAt, EStationProcessingStatus.InvalidPayload, ex.Message, ct);
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("does not match", StringComparison.OrdinalIgnoreCase))
         {
-            await _logService.MarkFailedAsync(log.Id, EStationProcessingStatus.StationMismatch, ex.Message, ct);
+            await LogFailureAsync(topic, payload, parsed.MessageType, parsed.StationId, receivedAt, EStationProcessingStatus.StationMismatch, ex.Message, ct);
         }
         catch (InvalidOperationException ex)
         {
-            await _logService.MarkFailedAsync(log.Id, EStationProcessingStatus.InvalidIdentifier, ex.Message, ct);
+            await LogFailureAsync(topic, payload, parsed.MessageType, parsed.StationId, receivedAt, EStationProcessingStatus.InvalidIdentifier, ex.Message, ct);
         }
         catch (Exception ex)
         {
-            await _logService.MarkFailedAsync(log.Id, EStationProcessingStatus.Failed, ex.Message, ct);
+            await LogFailureAsync(topic, payload, parsed.MessageType, parsed.StationId, receivedAt, EStationProcessingStatus.Failed, ex.Message, ct);
         }
+    }
+
+    private async Task LogFailureAsync(
+        string topic,
+        string payload,
+        EStationMqttMessageType messageType,
+        string? stationId,
+        DateTime receivedAt,
+        string status,
+        string errorMessage,
+        CancellationToken ct)
+    {
+        await _logService.CreateFailedAsync(topic, payload, messageType, stationId, receivedAt, status, errorMessage, ct);
     }
 }

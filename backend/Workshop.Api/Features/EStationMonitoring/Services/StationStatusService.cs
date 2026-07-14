@@ -9,6 +9,8 @@ namespace Workshop.Api.Features.EStationMonitoring.Services;
 
 public sealed class StationStatusService
 {
+    private static readonly TimeSpan StationRefreshInterval = TimeSpan.FromSeconds(10);
+
     private readonly AppDbContext _db;
     private readonly TimeProvider _timeProvider;
     private readonly EStationMqttOptions _options;
@@ -41,6 +43,7 @@ public sealed class StationStatusService
         var normalizedStationId = topicStationId.ToUpperInvariant();
         var now = receivedAt.Kind == DateTimeKind.Utc ? receivedAt : DateTime.SpecifyKind(receivedAt, DateTimeKind.Utc);
         var station = await _db.LightStations.FirstOrDefaultAsync(x => x.StationId == normalizedStationId, ct);
+        var isNew = station is null;
 
         if (station is null)
         {
@@ -52,15 +55,37 @@ public sealed class StationStatusService
             _db.LightStations.Add(station);
         }
 
-        station.Mac = NullIfBlank(dto.MAC);
-        station.Alias = NullIfBlank(dto.Alias);
-        station.ServerAddress = NullIfBlank(dto.ServerAddress);
-        station.FirmwareVersion = NullIfBlank(dto.AppVersion);
-        station.TotalCount = dto.TotalCount;
-        station.SendCount = dto.SendCount;
+        var mac = NullIfBlank(dto.MAC);
+        var alias = NullIfBlank(dto.Alias);
+        var serverAddress = NullIfBlank(dto.ServerAddress);
+        var firmwareVersion = NullIfBlank(dto.AppVersion);
+        var stateChanged = isNew ||
+            station.Mac != mac ||
+            station.Alias != alias ||
+            station.ServerAddress != serverAddress ||
+            station.FirmwareVersion != firmwareVersion ||
+            station.TotalCount != dto.TotalCount ||
+            station.SendCount != dto.SendCount ||
+            !station.IsOnline ||
+            station.LastPayloadStatus != EStationProcessingStatus.Processed;
+        var shouldRefreshHeartbeat = station.LastHeartbeatAt is null || now - station.LastHeartbeatAt.Value >= StationRefreshInterval;
+
+        if (!stateChanged && !shouldRefreshHeartbeat)
+            return;
+
+        if (stateChanged)
+        {
+            station.Mac = mac;
+            station.Alias = alias;
+            station.ServerAddress = serverAddress;
+            station.FirmwareVersion = firmwareVersion;
+            station.TotalCount = dto.TotalCount;
+            station.SendCount = dto.SendCount;
+            station.IsOnline = true;
+            station.LastPayloadStatus = EStationProcessingStatus.Processed;
+        }
+
         station.LastHeartbeatAt = now;
-        station.IsOnline = true;
-        station.LastPayloadStatus = EStationProcessingStatus.Processed;
         station.UpdatedAt = now;
 
         await _db.SaveChangesAsync(ct);
@@ -88,20 +113,32 @@ public sealed class StationStatusService
     public async Task UpdateCountsFromResultAsync(string stationId, int totalCount, int sendCount, DateTime receivedAt, CancellationToken ct)
     {
         var normalized = stationId.Trim().ToUpperInvariant();
+        var now = receivedAt.Kind == DateTimeKind.Utc ? receivedAt : DateTime.SpecifyKind(receivedAt, DateTimeKind.Utc);
         var station = await _db.LightStations.FirstOrDefaultAsync(x => x.StationId == normalized, ct);
+        var isNew = station is null;
         if (station is null)
         {
             station = new LightStation
             {
                 StationId = normalized,
-                CreatedAt = receivedAt,
+                CreatedAt = now,
             };
             _db.LightStations.Add(station);
         }
 
-        station.TotalCount = totalCount;
-        station.SendCount = sendCount;
-        station.UpdatedAt = receivedAt;
+        var countsChanged = isNew || station.TotalCount != totalCount || station.SendCount != sendCount;
+        var shouldRefreshCounts = now - station.UpdatedAt >= StationRefreshInterval;
+
+        if (!countsChanged && !shouldRefreshCounts)
+            return;
+
+        if (countsChanged)
+        {
+            station.TotalCount = totalCount;
+            station.SendCount = sendCount;
+        }
+
+        station.UpdatedAt = now;
         await _db.SaveChangesAsync(ct);
     }
 
