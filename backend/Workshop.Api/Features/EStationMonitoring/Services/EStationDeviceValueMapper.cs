@@ -4,6 +4,10 @@ namespace Workshop.Api.Features.EStationMonitoring.Services;
 
 public static class EStationDeviceValueMapper
 {
+    public const int ButtonPressResultType = 253;
+    public const int CommunicationResultType = 254;
+    public const int LightHeartbeatResultType = 255;
+
     public static string ToColorName(RgbDto rgb)
     {
         if (rgb.R && rgb.G && rgb.B) return "White";
@@ -39,9 +43,9 @@ public static class EStationDeviceValueMapper
     public static string ResultTypeLabel(int? resultType)
         => resultType switch
         {
-            253 => "Button Press",
-            254 => "Communication Result",
-            255 => "Light Heartbeat",
+            ButtonPressResultType => "Button Press",
+            CommunicationResultType => "Communication Result",
+            LightHeartbeatResultType => "Light Heartbeat",
             null => "Unknown",
             _ => "Unknown",
         };

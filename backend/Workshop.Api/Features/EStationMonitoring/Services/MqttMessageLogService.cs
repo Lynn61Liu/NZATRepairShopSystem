@@ -37,6 +37,31 @@ public sealed class MqttMessageLogService
         return row;
     }
 
+    public async Task CreateFailedAsync(
+        string topic,
+        string payload,
+        EStationMqttMessageType messageType,
+        string? stationId,
+        DateTime receivedAt,
+        string status,
+        string errorMessage,
+        CancellationToken ct)
+    {
+        var row = new MqttMessageLog
+        {
+            Topic = topic,
+            Payload = payload,
+            MessageType = messageType.ToString(),
+            StationId = stationId,
+            ReceivedAt = receivedAt,
+            ProcessingStatus = status,
+            ErrorMessage = errorMessage,
+        };
+
+        _db.MqttMessageLogs.Add(row);
+        await _db.SaveChangesAsync(ct);
+    }
+
     public async Task MarkProcessedAsync(long id, string? tagId, CancellationToken ct)
     {
         var row = await _db.MqttMessageLogs.FirstOrDefaultAsync(x => x.Id == id, ct);
