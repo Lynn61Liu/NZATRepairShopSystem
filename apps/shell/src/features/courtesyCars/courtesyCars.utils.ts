@@ -58,10 +58,6 @@ function toBase64(buffer: ArrayBuffer) {
     return btoa(binary);
   }
 
-  if (typeof Buffer !== "undefined") {
-    return Buffer.from(binary, "binary").toString("base64");
-  }
-
   throw new Error("Base64 encoding is not available in this environment.");
 }
 

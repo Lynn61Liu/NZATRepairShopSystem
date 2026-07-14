@@ -358,10 +358,12 @@ export function CustomerSection({
 
 type NotesSectionProps = {
   notes: string;
+  privateNotes: string;
   onNotesChange: (value: string) => void;
+  onPrivateNotesChange: (value: string) => void;
 };
 
-export function NotesSection({ notes, onNotesChange }: NotesSectionProps) {
+export function NotesSection({ notes, privateNotes, onNotesChange, onPrivateNotesChange }: NotesSectionProps) {
   const [isOpen, setIsOpen] = useState(true);
   return (
     <SectionCard
@@ -385,6 +387,18 @@ export function NotesSection({ notes, onNotesChange }: NotesSectionProps) {
             value={notes}
             onChange={(event) => onNotesChange(event.target.value)}
             rows={4}
+            className={[
+              "w-full rounded-[8px] border border-[rgba(0,0,0,0.10)] bg-white px-3 py-2 text-base",
+              "outline-none focus:border-[rgba(37,99,235,0.45)] focus:ring-2 focus:ring-[rgba(37,99,235,0.12)]",
+              "resize-none",
+            ].join(" ")}
+          />
+          <label className="mt-4 mb-1 block text-base text-[rgba(0,0,0,0.55)]">其他备注（仅内部可见）</label>
+          <textarea
+            placeholder="例如 Deal 价格 收款方式等"
+            value={privateNotes}
+            onChange={(event) => onPrivateNotesChange(event.target.value)}
+            rows={3}
             className={[
               "w-full rounded-[8px] border border-[rgba(0,0,0,0.10)] bg-white px-3 py-2 text-base",
               "outline-none focus:border-[rgba(37,99,235,0.45)] focus:ring-2 focus:ring-[rgba(37,99,235,0.12)]",

@@ -3,6 +3,8 @@ export type PoTodoTab = "pendingSend" | "awaitingPo" | "invoiced";
 export type PoTodoRow = {
   jobId: number;
   createdAt: string;
+  customerId?: number | null;
+  customerName: string;
   code: string;
   plate: string;
   model: string;
@@ -22,6 +24,11 @@ export type PoTodoRow = {
   gmailDraftUpdatedAt?: string | null;
   gmailThreadId?: string | null;
   correlationId: string;
+  pendingPoNumber?: string | null;
+  confirmationStatus?: string | null;
+  confirmationNote?: string | null;
+  confirmationLastAttemptAt?: string | null;
+  xeroSubtotal?: number | null;
 };
 
 export type PoTodoListResponse = {
@@ -49,6 +56,21 @@ export type ConfirmPoResponse = {
   poNumber: string;
   invoiceReference: string;
   steps: Record<string, PoTodoStepResult>;
+};
+
+export type ConfirmPoBatchResponse = {
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: ConfirmPoResponse[];
+};
+
+export type PoXeroSummary = {
+  jobId: number;
+  subtotal?: number | null;
+  status?: string | null;
+  reference?: string | null;
+  refreshedAt: string;
 };
 
 export type CompletePoResponse = {

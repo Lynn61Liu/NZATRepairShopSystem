@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using Workshop.Api.Data;
 using Workshop.Api.Models;
 
@@ -15,6 +16,7 @@ public sealed class PoTodoService
     private readonly JobInvoiceService? _jobInvoiceService;
     private readonly Func<long, string, CancellationToken, Task<JobInvoiceCreateResult>>? _updateDraftReferenceAsync;
     private readonly Func<long, CancellationToken, Task<JobInvoiceCreateResult>>? _markInvoiceWaitingPaymentAsync;
+    private readonly Func<long, CancellationToken, Task<JobInvoiceCreateResult>>? _emailInvoiceAsync;
     private readonly Func<long?, string?, string?, CancellationToken, Task<GmailLabelResult>>? _addInvoicedLabelAsync;
     private readonly ILogger<PoTodoService>? _logger;
 
@@ -27,7 +29,8 @@ public sealed class PoTodoService
         ILogger<PoTodoService>? logger,
         Func<long, string, CancellationToken, Task<JobInvoiceCreateResult>>? updateDraftReferenceAsync = null,
         Func<long?, string?, string?, CancellationToken, Task<GmailLabelResult>>? addInvoicedLabelAsync = null,
-        Func<long, CancellationToken, Task<JobInvoiceCreateResult>>? markInvoiceWaitingPaymentAsync = null)
+        Func<long, CancellationToken, Task<JobInvoiceCreateResult>>? markInvoiceWaitingPaymentAsync = null,
+        Func<long, CancellationToken, Task<JobInvoiceCreateResult>>? emailInvoiceAsync = null)
     {
         _db = db;
         _gmailThreadSyncService = gmailThreadSyncService;
@@ -36,6 +39,7 @@ public sealed class PoTodoService
         _jobInvoiceService = jobInvoiceService;
         _updateDraftReferenceAsync = updateDraftReferenceAsync;
         _markInvoiceWaitingPaymentAsync = markInvoiceWaitingPaymentAsync;
+        _emailInvoiceAsync = emailInvoiceAsync;
         _addInvoicedLabelAsync = addInvoicedLabelAsync;
         _logger = logger;
     }
@@ -101,7 +105,11 @@ public sealed class PoTodoService
                 x.State == null ? null : x.State.LastFollowUpSentAt,
                 x.State == null ? null : x.State.LastSupplierReplyAt,
                 x.State == null ? null : x.State.DetectedPoNumber,
-                x.State == null ? null : x.State.ConfirmedPoNumber))
+                x.State == null ? null : x.State.ConfirmedPoNumber,
+                x.State == null ? null : x.State.PendingPoNumber,
+                x.State == null ? null : x.State.ConfirmationStatus,
+                x.State == null ? null : x.State.ConfirmationNote,
+                x.State == null ? null : x.State.ConfirmationLastAttemptAt))
             .ToListAsync(ct);
 
         var lastGmailSyncedAt = await GetLastGmailSyncedAtAsync(ct);
@@ -179,6 +187,8 @@ public sealed class PoTodoService
             return new PoTodoRow(
                 row.JobId,
                 row.CreatedAt,
+                row.CustomerId,
+                customer?.Name ?? "",
                 customer?.BusinessCode ?? "",
                 vehicle?.Plate ?? "",
                 BuildModelText(vehicle),
@@ -197,7 +207,12 @@ public sealed class PoTodoService
                 row.GmailDraftId,
                 row.GmailDraftUpdatedAt,
                 gmailThreadId,
-                correlationId);
+                correlationId,
+                row.PendingPoNumber,
+                row.ConfirmationStatus,
+                row.ConfirmationNote,
+                row.ConfirmationLastAttemptAt,
+                ExtractSubtotal(invoice?.ResponsePayloadJson));
         }).ToList();
 
         return new PoTodoListResult(total, items, safePage, safePageSize, totalPages, lastGmailSyncedAt);
@@ -708,7 +723,10 @@ public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToke
             row.State?.GmailDraftId);
     }
 
-    public async Task<ConfirmPoResult> ConfirmPoAsync(long jobId, string? poNumber, CancellationToken ct)
+    public Task<ConfirmPoResult> ConfirmPoAsync(long jobId, string? poNumber, CancellationToken ct) =>
+        ConfirmPoAsync(jobId, poNumber, sendInvoice: false, ct);
+
+    public async Task<ConfirmPoResult> ConfirmPoAsync(long jobId, string? poNumber, bool sendInvoice, CancellationToken ct)
     {
         var steps = CreateConfirmPoSteps();
         var normalizedPo = poNumber?.Trim() ?? "";
@@ -730,6 +748,15 @@ public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToke
             return new ConfirmPoResult(false, jobId, normalizedPo, "", steps);
         }
 
+        var now = DateTime.UtcNow;
+        var state = await EnsureStateAsync(jobId, now, ct);
+        state.PendingPoNumber = normalizedPo;
+        state.ConfirmationStatus = "processing";
+        state.ConfirmationNote = null;
+        state.ConfirmationLastAttemptAt = now;
+        state.UpdatedAt = now;
+        await _db.SaveChangesAsync(ct);
+
         var invoice = await _db.JobInvoices.AsNoTracking()
             .Where(x => x.JobId == jobId)
             .OrderByDescending(x => x.UpdatedAt)
@@ -742,7 +769,7 @@ public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToke
         JobInvoiceCreateResult xero;
         try
         {
-            xero = await UpdateDraftReferenceAsync(jobId, nextReference, ct);
+            xero = await UpdatePoReferenceAsync(jobId, normalizedPo, nextReference, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -752,15 +779,18 @@ public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToke
         {
             _logger?.LogWarning(ex, "PO confirm Xero reference update failed for job {JobId}.", jobId);
             steps["xero"] = PoTodoStepResult.Failed(ex.Message);
+            await SaveConfirmationFailureAsync(state, ex.Message, ct);
             return new ConfirmPoResult(false, jobId, normalizedPo, nextReference, steps);
         }
 
         if (!xero.Ok)
         {
             steps["xero"] = PoTodoStepResult.Failed(xero.Error ?? "Failed to update Xero reference.");
+            await SaveConfirmationFailureAsync(state, steps["xero"].Message, ct);
             return new ConfirmPoResult(false, jobId, normalizedPo, nextReference, steps);
         }
         steps["xero"] = PoTodoStepResult.Success("Xero reference updated.");
+        nextReference = xero.Invoice?.Reference ?? nextReference;
 
         steps["xeroStatus"] = PoTodoStepResult.Running("Updating Xero invoice to Waiting Payment.");
         JobInvoiceCreateResult xeroStatus;
@@ -786,10 +816,35 @@ public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToke
                 jobId,
                 xeroStatus.Error);
             steps["xeroStatus"] = PoTodoStepResult.Failed(xeroStatus.Error ?? "Failed to update Xero invoice to Waiting Payment.");
+            await SaveConfirmationFailureAsync(state, steps["xeroStatus"].Message, ct);
+            return new ConfirmPoResult(false, jobId, normalizedPo, nextReference, steps);
         }
         else
         {
             steps["xeroStatus"] = PoTodoStepResult.Success("Xero invoice updated to Waiting Payment.");
+        }
+
+        if (sendInvoice)
+        {
+            steps["xeroEmail"] = PoTodoStepResult.Running("Sending invoice from Xero.");
+            var currentInvoice = await _db.JobInvoices.AsNoTracking().FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+            if (state.XeroEmailSentAt.HasValue || IsSentToContact(currentInvoice?.ResponsePayloadJson))
+            {
+                steps["xeroEmail"] = PoTodoStepResult.Success("Xero invoice was already sent.");
+            }
+            else
+            {
+                var emailResult = await EmailInvoiceAsync(jobId, ct);
+                if (!emailResult.Ok)
+                {
+                    steps["xeroEmail"] = PoTodoStepResult.Failed(emailResult.Error ?? "Failed to send Xero invoice.");
+                    await SaveConfirmationFailureAsync(state, steps["xeroEmail"].Message, ct);
+                    return new ConfirmPoResult(false, jobId, normalizedPo, nextReference, steps);
+                }
+
+                state.XeroEmailSentAt = DateTime.UtcNow;
+                steps["xeroEmail"] = PoTodoStepResult.Success("Xero invoice sent.");
+            }
         }
 
         var latestLog = await _db.GmailMessageLogs.AsNoTracking()
@@ -835,13 +890,15 @@ public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToke
 
         steps["savePo"] = PoTodoStepResult.Running("Saving PO number.");
         steps["poState"] = PoTodoStepResult.Running("Updating PO state.");
-        var now = DateTime.UtcNow;
-        var state = await EnsureStateAsync(jobId, now, ct);
+        now = DateTime.UtcNow;
         job.PoNumber = normalizedPo;
         job.InvoiceReference = nextReference;
         job.UpdatedAt = now;
         state.Status = JobPoStateStatus.PoConfirmed;
         state.ConfirmedPoNumber = normalizedPo;
+        state.PendingPoNumber = null;
+        state.ConfirmationStatus = steps["gmail"].Status == "failed" ? "completedWithWarning" : "completed";
+        state.ConfirmationNote = steps["gmail"].Status == "failed" ? steps["gmail"].Message : null;
         state.FollowUpEnabled = false;
         state.NextFollowUpDueAt = null;
         state.RequiresAdminAttention = false;
@@ -871,6 +928,89 @@ public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToke
         return new ConfirmPoResult(true, jobId, normalizedPo, nextReference, steps);
     }
 
+    public async Task<IReadOnlyList<ConfirmPoResult>> ConfirmPoBatchAsync(
+        IReadOnlyCollection<PoBatchConfirmItem> items,
+        bool sendInvoice,
+        CancellationToken ct)
+    {
+        var results = new List<ConfirmPoResult>(items.Count);
+        foreach (var item in items)
+            results.Add(await ConfirmPoAsync(item.JobId, item.PoNumber, sendInvoice, ct));
+        return results;
+    }
+
+    public async Task<IReadOnlyList<PoXeroSummary>> RefreshXeroSummariesAsync(
+        IReadOnlyCollection<long> jobIds,
+        CancellationToken ct)
+    {
+        var ids = jobIds.Where(x => x > 0).Distinct().Take(50).ToArray();
+        if (ids.Length == 0 || _jobInvoiceService is null)
+            return [];
+
+        var targets = await _db.JobInvoices.AsNoTracking()
+            .Where(x => ids.Contains(x.JobId) && x.ExternalInvoiceId != null)
+            .Select(x => new JobInvoiceXeroSyncTarget(x.JobId, x.Id, x.ExternalInvoiceId!))
+            .ToArrayAsync(ct);
+        if (targets.Length > 0)
+            await _jobInvoiceService.SyncFromXeroAsync(targets, ct);
+
+        var invoices = await _db.JobInvoices.AsNoTracking()
+            .Where(x => ids.Contains(x.JobId))
+            .ToListAsync(ct);
+        return invoices.Select(x => new PoXeroSummary(
+            x.JobId,
+            ExtractSubtotal(x.ResponsePayloadJson),
+            x.ExternalStatus,
+            x.Reference,
+            x.UpdatedAt)).ToList();
+    }
+
+    private async Task SaveConfirmationFailureAsync(JobPoState state, string message, CancellationToken ct)
+    {
+        state.ConfirmationStatus = "failed";
+        state.ConfirmationNote = message;
+        state.ConfirmationLastAttemptAt = DateTime.UtcNow;
+        state.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private static bool IsSentToContact(string? payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload)) return false;
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            return document.RootElement.TryGetProperty("Invoices", out var invoices)
+                && invoices.ValueKind == JsonValueKind.Array
+                && invoices.GetArrayLength() > 0
+                && invoices[0].TryGetProperty("SentToContact", out var sent)
+                && sent.ValueKind == JsonValueKind.True;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static decimal? ExtractSubtotal(string? payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            if (!document.RootElement.TryGetProperty("Invoices", out var invoices)
+                || invoices.ValueKind != JsonValueKind.Array
+                || invoices.GetArrayLength() == 0
+                || !invoices[0].TryGetProperty("SubTotal", out var subtotal))
+                return null;
+            return subtotal.TryGetDecimal(out var value) ? value : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     private async Task<JobInvoiceCreateResult> UpdateDraftReferenceAsync(long jobId, string reference, CancellationToken ct)
     {
         if (_updateDraftReferenceAsync is not null)
@@ -879,6 +1019,26 @@ public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToke
         return _jobInvoiceService is null
             ? JobInvoiceCreateResult.Fail(500, "Xero invoice service is unavailable.")
             : await _jobInvoiceService.UpdateDraftReferenceAsync(jobId, reference, ct);
+    }
+
+    private async Task<JobInvoiceCreateResult> UpdatePoReferenceAsync(long jobId, string poNumber, string reference, CancellationToken ct)
+    {
+        if (_updateDraftReferenceAsync is not null)
+            return await _updateDraftReferenceAsync(jobId, reference, ct);
+
+        return _jobInvoiceService is null
+            ? JobInvoiceCreateResult.Fail(500, "Xero invoice service is unavailable.")
+            : await _jobInvoiceService.UpdatePoReferenceAsync(jobId, poNumber, ct);
+    }
+
+    private async Task<JobInvoiceCreateResult> EmailInvoiceAsync(long jobId, CancellationToken ct)
+    {
+        if (_emailInvoiceAsync is not null)
+            return await _emailInvoiceAsync(jobId, ct);
+
+        return _jobInvoiceService is null
+            ? JobInvoiceCreateResult.Fail(500, "Xero invoice service is unavailable.")
+            : await _jobInvoiceService.EmailInvoiceAsync(jobId, ct);
     }
 
     private async Task<JobInvoiceCreateResult> MarkInvoiceWaitingPaymentAsync(long jobId, CancellationToken ct)
@@ -1075,7 +1235,11 @@ public async Task<object> DebugSyncDraftPoInvoicesFromXeroAsync(CancellationToke
         DateTime? LastFollowUpSentAt,
         DateTime? LastSupplierReplyAt,
         string? DetectedPoNumber,
-        string? ConfirmedPoNumber);
+        string? ConfirmedPoNumber,
+        string? PendingPoNumber,
+        string? ConfirmationStatus,
+        string? ConfirmationNote,
+        DateTime? ConfirmationLastAttemptAt);
 
     private sealed record PoTodoSyncTarget(
         long Id,
@@ -1115,6 +1279,9 @@ public sealed record ConfirmPoResult(
     string InvoiceReference,
     Dictionary<string, PoTodoStepResult> Steps);
 
+public sealed record PoBatchConfirmItem(long JobId, string? PoNumber);
+public sealed record PoXeroSummary(long JobId, decimal? Subtotal, string? Status, string? Reference, DateTime RefreshedAt);
+
 public sealed record PoTodoListResult(
     int Total,
     IReadOnlyList<PoTodoRow> Items,
@@ -1126,6 +1293,8 @@ public sealed record PoTodoListResult(
 public sealed record PoTodoRow(
     long JobId,
     DateTime CreatedAt,
+    long? CustomerId,
+    string CustomerName,
     string Code,
     string Plate,
     string Model,
@@ -1144,6 +1313,11 @@ public sealed record PoTodoRow(
     string? GmailDraftId,
     DateTime? GmailDraftUpdatedAt,
     string? GmailThreadId,
-    string CorrelationId);
+    string CorrelationId,
+    string? PendingPoNumber,
+    string? ConfirmationStatus,
+    string? ConfirmationNote,
+    DateTime? ConfirmationLastAttemptAt,
+    decimal? XeroSubtotal);
 
 public sealed record PoTodoSyncResult(int CheckedJobs, int SyncedMessages, IReadOnlyList<string> Warnings);

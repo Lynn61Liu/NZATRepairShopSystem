@@ -90,12 +90,14 @@ export function filterJobs(rows: JobRow[], filters: JobsFilters): JobRow[] {
     if (s) {
       const customerText = (r.customerCode || r.customerName).toLowerCase();
       const notesText = String(r.notes || "").toLowerCase();
+      const privateNotesText = String(r.privateNotes || "").toLowerCase();
       const hit =
         r.id.toLowerCase().includes(s) ||
         r.plate.toLowerCase().includes(s) ||
         r.vehicleModel.toLowerCase().includes(s) ||
         customerText.includes(s) ||
-        notesText.includes(s);
+        notesText.includes(s) ||
+        privateNotesText.includes(s);
       if (!hit) return false;
     }
 

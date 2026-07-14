@@ -13,6 +13,11 @@ public class JobPoState
     public string? AdminAttentionReason { get; set; }
     public string? ConfirmedPoNumber { get; set; }
     public string? DetectedPoNumber { get; set; }
+    public string? PendingPoNumber { get; set; }
+    public string? ConfirmationStatus { get; set; }
+    public string? ConfirmationNote { get; set; }
+    public DateTime? ConfirmationLastAttemptAt { get; set; }
+    public DateTime? XeroEmailSentAt { get; set; }
     public string? SentSource { get; set; }
     public DateTime? ManuallyMarkedSentAt { get; set; }
     public DateTime? CompletedAt { get; set; }

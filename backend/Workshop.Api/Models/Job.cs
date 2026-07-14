@@ -14,6 +14,7 @@ public class Job
     public long? CustomerId { get; set; }
     public Customer? Customer { get; set; }
     public string? Notes { get; set; }
+    public string? PrivateNotes { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

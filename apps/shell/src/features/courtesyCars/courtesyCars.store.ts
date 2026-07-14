@@ -1,7 +1,6 @@
 import { getCachedValue, setCachedValue } from "@/utils/localCache";
 import type {
   CourtesyCar,
-  CourtesyCarAttachment,
   CourtesyCarEditorValues,
   CourtesyCarStatusAction,
 } from "./courtesyCars.types";
@@ -16,43 +15,8 @@ function createId(prefix = "car") {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function createSvgDataUrl(label: string, accent: string, secondary: string) {
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
-      <defs>
-        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="${accent}" />
-          <stop offset="100%" stop-color="${secondary}" />
-        </linearGradient>
-      </defs>
-      <rect width="640" height="360" rx="28" fill="url(#g)" />
-      <circle cx="548" cy="94" r="58" fill="rgba(255,255,255,0.18)" />
-      <rect x="92" y="190" width="456" height="92" rx="22" fill="rgba(255,255,255,0.92)" />
-      <rect x="142" y="155" width="164" height="52" rx="14" fill="rgba(255,255,255,0.26)" />
-      <rect x="320" y="155" width="164" height="52" rx="14" fill="rgba(255,255,255,0.26)" />
-      <text x="92" y="118" fill="white" font-family="Arial, sans-serif" font-size="44" font-weight="700">${label}</text>
-    </svg>
-  `;
-
-  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-}
-
-function seedAttachment(label: string, accent: string, secondary: string): CourtesyCarAttachment {
-  return {
-    id: createId("att"),
-    kind: "image",
-    name: `${label}.svg`,
-    mimeType: "image/svg+xml",
-    size: 0,
-    dataUrl: createSvgDataUrl(label, accent, secondary),
-    createdAt: "2026-06-15T00:00:00.000Z",
-  };
-}
-
-export function createSeedCourtesyCars(now = "2026-06-15T00:00:00.000Z"): CourtesyCar[] {
-  return [
-  
-  ];
+export function createSeedCourtesyCars(): CourtesyCar[] {
+  return [];
 }
 
 export function loadCourtesyCars(): CourtesyCar[] {

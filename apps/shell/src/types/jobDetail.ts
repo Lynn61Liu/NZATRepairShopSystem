@@ -199,6 +199,7 @@ export type PartsService = {
   jobId: string;
   description: string;
   status: PartsServiceStatus;
+  completedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
   notes: PartsNote[];
@@ -229,9 +230,16 @@ export type JobDetailData = {
   isUrgent: boolean;
   tags: string[];
   notes?: string;
+  privateNotes?: string;
   needsPo?: boolean;
   poNumber?: string;
   invoiceReference?: string;
+  poRequest?: {
+    correlationId?: string | null;
+    firstRequestSentAt?: string | null;
+    lastRequestSentAt?: string | null;
+    gmailThreadId?: string | null;
+  } | null;
   createdAt?: string;
   hasWofService?: boolean;
   wofStatus?: "Todo" | "Checked" | "Recorded" | null;

@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { StepProgressDialog, type StepProgressItem } from "@/components/common/StepProgressDialog";
-import { Button, Card, Pagination, useToast } from "@/components/ui";
-import { Ban, Check, CheckSquare, ExternalLink, Eye, Square, X } from "lucide-react";
+import { GmailIcon } from "@/components/common/GmailSearchButton";
+import { XeroIcon } from "@/components/common/XeroButton";
+import { getGmailPlateSearchUrl } from "@/components/common/gmailSearch";
+import { Button, Card, Input, Pagination, Select, useToast } from "@/components/ui";
+import { Ban, Check, CheckSquare, ExternalLink, Mail, RefreshCw, Square } from "lucide-react";
 import {
   completePoJobs,
+  confirmPoBatch,
   confirmPoNumber,
-  fetchPoDraftPreview,
   fetchPoTodo,
   manualConfirmPoSent,
+  refreshPoXeroSummaries,
 } from "@/features/poTodo/poTodoApi";
-import type { PoDraftPreview, PoTodoRow, PoTodoTab } from "@/features/poTodo/poTodo.types";
-import { createConfirmingPoSteps, getConfirmPoErrorMessage, resolveConfirmPoSteps } from "./confirmPoDialogState";
+import type { PoTodoRow, PoTodoTab } from "@/features/poTodo/poTodo.types";
 import {
+  formatPoTodoCreatedAt,
+  formatPoTodoSentAt,
   getPoTodoTableColSpan,
   normalizePoNumberInput,
   shouldShowCompletionActionColumn,
@@ -27,19 +31,8 @@ const TABS: Array<{ key: PoTodoTab; label: string }> = [
   { key: "awaitingPo", label: "等待 PO" },
   { key: "invoiced", label: "Invoiced" },
 ];
-const PO_TODO_PAGE_SIZE = 10;
-
-function formatDate(value?: string | null) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("en-NZ", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+const PO_TODO_PAGE_SIZE = 15;
+const ALL_CUSTOMERS = "all";
 
 function xeroInvoiceUrl(invoiceId?: string | null) {
   return invoiceId ? `https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(invoiceId)}` : "";
@@ -51,6 +44,12 @@ function gmailThreadUrl(threadId?: string | null) {
 
 function isSent(row: PoTodoRow) {
   return Boolean(row.lastRequestSentAt || row.firstRequestSentAt || row.sentSource);
+}
+
+function formatSubtotal(value?: number | null) {
+  return value == null
+    ? "-"
+    : new Intl.NumberFormat("en-NZ", { style: "currency", currency: "NZD" }).format(value);
 }
 
 function tabForStatus(status: string): PoTodoTab | null {
@@ -72,18 +71,17 @@ export function PoDashboardPreviewPage() {
   const toast = useToast();
   const [activeTab, setActiveTab] = useState<PoTodoTab>("pendingSend");
   const [currentPage, setCurrentPage] = useState(1);
+  const [customerFilter, setCustomerFilter] = useState(ALL_CUSTOMERS);
+  const [plateSearch, setPlateSearch] = useState("");
   const [allRows, setAllRows] = useState<PoTodoRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [poInputs, setPoInputs] = useState<Record<number, string>>({});
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [busyJobId, setBusyJobId] = useState<number | null>(null);
-  const [preview, setPreview] = useState<PoDraftPreview | null>(null);
-  const [previewLoadingJobId, setPreviewLoadingJobId] = useState<number | null>(null);
-  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
-  const [confirmDialogSteps, setConfirmDialogSteps] = useState<StepProgressItem[]>(() => createConfirmingPoSteps());
-  const [confirmDialogBusy, setConfirmDialogBusy] = useState(false);
-  const [confirmDialogError, setConfirmDialogError] = useState<string | null>(null);
+  const [confirmingJobIds, setConfirmingJobIds] = useState<number[]>([]);
+  const [batchConfirming, setBatchConfirming] = useState(false);
+  const [refreshingSubtotals, setRefreshingSubtotals] = useState(false);
 
   const loadDashboard = useCallback(async (options?: { background?: boolean }) => {
     const background = options?.background === true;
@@ -115,6 +113,8 @@ export function PoDashboardPreviewPage() {
     if (tab === activeTab) return;
     setActiveTab(tab);
     setCurrentPage(1);
+    setCustomerFilter(ALL_CUSTOMERS);
+    setPlateSearch("");
     setSelectedIds([]);
   };
 
@@ -134,11 +134,56 @@ export function PoDashboardPreviewPage() {
     }),
     [rowsByTab]
   );
-  const totalPages = Math.max(1, Math.ceil(counts[activeTab] / PO_TODO_PAGE_SIZE));
+  const customerOptions = useMemo(() => {
+    const customers = new Map<string, string>();
+    for (const row of rowsByTab[activeTab]) {
+      const key = row.customerId == null ? "unassigned" : String(row.customerId);
+      const label = row.customerName?.trim() || row.code?.trim() || "未指定客户";
+      customers.set(key, row.code?.trim() && row.code.trim() !== label ? `${label} · ${row.code.trim()}` : label);
+    }
+    return [...customers.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "zh-Hans-NZ"));
+  }, [activeTab, rowsByTab]);
+  const filteredRows = useMemo(() => {
+    const normalizedPlateSearch = plateSearch.trim().toLocaleLowerCase();
+    return rowsByTab[activeTab].filter((row) => {
+      const matchesCustomer = customerFilter === ALL_CUSTOMERS
+        || (row.customerId == null ? "unassigned" : String(row.customerId)) === customerFilter;
+      const matchesPlate = !normalizedPlateSearch
+        || row.plate?.trim().toLocaleLowerCase().includes(normalizedPlateSearch);
+      return matchesCustomer && matchesPlate;
+    });
+  }, [activeTab, customerFilter, plateSearch, rowsByTab]);
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PO_TODO_PAGE_SIZE));
   const rows = useMemo(() => {
     const start = (currentPage - 1) * PO_TODO_PAGE_SIZE;
-    return rowsByTab[activeTab].slice(start, start + PO_TODO_PAGE_SIZE);
-  }, [activeTab, currentPage, rowsByTab]);
+    return filteredRows.slice(start, start + PO_TODO_PAGE_SIZE);
+  }, [currentPage, filteredRows]);
+  const xeroRefreshKey = activeTab === "awaitingPo" ? rows.map((row) => row.jobId).join(",") : "";
+
+  useEffect(() => {
+    if (!xeroRefreshKey) return;
+    const jobIds = xeroRefreshKey.split(",").map(Number).filter(Boolean);
+    let cancelled = false;
+    setRefreshingSubtotals(true);
+    void refreshPoXeroSummaries(jobIds)
+      .then((summaries) => {
+        if (cancelled) return;
+        const byJobId = new Map(summaries.map((summary) => [summary.jobId, summary]));
+        setAllRows((prev) => prev.map((row) => {
+          const summary = byJobId.get(row.jobId);
+          return summary ? { ...row, xeroSubtotal: summary.subtotal, reference: summary.reference } : row;
+        }));
+      })
+      .catch(() => {
+        // Cached values remain available and the rest of the page stays usable.
+      })
+      .finally(() => {
+        if (!cancelled) setRefreshingSubtotals(false);
+      });
+    return () => { cancelled = true; };
+  }, [xeroRefreshKey]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -162,17 +207,6 @@ export function PoDashboardPreviewPage() {
     setSelectedIds((prev) => (prev.includes(jobId) ? prev.filter((id) => id !== jobId) : [...prev, jobId]));
   };
 
-  const handlePreview = async (row: PoTodoRow) => {
-    setPreviewLoadingJobId(row.jobId);
-    try {
-      setPreview(await fetchPoDraftPreview(row.jobId));
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load draft preview");
-    } finally {
-      setPreviewLoadingJobId(null);
-    }
-  };
-
   const handleManualSent = async (row: PoTodoRow) => {
     setBusyJobId(row.jobId);
     try {
@@ -186,42 +220,71 @@ export function PoDashboardPreviewPage() {
     }
   };
 
-  const handleConfirmPo = async (row: PoTodoRow) => {
-    const value = normalizePoNumberInput(poInputs[row.jobId] ?? row.detectedPoNumber ?? "");
+  const getPoInput = (row: PoTodoRow) => normalizePoNumberInput(
+    poInputs[row.jobId] ?? row.pendingPoNumber ?? row.detectedPoNumber ?? ""
+  );
+
+  const handleConfirmPo = async (row: PoTodoRow, sendInvoice: boolean) => {
+    const value = getPoInput(row);
     if (!value) {
       toast.error("Please enter PO number");
       return;
     }
 
-    setBusyJobId(row.jobId);
-    setConfirmDialogOpen(true);
-    setConfirmDialogBusy(true);
-    setConfirmDialogError(null);
-    setConfirmDialogSteps(createConfirmingPoSteps());
+    setConfirmingJobIds((prev) => [...new Set([...prev, row.jobId])]);
+    setAllRows((prev) => prev.map((item) => item.jobId === row.jobId
+      ? { ...item, pendingPoNumber: value, confirmationStatus: "processing", confirmationNote: null }
+      : item));
     try {
-      const result = await confirmPoNumber(row.jobId, value);
-      const failedMessage = getConfirmPoErrorMessage(result.steps);
-      setConfirmDialogSteps(resolveConfirmPoSteps(result.steps, result.success));
-      setConfirmDialogError(failedMessage);
+      const result = await confirmPoNumber(row.jobId, value, sendInvoice);
+      const warning = Object.values(result.steps).find((step) => step.status === "failed")?.message;
       if (result.success) {
-        if (failedMessage) {
-          toast.info("PO 已确认，部分步骤需要手动处理");
-        } else {
-          toast.success("PO 已确认");
-        }
-        await loadDashboard({ background: true });
+        toast.success(sendInvoice ? "PO 已确认，Xero Invoice 已发送" : "PO 已确认");
+        if (warning) toast.info(warning);
       } else {
-        const message = failedMessage || "PO 确认未完成";
-        toast.error(message);
+        toast.error(warning || "PO 确认未完成");
       }
+      await loadDashboard({ background: true });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to confirm PO";
-      setConfirmDialogSteps(resolveConfirmPoSteps(undefined, false));
-      setConfirmDialogError(message);
-      toast.error(message);
+      toast.error(err instanceof Error ? err.message : "Failed to confirm PO");
+      await loadDashboard({ background: true });
     } finally {
-      setBusyJobId(null);
-      setConfirmDialogBusy(false);
+      setConfirmingJobIds((prev) => prev.filter((id) => id !== row.jobId));
+    }
+  };
+
+  const handleBatchConfirm = async (sendInvoice: boolean) => {
+    const selectedRows = rows.filter((row) => selectedIds.includes(row.jobId));
+    const missing = selectedRows.filter((row) => !getPoInput(row));
+    if (selectedRows.length === 0) {
+      toast.error("请先选择需要确认的记录");
+      return;
+    }
+    if (missing.length > 0) {
+      toast.error(`${missing.length} 条记录没有 PO Number`);
+      return;
+    }
+
+    setBatchConfirming(true);
+    setConfirmingJobIds((prev) => [...new Set([...prev, ...selectedRows.map((row) => row.jobId)])]);
+    try {
+      const result = await confirmPoBatch(
+        selectedRows.map((row) => ({ jobId: row.jobId, poNumber: getPoInput(row) })),
+        sendInvoice
+      );
+      if (result.failed > 0) {
+        toast.info(`完成 ${result.succeeded} 条，${result.failed} 条需要处理`);
+      } else {
+        toast.success(`已完成 ${result.succeeded} 条`);
+      }
+      setSelectedIds([]);
+      await loadDashboard({ background: true });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to confirm selected PO jobs");
+      await loadDashboard({ background: true });
+    } finally {
+      setConfirmingJobIds([]);
+      setBatchConfirming(false);
     }
   };
 
@@ -242,19 +305,18 @@ export function PoDashboardPreviewPage() {
   };
 
   const handleCompleteAction = async (row: PoTodoRow) => {
-    const isAwaitingPo = activeTab === "awaitingPo";
     setBusyJobId(row.jobId);
     try {
       const result = await completePoJobs([row.jobId]);
       if (result.updated > 0) {
-        toast.success(isAwaitingPo ? "已完成" : "已忽略");
+        toast.success("已忽略");
         setSelectedIds((prev) => prev.filter((id) => id !== row.jobId));
         await loadDashboard({ background: true });
       } else {
-        toast.error(isAwaitingPo ? "未能完成该 job" : "未能忽略该 job");
+        toast.error("未能忽略该 job");
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : isAwaitingPo ? "Failed to complete job" : "Failed to ignore job");
+      toast.error(err instanceof Error ? err.message : "Failed to ignore job");
     } finally {
       setBusyJobId(null);
     }
@@ -264,7 +326,7 @@ export function PoDashboardPreviewPage() {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-normal text-[var(--ds-text)]">PO TODO</h1>
+          <h1 className="text-2xl font-semibold tracking-normal text-[var(--ds-text)]">PO TO REQUEST</h1>
         </div>
       </div>
 
@@ -287,7 +349,82 @@ export function PoDashboardPreviewPage() {
         ))}
       </div>
 
-      {activeTab === "invoiced" ? (
+      <Card className="flex flex-col gap-3 p-3 sm:flex-row sm:items-end">
+        <div className="space-y-1.5">
+          <label htmlFor="po-customer-filter" className="block text-sm font-semibold text-[var(--ds-text)]">客户</label>
+          <Select
+            id="po-customer-filter"
+            value={customerFilter}
+            onChange={(event) => {
+              setCustomerFilter(event.target.value);
+              setCurrentPage(1);
+              setSelectedIds([]);
+            }}
+            className="sm:w-[320px]"
+          >
+            <option value={ALL_CUSTOMERS}>全部客户</option>
+            {customerOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <label htmlFor="po-plate-search" className="block text-sm font-semibold text-[var(--ds-text)]">车牌</label>
+          <Input
+            id="po-plate-search"
+            value={plateSearch}
+            onChange={(event) => {
+              setPlateSearch(event.target.value);
+              setCurrentPage(1);
+              setSelectedIds([]);
+            }}
+            placeholder="输入车牌搜索"
+            className="sm:w-[220px]"
+          />
+        </div>
+        {customerFilter !== ALL_CUSTOMERS || plateSearch ? (
+          <Button onClick={() => {
+              setCustomerFilter(ALL_CUSTOMERS);
+              setPlateSearch("");
+              setCurrentPage(1);
+              setSelectedIds([]);
+            }}>
+            清除筛选
+          </Button>
+        ) : null}
+      </Card>
+
+      {activeTab === "awaitingPo" ? (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {refreshingSubtotals ? (
+            <span className="inline-flex items-center gap-1.5 text-sm text-[var(--ds-muted)]">
+              <RefreshCw className="h-4 w-4 animate-spin" /> Refreshing Xero Subtotals…
+            </span>
+          ) : null}
+          <Button
+            leftIcon={allSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+            onClick={toggleAll}
+            disabled={rows.length === 0 || batchConfirming}
+          >
+            全选
+          </Button>
+          <Button
+            variant="primary"
+            leftIcon={<Check className="h-4 w-4" />}
+            onClick={() => void handleBatchConfirm(false)}
+            disabled={selectedIds.length === 0 || batchConfirming}
+          >
+            批量确认
+          </Button>
+          <Button
+            leftIcon={<Mail className="h-4 w-4" />}
+            onClick={() => void handleBatchConfirm(true)}
+            disabled={selectedIds.length === 0 || batchConfirming}
+          >
+            批量确认并发送
+          </Button>
+        </div>
+      ) : activeTab === "invoiced" ? (
         <div className="flex justify-end">
           <Button
             leftIcon={allSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
@@ -314,17 +451,19 @@ export function PoDashboardPreviewPage() {
           <table className="w-full min-w-[1180px] border-collapse text-sm">
             <thead>
               <tr className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-normal text-[var(--ds-muted)]">
-                {activeTab === "invoiced" ? <th className="w-12 px-3 py-3"></th> : null}
+                {activeTab === "invoiced" || activeTab === "awaitingPo" ? <th className="w-12 px-3 py-3"></th> : null}
                 <th className="px-3 py-3">创建时间</th>
                 <th className="px-3 py-3">Code</th>
                 <th className="px-3 py-3">车牌</th>
                 <th className="px-3 py-3">型号</th>
                 <th className="px-3 py-3">备注</th>
                 <th className="px-3 py-3">Reference</th>
+                {activeTab === "awaitingPo" ? <th className="px-3 py-3">Xero Subtotal</th> : null}
                 {showXeroColumn ? <th className="px-3 py-3">Xero</th> : null}
-                {showPoDraftColumn ? <th className="px-3 py-3">PO草稿</th> : null}
-                {showSentColumn ? <th className="px-3 py-3">是否发送</th> : null}
+                {showPoDraftColumn ? <th className="px-3 py-3">发PO</th> : null}
+                {showSentColumn ? <th className="px-3 py-3">{activeTab === "awaitingPo" ? "发送时间" : "是否发送"}</th> : null}
                 {showPoNumberColumn ? <th className="px-3 py-3">PO</th> : null}
+                {activeTab === "awaitingPo" ? <th className="px-3 py-3">Note</th> : null}
                 {activeTab === "invoiced" ? <th className="px-3 py-3">Gmail</th> : null}
                 {showCompletionActionColumn ? <th className="px-3 py-3">操作</th> : null}
               </tr>
@@ -343,14 +482,14 @@ export function PoDashboardPreviewPage() {
                 const gmailUrl = gmailThreadUrl(row.gmailThreadId);
                 return (
                   <tr key={row.jobId} className="border-t border-slate-100 align-top">
-                    {activeTab === "invoiced" ? (
+                    {activeTab === "invoiced" || activeTab === "awaitingPo" ? (
                       <td className="px-3 py-3">
                         <button type="button" onClick={() => toggleOne(row.jobId)} className="text-slate-500 hover:text-[var(--ds-primary)]">
                           {selectedIds.includes(row.jobId) ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
                         </button>
                       </td>
                     ) : null}
-                    <td className="whitespace-nowrap px-3 py-3 text-slate-600">{formatDate(row.createdAt)}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-slate-600">{formatPoTodoCreatedAt(row.createdAt)}</td>
                     <td className="px-3 py-3 font-semibold text-[var(--ds-text)]">{row.code || "-"}</td>
                     <td className="px-3 py-3">
                       <Link to={`/jobs/${row.jobId}?tab=PO`} className="font-semibold text-[var(--ds-primary)] hover:underline">
@@ -360,31 +499,55 @@ export function PoDashboardPreviewPage() {
                     <td className="max-w-[160px] px-3 py-3 text-slate-700">{row.model || "-"}</td>
                     <td className="max-w-[220px] px-3 py-3 text-slate-600">{row.notes || "-"}</td>
                     <td className="max-w-[220px] px-3 py-3 text-slate-700">{row.reference || "-"}</td>
+                    {activeTab === "awaitingPo" ? (
+                      <td className="whitespace-nowrap px-3 py-3">
+                        <div className="font-semibold tabular-nums text-[var(--ds-text)]">{formatSubtotal(row.xeroSubtotal)}</div>
+                        <div className="text-[11px] text-[var(--ds-muted)]">excl. GST</div>
+                      </td>
+                    ) : null}
                     {showXeroColumn ? (
                       <td className="px-3 py-3">
-                        {xeroUrl ? (
-                          <Button href={xeroUrl} target="_blank" rel="noreferrer" rightIcon={<ExternalLink className="h-4 w-4" />}>
-                            Open
-                          </Button>
-                        ) : (
-                          <span className="text-slate-400">-</span>
-                        )}
+                        <div className="flex items-center gap-1.5">
+                          {xeroUrl ? (
+                            <a
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-[9px] border border-[#13B5EA]/25 bg-white text-[#13B5EA] hover:bg-[#13B5EA]/[0.06]"
+                              title="Open Xero"
+                              href={xeroUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <XeroIcon className="h-5 w-5" />
+                            </a>
+                          ) : null}
+                          {getGmailPlateSearchUrl(row.plate) ? (
+                            <a
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-[9px] border border-red-200 bg-white text-red-600 hover:bg-red-50"
+                              title={`在 Gmail 搜索 ${row.plate}`}
+                              href={getGmailPlateSearchUrl(row.plate)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <GmailIcon className="h-5 w-5" />
+                            </a>
+                          ) : null}
+                          {!xeroUrl && !getGmailPlateSearchUrl(row.plate) ? (
+                            <span className="text-slate-400">-</span>
+                          ) : null}
+                        </div>
                       </td>
                     ) : null}
                     {showPoDraftColumn ? (
                       <td className="px-3 py-3">
-                        <Button
-                          leftIcon={<Eye className="h-4 w-4" />}
-                          onClick={() => void handlePreview(row)}
-                          disabled={sent || previewLoadingJobId === row.jobId}
-                        >
-                          预览
-                        </Button>
+                        <Button href={`/jobs/${row.jobId}?tab=PO`}>发PO</Button>
                       </td>
                     ) : null}
                     {showSentColumn ? (
                       <td className="px-3 py-3">
-                        {sent ? (
+                        {activeTab === "awaitingPo" ? (
+                          <span className="whitespace-nowrap text-sm font-medium text-slate-600">
+                            {formatPoTodoSentAt(row.lastRequestSentAt || row.firstRequestSentAt || row.manuallyMarkedSentAt)}
+                          </span>
+                        ) : sent ? (
                           <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">已发送</span>
                         ) : (
                           <Button onClick={() => void handleManualSent(row)} disabled={busyJobId === row.jobId}>
@@ -395,19 +558,43 @@ export function PoDashboardPreviewPage() {
                     ) : null}
                     {showPoNumberColumn ? (
                       <td className="px-3 py-3">
-                        <div className="flex min-w-[180px] gap-2">
+                        <div className="flex min-w-[330px] flex-wrap gap-2">
                           <input
-                            value={poInputs[row.jobId] ?? normalizePoNumberInput(row.detectedPoNumber ?? "")}
+                            value={poInputs[row.jobId] ?? normalizePoNumberInput(row.pendingPoNumber ?? row.detectedPoNumber ?? "")}
                             onChange={(event) => setPoInputs((prev) => ({ ...prev, [row.jobId]: normalizePoNumberInput(event.target.value) }))}
                             inputMode="numeric"
                             pattern="[0-9]*"
                             className="h-9 w-28 rounded-[8px] border border-[var(--ds-border)] px-2 text-sm outline-none focus:border-[var(--ds-primary)]"
                             placeholder="PO #"
                           />
-                          <Button variant="primary" onClick={() => void handleConfirmPo(row)} disabled={busyJobId === row.jobId}>
-                            确认
+                          <Button
+                            variant="primary"
+                            onClick={() => void handleConfirmPo(row, false)}
+                            disabled={confirmingJobIds.includes(row.jobId)}
+                          >
+                            {confirmingJobIds.includes(row.jobId) ? "处理中…" : "确认"}
+                          </Button>
+                          <Button
+                            leftIcon={<Mail className="h-4 w-4" />}
+                            onClick={() => void handleConfirmPo(row, true)}
+                            disabled={confirmingJobIds.includes(row.jobId)}
+                          >
+                            确认并发送
                           </Button>
                         </div>
+                      </td>
+                    ) : null}
+                    {activeTab === "awaitingPo" ? (
+                      <td className="max-w-[280px] px-3 py-3">
+                        {confirmingJobIds.includes(row.jobId) || row.confirmationStatus === "processing" ? (
+                          <span className="inline-flex items-center gap-1.5 font-medium text-blue-700">
+                            <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Processing…
+                          </span>
+                        ) : row.confirmationNote ? (
+                          <span className="text-sm text-red-700">{row.confirmationNote}</span>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
                       </td>
                     ) : null}
                     {activeTab === "invoiced" ? (
@@ -424,11 +611,11 @@ export function PoDashboardPreviewPage() {
                     {showCompletionActionColumn ? (
                       <td className="px-3 py-3">
                         <Button
-                          leftIcon={activeTab === "awaitingPo" ? <Check className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
+                          leftIcon={<Ban className="h-4 w-4" />}
                           onClick={() => void handleCompleteAction(row)}
                           disabled={busyJobId === row.jobId}
                         >
-                          {activeTab === "awaitingPo" ? "完成" : "忽略"}
+                          忽略
                         </Button>
                       </td>
                     ) : null}
@@ -445,42 +632,17 @@ export function PoDashboardPreviewPage() {
             </tbody>
           </table>
         </div>
-        {!loading && counts[activeTab] > 0 ? (
+        {!loading && filteredRows.length > 0 ? (
           <Pagination
             currentPage={currentPage}
             totalPages={totalPages}
             pageSize={PO_TODO_PAGE_SIZE}
-            totalItems={counts[activeTab]}
+            totalItems={filteredRows.length}
             onPageChange={setCurrentPage}
           />
         ) : null}
       </Card>
 
-      <StepProgressDialog
-        open={confirmDialogOpen}
-        title="确认 PO 状态"
-        steps={confirmDialogSteps}
-        errorMessage={confirmDialogError}
-        isBusy={confirmDialogBusy}
-        onClose={() => setConfirmDialogOpen(false)}
-      />
-
-      {preview ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
-          <Card className="max-h-[86vh] w-full max-w-3xl overflow-hidden">
-            <div className="flex items-start justify-between gap-3 border-b border-[var(--ds-border)] p-4">
-              <div>
-                <div className="font-semibold text-[var(--ds-text)]">{preview.subject}</div>
-                <div className="mt-1 text-sm text-[var(--ds-muted)]">{preview.to || "-"}</div>
-              </div>
-              <button type="button" onClick={() => setPreview(null)} className="rounded-full p-2 text-slate-500 hover:bg-slate-100">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="max-h-[64vh] overflow-auto bg-white p-5" dangerouslySetInnerHTML={{ __html: preview.htmlBody }} />
-          </Card>
-        </div>
-      ) : null}
     </div>
   );
 }

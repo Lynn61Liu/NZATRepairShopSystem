@@ -25,6 +25,7 @@ import { PoPanel } from "@/features/jobDetail/components/PoPanel";
 import { WorklogPanel } from "@/features/jobDetail/components/WorklogPanel";
 import { JOB_DETAIL_TEXT } from "@/features/jobDetail/jobDetail.constants";
 import { useInvoiceDashboardState } from "@/features/invoice/hooks/useInvoiceDashboardState";
+import { MechWorkflowPanel } from "@/features/mechWorkflow";
 
 type MainColumnProps = {
   jobData: JobDetailData;
@@ -127,6 +128,7 @@ type MainColumnProps = {
   tagOptions?: { id: string; label: string }[];
   onSaveTags?: (tagIds: string[]) => Promise<{ success: boolean; message?: string; tags?: string[] }>;
   onSaveNotes?: (notes: string) => Promise<{ success: boolean; message?: string }>;
+  onSavePrivateNotes?: (privateNotes: string) => Promise<{ success: boolean; message?: string }>;
   // onCreatePaintService?: (status?: string) => Promise<{ success: boolean; message?: string }>;
 };
 
@@ -182,6 +184,7 @@ export function MainColumn({
   tagOptions,
   onSaveTags,
   onSaveNotes,
+  onSavePrivateNotes,
   onCreatePaintService,
 }: MainColumnProps) {
   const hasPartsServices = partsServices.length > 0;
@@ -198,6 +201,7 @@ export function MainColumn({
     persistedPoNumber: jobData.poNumber,
     persistedInvoiceReference: jobData.invoiceReference,
     persistedInvoice: jobData.invoice,
+    persistedPoRequest: jobData.poRequest,
     enabled: invoiceDashboardEnabled,
     needsPo,
   });
@@ -281,6 +285,7 @@ export function MainColumn({
           isUrgent={jobData.isUrgent}
           tags={jobData.tags}
           notes={jobData.notes ?? ""}
+          privateNotes={jobData.privateNotes ?? ""}
           createdAt={jobData.createdAt}
           vehiclePlate={jobData.vehicle.plate}
           vehicleModel={vehicleMakeModel}
@@ -302,6 +307,7 @@ export function MainColumn({
           tagOptions={tagOptions}
           onSaveTags={onSaveTags}
           onSaveNotes={onSaveNotes}
+          onSavePrivateNotes={onSavePrivateNotes}
           onCreatePaintService={onCreatePaintService}
           onCreateXeroInvoice={onCreateXeroInvoice}
           isCreatingXeroInvoice={isCreatingXeroInvoice}
@@ -361,15 +367,18 @@ export function MainColumn({
           />
         ) : null}
         {activeTab === "Mechanical" ? (
-          <RepairPanel
-            mode="mech"
-            services={[]}
-            mechServices={mechServices}
-            isLoading={mechLoading}
-            onCreateMechService={onCreateMechService}
-            onUpdateMechService={onUpdateMechService}
-            onDeleteMechService={onDeleteMechService}
-          />
+          <>
+            <MechWorkflowPanel jobId={jobData.id} />
+            <RepairPanel
+              mode="mech"
+              services={[]}
+              mechServices={mechServices}
+              isLoading={mechLoading}
+              onCreateMechService={onCreateMechService}
+              onUpdateMechService={onUpdateMechService}
+              onDeleteMechService={onDeleteMechService}
+            />
+          </>
         ) : null}
         {activeTab === "Parts" ? (
           <RepairPanel

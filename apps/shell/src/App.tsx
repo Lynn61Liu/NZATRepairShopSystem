@@ -16,6 +16,7 @@ import { IntegrationsPage } from "./pages/settings/IntegrationsPage";
 import { PartFlowPage } from "./pages/PartFlowPages/PartFlowPage";
 import { PaintBoardPage } from "./pages/paint/PaintBoardPage";
 import { PaintTechBoardPage } from "./pages/paint/PaintTechBoardPage";
+import { MechTechBoardPage } from "./pages/mech/MechTechBoardPage";
 import { WorklogPage } from "./pages/worklog/WorklogPage";
 import { PoDashboardPreviewPage } from "./pages/poDashboard/PoDashboardPreviewPage";
 import { WofSchedulePage } from "./pages/WofSchedulePage"; // 保留原有的 WofSchedule
@@ -37,7 +38,7 @@ import { ProcurementAdmin } from "./pages/procurement/ProcurementAdmin";
 // ----------------------------------
 
 const router = createBrowserRouter([
-  { path: "/paint-tech", element: <PaintTechBoardPage /> },
+  { path: "/mech-tech", element: <MechTechBoardPage standalone /> },
   { path: "/customer/new-job", element: <CustomerSelfServiceNewJobPage /> },
   { path: "/courtesy-car", element: <CourtesyCarEntryPage /> },
   { path: "/light-finder", element: <LightFinderPage /> },
@@ -59,6 +60,8 @@ const router = createBrowserRouter([
       { path: "courtesy-car-drafts/:agreementId/message", element: <CourtesyCarAgreementMessagePage /> },
       { path: "agreement-history", element: <AgreementHistoryPage /> },
       { path: "po-dashboard-preview", element: <PoDashboardPreviewPage /> },
+      { path: "paint-tech", element: <PaintTechBoardPage /> },
+      { path: "mech-board", element: <MechTechBoardPage /> },
       { path: "device-communication", element: <DeviceCommunicationPage /> },
       { path: "worklog", element: <WorklogPage /> },
       { path: "parts-flow", element: <PartFlowPage /> },

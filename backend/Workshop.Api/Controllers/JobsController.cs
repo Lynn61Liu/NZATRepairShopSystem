@@ -39,6 +39,7 @@ public class JobsController : ControllerBase
     private readonly WofQueryService _wofQueryService;
     private readonly NztaExpiryLookupService _nztaExpiryLookupService;
     private readonly XeroInvoiceStatusSyncService? _xeroInvoiceStatusSyncService;
+    private readonly MechWorkflowService? _mechWorkflowService;
 
     public JobsController(
         AppDbContext db,
@@ -47,7 +48,8 @@ public class JobsController : ControllerBase
         JobInvoiceService jobInvoiceService,
         WofQueryService wofQueryService,
         NztaExpiryLookupService nztaExpiryLookupService,
-        XeroInvoiceStatusSyncService? xeroInvoiceStatusSyncService = null)
+        XeroInvoiceStatusSyncService? xeroInvoiceStatusSyncService = null,
+        MechWorkflowService? mechWorkflowService = null)
     {
         _db = db;
         _appCache = appCache;
@@ -56,6 +58,7 @@ public class JobsController : ControllerBase
         _wofQueryService = wofQueryService;
         _nztaExpiryLookupService = nztaExpiryLookupService;
         _xeroInvoiceStatusSyncService = xeroInvoiceStatusSyncService;
+        _mechWorkflowService = mechWorkflowService;
     }
 
     [HttpGet]
@@ -122,7 +125,8 @@ public class JobsController : ControllerBase
                 || EF.Functions.ILike((x.Vehicle.Make ?? "") + " " + (x.Vehicle.Model ?? ""), pattern)
                 || EF.Functions.ILike(x.Customer.BusinessCode ?? "", pattern)
                 || EF.Functions.ILike(x.Customer.Name ?? "", pattern)
-                || EF.Functions.ILike(x.Job.Notes ?? "", pattern));
+                || EF.Functions.ILike(x.Job.Notes ?? "", pattern)
+                || EF.Functions.ILike(x.Job.PrivateNotes ?? "", pattern));
         }
 
         if (!string.IsNullOrWhiteSpace(request.Customer))
@@ -303,6 +307,7 @@ public class JobsController : ControllerBase
                 x.Job.NeedsPo,
                 x.Job.CreatedAt,
                 x.Job.Notes,
+                x.Job.PrivateNotes,
                 x.Invoice != null ? x.Invoice.ExternalInvoiceId : null,
                 x.Invoice != null ? x.Invoice.ExternalStatus : null,
                 paintServices
@@ -337,6 +342,9 @@ public class JobsController : ControllerBase
             .ToListAsync(ct);
 
         var pageJobIds = pageRows.Select(x => x.Id).ToArray();
+        if (_mechWorkflowService is not null)
+            await _mechWorkflowService.EnsureForJobsAsync(pageJobIds, ct);
+
         var tagRows = pageJobIds.Length == 0
             ? new List<JobTagListRow>()
             : await (
@@ -352,6 +360,12 @@ public class JobsController : ControllerBase
             .ToDictionary(
                 group => group.Key,
                 group => group.Select(x => x.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
+
+        var mechWorkflowMap = pageJobIds.Length == 0
+            ? new Dictionary<long, string>()
+            : await _db.JobMechWorkflows.AsNoTracking()
+                .Where(x => pageJobIds.Contains(x.JobId))
+                .ToDictionaryAsync(x => x.JobId, x => x.Status, ct);
 
         var items = pageRows.Select(row =>
         {
@@ -372,6 +386,7 @@ public class JobsController : ControllerBase
                 vehicleModel = BuildVehicleModel(row.Make, row.Model, row.Year),
                 wofPct = (int?)null,
                 mechPct = (int?)null,
+                mechStatus = mechWorkflowMap.TryGetValue(row.Id, out var mechStatus) ? mechStatus : null,
                 paintPct = (int?)null,
                 paintStatus = row.PaintStatus,
                 paintCurrentStage = row.PaintCurrentStage,
@@ -380,6 +395,7 @@ public class JobsController : ControllerBase
                 customerPhone = row.CustomerPhone ?? "",
                 wofStatus = WofQueryService.DeriveWofStatus(row.HasWofService, row.HasWofRecord, row.LatestWofManualStatus),
                 notes = row.Notes ?? "",
+                privateNotes = row.PrivateNotes ?? "",
                 externalInvoiceId = row.ExternalInvoiceId,
                 xeroStatus = row.ExternalStatus,
                 createdAt = FormatDateTime(row.CreatedAt),
@@ -550,6 +566,7 @@ public class JobsController : ControllerBase
         bool NeedsPo,
         DateTime CreatedAt,
         string? Notes,
+        string? PrivateNotes,
         string? ExternalInvoiceId,
         string? ExternalStatus,
         string? PaintStatus,
@@ -694,6 +711,7 @@ public class JobsController : ControllerBase
                         j.PoNumber,
                         j.InvoiceReference,
                         j.Notes,
+                        j.PrivateNotes,
                         j.CreatedAt,
                     },
                     Vehicle = new
@@ -797,6 +815,15 @@ public class JobsController : ControllerBase
                             processedAt = x.ProcessedAt.HasValue ? FormatDateTime(x.ProcessedAt.Value) : null,
                         })
                         .FirstOrDefault(),
+                    PoRequestState = _db.JobPoStates.AsNoTracking()
+                        .Where(state => state.JobId == j.Id)
+                        .Select(state => new
+                        {
+                            state.CorrelationId,
+                            state.FirstRequestSentAt,
+                            state.LastRequestSentAt,
+                        })
+                        .FirstOrDefault(),
                 }
             )
             .FirstOrDefaultAsync(ct);
@@ -840,6 +867,41 @@ public class JobsController : ControllerBase
             })
             .FirstOrDefaultAsync(ct);
 
+        var poRequestState = row.PoRequestState;
+        var poCorrelationId = string.IsNullOrWhiteSpace(poRequestState?.CorrelationId)
+            ? JobPoStateService.BuildCorrelationId(id)
+            : poRequestState.CorrelationId;
+        var persistedGmailLogs = await _db.GmailMessageLogs.AsNoTracking()
+            .Where(x => x.CorrelationId == poCorrelationId)
+            .Where(x => !string.IsNullOrWhiteSpace(x.GmailThreadId)
+                || (x.IsSystemInitiated && (x.Direction == "sent" || x.Direction == "reminder")))
+            .OrderByDescending(x => x.InternalDateMs ?? 0)
+            .ThenByDescending(x => x.Id)
+            .Take(50)
+            .Select(x => new
+            {
+                x.GmailThreadId,
+                x.InternalDateMs,
+                x.CreatedAt,
+                x.Direction,
+                x.IsSystemInitiated,
+            })
+            .ToListAsync(ct);
+        var gmailThreadId = persistedGmailLogs
+            .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x.GmailThreadId))
+            ?.GmailThreadId;
+        var latestSystemSentLog = persistedGmailLogs.FirstOrDefault(x =>
+            x.IsSystemInitiated && (x.Direction == "sent" || x.Direction == "reminder"));
+        var latestPersistedSentAt = poRequestState?.LastRequestSentAt
+            ?? poRequestState?.FirstRequestSentAt
+            ?? (latestSystemSentLog?.InternalDateMs is { } sentAtMs
+                ? DateTimeOffset.FromUnixTimeMilliseconds(sentAtMs).UtcDateTime
+                : latestSystemSentLog?.CreatedAt);
+        var hasPersistedPoRequest = poRequestState?.FirstRequestSentAt is not null
+            || poRequestState?.LastRequestSentAt is not null
+            || latestPersistedSentAt is not null
+            || !string.IsNullOrWhiteSpace(gmailThreadId);
+
         var job = new
         {
             id = row.Job.Id.ToString(CultureInfo.InvariantCulture),
@@ -850,6 +912,7 @@ public class JobsController : ControllerBase
             invoiceReference = row.Job.InvoiceReference,
             tags = tagNames.ToArray(),
             notes = row.Job.Notes,
+            privateNotes = row.Job.PrivateNotes,
             createdAt = FormatDateTime(row.Job.CreatedAt),
             hasWofService = row.WofSnapshot.HasWofService,
             wofStatus = WofQueryService.DeriveWofStatus(
@@ -902,6 +965,19 @@ public class JobsController : ControllerBase
             },
             invoice = row.Invoice,
             invoiceProcessing = effectiveInvoiceProcessing,
+            poRequest = hasPersistedPoRequest
+                ? new
+                {
+                    correlationId = poCorrelationId,
+                    firstRequestSentAt = poRequestState?.FirstRequestSentAt is { } firstSentAt
+                        ? FormatDateTime(firstSentAt)
+                        : null,
+                    lastRequestSentAt = latestPersistedSentAt is { } lastSentAt
+                        ? FormatDateTime(lastSentAt)
+                        : null,
+                    gmailThreadId,
+                }
+                : null,
             courtesyCarAgreement = latestCourtesyCarAgreement,
         };
 
@@ -1711,6 +1787,7 @@ public class JobsController : ControllerBase
     }
 
     public record UpdateJobNotesRequest(string? Notes);
+    public record UpdateJobPrivateNotesRequest(string? PrivateNotes);
     public record UpdateJobPoSelectionRequest(string? PoNumber, string? InvoiceReference);
 
     [HttpPut("{id:long}/notes")]
@@ -1727,6 +1804,22 @@ public class JobsController : ControllerBase
         await InvalidatePaintBoardCacheAsync(ct);
 
         return Ok(new { success = true, notes = job.Notes });
+    }
+
+    [HttpPut("{id:long}/private-notes")]
+    public async Task<IActionResult> UpdatePrivateNotes(long id, [FromBody] UpdateJobPrivateNotesRequest req, CancellationToken ct)
+    {
+        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (job is null)
+            return NotFound(new { error = "Job not found." });
+
+        job.PrivateNotes = req.PrivateNotes?.Trim();
+        job.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        await InvalidateJobDetailCachesAsync(id, ct);
+        await TouchJobsListVersionAsync(ct);
+
+        return Ok(new { success = true, privateNotes = job.PrivateNotes });
     }
 
     [HttpPut("{id:long}/po-selection")]

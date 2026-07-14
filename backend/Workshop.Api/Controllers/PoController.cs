@@ -134,8 +134,35 @@ public async Task<IActionResult> SyncDraftXero(CancellationToken ct = default)
     [HttpPost("jobs/{jobId:long}/confirm-po")]
     public async Task<IActionResult> ConfirmPo(long jobId, [FromBody] ConfirmPoRequest? request, CancellationToken ct)
     {
-        var result = await _poTodoService.ConfirmPoAsync(jobId, request?.PoNumber, ct);
+        var result = await _poTodoService.ConfirmPoAsync(jobId, request?.PoNumber, request?.SendInvoice == true, ct);
         return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpPost("jobs/confirm-po-batch")]
+    public async Task<IActionResult> ConfirmPoBatch([FromBody] ConfirmPoBatchRequest? request, CancellationToken ct)
+    {
+        if (request?.Items is null || request.Items.Length == 0)
+            return BadRequest(new { error = "At least one job is required." });
+
+        var results = await _poTodoService.ConfirmPoBatchAsync(
+            request.Items.Select(x => new PoBatchConfirmItem(x.JobId, x.PoNumber)).ToArray(),
+            request.SendInvoice,
+            ct);
+        return Ok(new
+        {
+            total = results.Count,
+            succeeded = results.Count(x => x.Success),
+            failed = results.Count(x => !x.Success),
+            results,
+        });
+    }
+
+    [HttpPost("jobs/xero-summaries")]
+    public async Task<IActionResult> RefreshXeroSummaries([FromBody] XeroSummaryRequest? request, CancellationToken ct)
+    {
+        if (request?.JobIds is null)
+            return BadRequest(new { error = "jobIds is required." });
+        return Ok(new { items = await _poTodoService.RefreshXeroSummariesAsync(request.JobIds, ct) });
     }
 
     [HttpPost("jobs/complete")]
@@ -148,7 +175,10 @@ public async Task<IActionResult> SyncDraftXero(CancellationToken ct = default)
         return Ok(result);
     }
 
-    public sealed record ConfirmPoRequest(string? PoNumber);
+    public sealed record ConfirmPoRequest(string? PoNumber, bool SendInvoice = false);
+    public sealed record ConfirmPoBatchItem(long JobId, string? PoNumber);
+    public sealed record ConfirmPoBatchRequest(ConfirmPoBatchItem[]? Items, bool SendInvoice = false);
+    public sealed record XeroSummaryRequest(long[]? JobIds);
 
     public sealed record CompleteRequest(long[]? JobIds);
 

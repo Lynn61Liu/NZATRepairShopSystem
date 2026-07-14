@@ -118,6 +118,7 @@ export function NewJobPage() {
   const [personalCustomerOptions, setPersonalCustomerOptions] = useState<PersonalCustomerOption[]>([]);
   const [customerMatchHint, setCustomerMatchHint] = useState<CustomerMatchHint | null>(null);
   const [notes, setNotes] = useState("");
+  const [privateNotes, setPrivateNotes] = useState("");
   const [needsPo, setNeedsPo] = useState(true);
   const [createNewInvoice, setCreateNewInvoice] = useState(true);
   const [existingInvoiceNumber, setExistingInvoiceNumber] = useState("");
@@ -1013,6 +1014,7 @@ export function NewJobPage() {
             : [],
           needsPo: showNeedsPo ? needsPo : false,
           notes: notesPayload,
+          privateNotes: privateNotes.trim() || undefined,
           // partsDescription: normalizedPartsDescriptions[0],
           partsDescriptions: normalizedPartsDescriptions,
           mechServiceCatalogItemIds: hasMech ? mechOptions.map((id) => Number(id)).filter((value) => Number.isFinite(value)) : [],
@@ -1508,7 +1510,12 @@ export function NewJobPage() {
             </div>
           </div>
 
-          <NotesSection notes={notes} onNotesChange={setNotes} />
+          <NotesSection
+            notes={notes}
+            privateNotes={privateNotes}
+            onNotesChange={setNotes}
+            onPrivateNotesChange={setPrivateNotes}
+          />
         </div>
 
         <div className="space-y-4 xl:sticky xl:top-4 xl:self-start ">

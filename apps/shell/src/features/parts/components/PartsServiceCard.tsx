@@ -62,7 +62,11 @@ export function PartsServiceCard({
           <div className="flex items-start gap-3 flex-col  ">
              <div className="flex items-center gap-3 w-max">
           {/* <span className=" font-medium  uppercase w-12">状态</span> */}
-          <PartsStatusSelect value={service.status} onChange={handleStatusChange} />
+          {service.completedAt ? (
+            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">配件已到</span>
+          ) : (
+            <PartsStatusSelect value={service.status} onChange={handleStatusChange} />
+          )}
         </div>
             {/* <span className="text-xs font-medium text-gray-500 uppercase">配件描述</span> */}
           

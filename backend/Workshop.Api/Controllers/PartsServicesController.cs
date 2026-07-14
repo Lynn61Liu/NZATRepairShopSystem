@@ -106,6 +106,14 @@ public class PartsServicesController : ControllerBase
         return ToActionResult(result);
     }
 
+    [HttpPost("{serviceId:long}/complete")]
+    public async Task<IActionResult> CompleteService(long id, long serviceId, CancellationToken ct)
+    {
+        var result = await _partsService.CompleteService(id, serviceId, ct);
+        await InvalidatePartsCachesAsync(id, result, ct);
+        return ToActionResult(result);
+    }
+
     [HttpPost("{serviceId:long}/notes")]
     public async Task<IActionResult> CreateNote(long id, long serviceId, [FromBody] NoteRequest? request, CancellationToken ct)
     {

@@ -389,6 +389,7 @@ public class GmailAuthController : ControllerBase
         [FromQuery] string? correlationId,
         [FromQuery] int limit = 20,
         [FromQuery] bool refresh = false,
+        [FromQuery] bool cachedOnly = false,
         [FromQuery] long? gmailAccountId = null,
         CancellationToken ct = default)
     {
@@ -397,7 +398,7 @@ public class GmailAuthController : ControllerBase
 
         string? syncWarning = null;
         var snapshot = await _gmailThreadSyncService.GetThreadSnapshotAsync(counterpartyEmail, correlationId, limit, gmailAccountId, ct);
-        if (_gmailThreadSyncService.ShouldRefresh(snapshot, refresh))
+        if (!cachedOnly && _gmailThreadSyncService.ShouldRefresh(snapshot, refresh))
         {
             var syncResult = await _gmailThreadSyncService.SyncThreadAsync(
                 snapshot.CounterpartyEmail,

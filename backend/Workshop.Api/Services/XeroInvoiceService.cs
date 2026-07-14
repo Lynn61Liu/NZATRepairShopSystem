@@ -246,6 +246,59 @@ public sealed class XeroInvoiceService
             tokenResult.ExpiresIn);
     }
 
+    public async Task<XeroInvoiceCreateResult> UpdateInvoiceReferenceAsync(
+        Guid invoiceId,
+        string reference,
+        CancellationToken ct)
+    {
+        var tokenResult = await _xeroTokenService.RefreshAccessTokenAsync(ct);
+        if (!tokenResult.Ok)
+            return XeroInvoiceCreateResult.Fail(tokenResult.StatusCode, tokenResult.Error ?? "Failed to refresh Xero access token.", null, tokenResult.TenantId);
+        if (string.IsNullOrWhiteSpace(tokenResult.TenantId))
+            return XeroInvoiceCreateResult.Fail(400, "Missing Xero tenant id for invoice reference update.", null, "");
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            Invoices = new[] { new { InvoiceID = invoiceId, Reference = reference.Trim() } },
+        }, XeroWriteOptions);
+        var client = _httpClientFactory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"https://api.xero.com/api.xro/2.0/Invoices/{invoiceId}?summarizeErrors=true");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenResult.AccessToken);
+        request.Headers.Add("xero-tenant-id", tokenResult.TenantId);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+
+        using var response = await client.SendAsync(request, ct);
+        var responseBody = await response.Content.ReadAsStringAsync(ct);
+        var parsed = DeserializePayload(responseBody);
+        return response.IsSuccessStatusCode
+            ? XeroInvoiceCreateResult.Success(parsed, tokenResult.TenantId, tokenResult.RefreshToken, tokenResult.RefreshTokenUpdated, tokenResult.Scope, tokenResult.ExpiresIn)
+            : XeroInvoiceCreateResult.Fail((int)response.StatusCode, SummarizeXeroError(parsed) ?? responseBody, parsed, tokenResult.TenantId, tokenResult.RefreshToken, tokenResult.RefreshTokenUpdated, tokenResult.Scope, tokenResult.ExpiresIn);
+    }
+
+    public async Task<XeroInvoiceCreateResult> EmailInvoiceAsync(Guid invoiceId, CancellationToken ct)
+    {
+        var tokenResult = await _xeroTokenService.RefreshAccessTokenAsync(ct);
+        if (!tokenResult.Ok)
+            return XeroInvoiceCreateResult.Fail(tokenResult.StatusCode, tokenResult.Error ?? "Failed to refresh Xero access token.", null, tokenResult.TenantId);
+        if (string.IsNullOrWhiteSpace(tokenResult.TenantId))
+            return XeroInvoiceCreateResult.Fail(400, "Missing Xero tenant id for invoice email.", null, "");
+
+        var client = _httpClientFactory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{BuildRequestUri(null, null)}/{invoiceId}/Email");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenResult.AccessToken);
+        request.Headers.Add("xero-tenant-id", tokenResult.TenantId);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Content = new StringContent("", Encoding.UTF8, "application/json");
+
+        using var response = await client.SendAsync(request, ct);
+        var responseBody = await response.Content.ReadAsStringAsync(ct);
+        var parsed = DeserializePayload(responseBody);
+        return response.IsSuccessStatusCode
+            ? XeroInvoiceCreateResult.Success(parsed, tokenResult.TenantId, tokenResult.RefreshToken, tokenResult.RefreshTokenUpdated, tokenResult.Scope, tokenResult.ExpiresIn)
+            : XeroInvoiceCreateResult.Fail((int)response.StatusCode, SummarizeXeroError(parsed) ?? responseBody, parsed, tokenResult.TenantId, tokenResult.RefreshToken, tokenResult.RefreshTokenUpdated, tokenResult.Scope, tokenResult.ExpiresIn);
+    }
+
     public async Task<XeroInvoiceGetResult> GetInvoiceByIdAsync(Guid invoiceId, CancellationToken ct)
     {
         var missing = new List<string>();

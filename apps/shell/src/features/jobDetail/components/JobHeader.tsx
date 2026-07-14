@@ -29,6 +29,7 @@ interface JobHeaderProps {
   isUrgent: boolean;
   tags: string[];
   notes: string;
+  privateNotes: string;
   createdAt?: string;
   vehiclePlate: string;
   vehicleModel?: string;
@@ -52,6 +53,7 @@ interface JobHeaderProps {
   tagOptions?: TagOption[];
   onSaveTags?: (tagIds: string[]) => Promise<{ success: boolean; message?: string; tags?: string[] }>;
   onSaveNotes?: (notes: string) => Promise<{ success: boolean; message?: string }>;
+  onSavePrivateNotes?: (privateNotes: string) => Promise<{ success: boolean; message?: string }>;
   onCreatePaintService?: (status?: string, panels?: number) => Promise<{ success: boolean; message?: string }>;
 }
 
@@ -61,6 +63,7 @@ export function JobHeader({
   isUrgent,
   tags,
   notes,
+  privateNotes,
   createdAt,
   vehiclePlate,
   vehicleModel,
@@ -80,6 +83,7 @@ export function JobHeader({
   tagOptions = [],
   onSaveTags,
   onSaveNotes,
+  onSavePrivateNotes,
   onCreatePaintService,
 }: JobHeaderProps) {
   const [editingTags, setEditingTags] = useState(false);
@@ -92,6 +96,11 @@ export function JobHeader({
   const [noteMessage, setNoteMessage] = useState<string | null>(null);
   const [noteError, setNoteError] = useState<string | null>(null);
   const [editingNote, setEditingNote] = useState(false);
+  const [privateNoteDraft, setPrivateNoteDraft] = useState(privateNotes);
+  const [savingPrivateNote, setSavingPrivateNote] = useState(false);
+  const [privateNoteMessage, setPrivateNoteMessage] = useState<string | null>(null);
+  const [privateNoteError, setPrivateNoteError] = useState<string | null>(null);
+  const [editingPrivateNote, setEditingPrivateNote] = useState(false);
   const [bindDialogOpen, setBindDialogOpen] = useState(false);
   const [bindingTagInput, setBindingTagInput] = useState("");
   const [bindingSubmitting, setBindingSubmitting] = useState(false);
@@ -133,6 +142,12 @@ export function JobHeader({
   }, [notes, editingNote]);
 
   useEffect(() => {
+    if (!editingPrivateNote) {
+      setPrivateNoteDraft(privateNotes);
+    }
+  }, [privateNotes, editingPrivateNote]);
+
+  useEffect(() => {
     if (!noteMessage && !noteError) return;
     const timer = window.setTimeout(() => {
       setNoteMessage(null);
@@ -140,6 +155,15 @@ export function JobHeader({
     }, 2500);
     return () => window.clearTimeout(timer);
   }, [noteMessage, noteError]);
+
+  useEffect(() => {
+    if (!privateNoteMessage && !privateNoteError) return;
+    const timer = window.setTimeout(() => {
+      setPrivateNoteMessage(null);
+      setPrivateNoteError(null);
+    }, 2500);
+    return () => window.clearTimeout(timer);
+  }, [privateNoteMessage, privateNoteError]);
 
   useEffect(() => {
     if (!bindDialogOpen) return;
@@ -190,6 +214,21 @@ export function JobHeader({
       setEditingNote(false);
     } else {
       setNoteError(res.message || "备注更新失败");
+    }
+  };
+
+  const savePrivateNotes = async () => {
+    if (!onSavePrivateNotes) return;
+    setPrivateNoteMessage(null);
+    setPrivateNoteError(null);
+    setSavingPrivateNote(true);
+    const res = await onSavePrivateNotes(privateNoteDraft);
+    setSavingPrivateNote(false);
+    if (res.success) {
+      setPrivateNoteMessage(res.message || "其他备注已更新");
+      setEditingPrivateNote(false);
+    } else {
+      setPrivateNoteError(res.message || "其他备注更新失败");
     }
   };
 
@@ -449,6 +488,52 @@ export function JobHeader({
                 className=" mt-1 inline-flex h-7 w-7 items-center justify-center rounded-full border border-[rgba(0,0,0,0.10)] text-[rgba(0,0,0,0.55)] hover:text-[rgba(0,0,0,0.8)] hover:bg-[rgba(0,0,0,0.04)]"
                 title="编辑备注"
                 onClick={() => setEditingNote(true)}
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
+          <div className="mb-1 mt-4 text-[rgba(0,0,0,0.55)]">其他备注（仅内部可见）</div>
+          {privateNoteMessage ? <div className="mb-1 text-xs text-green-600">{privateNoteMessage}</div> : null}
+          {privateNoteError ? <div className="mb-1 text-xs text-red-600">{privateNoteError}</div> : null}
+          {editingPrivateNote ? (
+            <>
+              <Textarea
+                rows={3}
+                value={privateNoteDraft}
+                onChange={(event) => setPrivateNoteDraft(event.target.value)}
+                placeholder="例如 Deal 价格 收款方式等"
+              />
+              <div className="mt-2 flex gap-2">
+                <Button
+                  variant="primary"
+                  onClick={savePrivateNotes}
+                  disabled={savingPrivateNote || !onSavePrivateNotes}
+                >
+                  保存
+                </Button>
+                <Button
+                  onClick={() => {
+                    setPrivateNoteDraft(privateNotes);
+                    setEditingPrivateNote(false);
+                  }}
+                  disabled={savingPrivateNote}
+                >
+                  取消
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-end gap-2">
+              <div className="min-h-[72px] flex-1 whitespace-pre-wrap rounded-[8px] border border-[rgba(0,0,0,0.10)] bg-white px-3 py-2 text-sm text-[var(--ds-text)]">
+                {privateNoteDraft?.trim() ? privateNoteDraft : "—"}
+              </div>
+              <button
+                type="button"
+                className="mt-1 inline-flex h-7 w-7 items-center justify-center rounded-full border border-[rgba(0,0,0,0.10)] text-[rgba(0,0,0,0.55)] hover:bg-[rgba(0,0,0,0.04)] hover:text-[rgba(0,0,0,0.8)]"
+                title="编辑其他备注"
+                onClick={() => setEditingPrivateNote(true)}
               >
                 <Pencil className="h-4 w-4" />
               </button>

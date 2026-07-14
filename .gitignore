@@ -21,6 +21,24 @@ backend/secrets/nzat-wof-f39beb2312a5.json
 .playwright-mcp/console-2026-06-03T21-36-33-445Z.log
 /backend/Workshop.Api/App_Data
 /backend/Workshop.Api/Logs
+
+# Runtime-only main branch: keep tests and documentation out of this branch.
+/backend/Workshop.Api.Tests/
+**/*.test.ts
+**/*.test.tsx
+**/*.test.js
+**/*.test.jsx
+**/*.spec.ts
+**/*.spec.tsx
+**/*.spec.js
+**/*.spec.jsx
+/docs/
+/requirement/
+/README*.md
+/apps/shell/README*.md
+/deploy/README*.md
+/deploy/*/README*.md
+
 .playwright-mcp/page-2026-07-03T01-23-25-643Z.yml
 .playwright-mcp/console-2026-07-03T01-23-44-714Z.log
 .playwright-mcp/page-2026-07-03T01-23-44-905Z.yml

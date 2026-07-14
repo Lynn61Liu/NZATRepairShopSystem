@@ -41,6 +41,7 @@ public class AppDbContext : DbContext
     public DbSet<JobPartsService> JobPartsServices => Set<JobPartsService>();
     public DbSet<JobPartsNote> JobPartsNotes => Set<JobPartsNote>();
     public DbSet<JobMechService> JobMechServices => Set<JobMechService>();
+    public DbSet<JobMechWorkflow> JobMechWorkflows => Set<JobMechWorkflow>();
     public DbSet<JobPaintService> JobPaintServices => Set<JobPaintService>();
     public DbSet<JobServiceSelection> JobServiceSelections => Set<JobServiceSelection>();
     public DbSet<Staff> Staff => Set<Staff>();
@@ -250,6 +251,7 @@ public class AppDbContext : DbContext
         j.Property(x => x.VehicleId).HasColumnName("vehicle_id");
         j.Property(x => x.CustomerId).HasColumnName("customer_id");
         j.Property(x => x.Notes).HasColumnName("notes");
+        j.Property(x => x.PrivateNotes).HasColumnName("private_notes");
         j.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         j.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         j.HasOne(x => x.Vehicle)
@@ -510,6 +512,11 @@ public class AppDbContext : DbContext
         jp.Property(x => x.AdminAttentionReason).HasColumnName("admin_attention_reason");
         jp.Property(x => x.ConfirmedPoNumber).HasColumnName("confirmed_po_number");
         jp.Property(x => x.DetectedPoNumber).HasColumnName("detected_po_number");
+        jp.Property(x => x.PendingPoNumber).HasColumnName("pending_po_number");
+        jp.Property(x => x.ConfirmationStatus).HasColumnName("confirmation_status");
+        jp.Property(x => x.ConfirmationNote).HasColumnName("confirmation_note");
+        jp.Property(x => x.ConfirmationLastAttemptAt).HasColumnName("confirmation_last_attempt_at");
+        jp.Property(x => x.XeroEmailSentAt).HasColumnName("xero_email_sent_at");
         jp.Property(x => x.SentSource).HasColumnName("sent_source");
         jp.Property(x => x.ManuallyMarkedSentAt).HasColumnName("manually_marked_sent_at");
         jp.Property(x => x.CompletedAt).HasColumnName("completed_at");
@@ -653,6 +660,7 @@ public class AppDbContext : DbContext
         jps.Property(x => x.JobId).HasColumnName("job_id").IsRequired();
         jps.Property(x => x.Description).HasColumnName("description").IsRequired();
         jps.Property(x => x.Status).HasColumnName("status").HasColumnType("parts_service_status").IsRequired();
+        jps.Property(x => x.CompletedAt).HasColumnName("completed_at");
         jps.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         jps.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
 
@@ -674,6 +682,18 @@ public class AppDbContext : DbContext
         jms.Property(x => x.Cost).HasColumnName("cost").HasColumnType("numeric");
         jms.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         jms.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+
+        var jmw = modelBuilder.Entity<JobMechWorkflow>();
+        jmw.ToTable("job_mech_workflows");
+        jmw.HasKey(x => x.Id);
+        jmw.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        jmw.Property(x => x.JobId).HasColumnName("job_id").IsRequired();
+        jmw.Property(x => x.Status).HasColumnName("status").IsRequired();
+        jmw.Property(x => x.PartsArrivedAt).HasColumnName("parts_arrived_at");
+        jmw.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        jmw.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        jmw.HasIndex(x => x.JobId).IsUnique().HasDatabaseName("ux_job_mech_workflows_job_id");
+        jmw.HasOne<Job>().WithMany().HasForeignKey(x => x.JobId).OnDelete(DeleteBehavior.Cascade);
 
         var jpt = modelBuilder.Entity<JobPaintService>();
         jpt.ToTable("job_paint_services");

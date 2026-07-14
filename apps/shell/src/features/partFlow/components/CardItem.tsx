@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useDrag } from 'react-dnd';
 import { Link } from 'react-router-dom';
-import { Trash2, Archive, Car, Wrench, MessageSquare, Send, Clock, Mail, X, Phone } from 'lucide-react';
+import { Trash2, Archive, Car, Wrench, MessageSquare, Send, Clock, Mail, X, Phone, PackageCheck } from 'lucide-react';
 import type { ArrivalNotice, WorkCard } from '@/types';
 import { ArrivalEmailDraftModal } from './ArrivalEmailDraftModal';
 import { getPartFlowContactHref } from '@/features/partFlow/partFlowContactActions';
@@ -10,12 +10,13 @@ interface CardItemProps {
   card: WorkCard;
   onDelete: (cardId: string) => void;
   onArchive: (cardId: string) => void;
+  onComplete: (cardId: string) => void;
   onAddNote: (cardId: string, noteText: string) => void;
   onDeleteNote: (cardId: string, noteId: string) => void;
   onArrivalNoticeSent: (cardId: string, arrivalNotice: ArrivalNotice) => void;
 }
 
-export function CardItem({ card, onDelete, onArchive, onAddNote, onDeleteNote, onArrivalNoticeSent }: CardItemProps) {
+export function CardItem({ card, onDelete, onArchive, onComplete, onAddNote, onDeleteNote, onArrivalNoticeSent }: CardItemProps) {
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [showArrivalEmailDraft, setShowArrivalEmailDraft] = useState(false);
@@ -210,6 +211,18 @@ export function CardItem({ card, onDelete, onArchive, onAddNote, onDeleteNote, o
             </div>
 
             <div className="flex items-center justify-end gap-2">
+              {isPickupOrTransit ? (
+                <button
+                  onClick={() => {
+                    if (confirm('确认这些配件已经全部到达吗？')) onComplete(card.id);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                  title="配件已到并同步到机修看板"
+                >
+                  <PackageCheck className="h-4 w-4" />
+                  配件已到
+                </button>
+              ) : null}
               {isPickupOrTransit ? (
                 <button
                   onClick={() => setShowArrivalEmailDraft(true)}
