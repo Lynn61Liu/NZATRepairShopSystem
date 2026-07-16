@@ -20,6 +20,7 @@ import { MechTechBoardPage } from "./pages/mech/MechTechBoardPage";
 import { WorklogPage } from "./pages/worklog/WorklogPage";
 import { PoDashboardPreviewPage } from "./pages/poDashboard/PoDashboardPreviewPage";
 import { WofSchedulePage } from "./pages/WofSchedulePage"; // 保留原有的 WofSchedule
+import { WofFormPage } from "./pages/WofFormPage";
 import { ToastProvider } from "@/components/ui";
 import { CustomerSelfServiceNewJobPage } from "./pages/customerSelfService/CustomerSelfServiceNewJobPage";
 import { CourtesyCarsPage } from "./features/courtesyCars/CourtesyCarsPage";
@@ -54,6 +55,8 @@ const router = createBrowserRouter([
       { path: "car-on-yard", element: <CarOnYardPage /> },
       { path: "paint-board", element: <PaintBoardPage /> },
       { path: "wof-schedule", element: <WofSchedulePage /> }, 
+      { path: "wof-form", element: <WofFormPage /> },
+      { path: "wof-form/:recordId", element: <WofFormPage /> },
       { path: "courtesy-cars", element: <CourtesyCarsPage /> },
       { path: "courtesy-car-drafts", element: <CourtesyCarAgreementsPage /> },
       { path: "courtesy-car-drafts/:agreementId", element: <CourtesyCarAgreementPage /> },
