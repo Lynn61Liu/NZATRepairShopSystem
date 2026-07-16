@@ -15,12 +15,18 @@ public class WofRecordsService
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
     private readonly InvoiceOutboxService _invoiceOutboxService;
+    private readonly JobLifecycleService? _jobLifecycleService;
 
-    public WofRecordsService(AppDbContext db, IConfiguration config, InvoiceOutboxService invoiceOutboxService)
+    public WofRecordsService(
+        AppDbContext db,
+        IConfiguration config,
+        InvoiceOutboxService invoiceOutboxService,
+        JobLifecycleService? jobLifecycleService = null)
     {
         _db = db;
         _config = config;
         _invoiceOutboxService = invoiceOutboxService;
+        _jobLifecycleService = jobLifecycleService;
     }
 
     public async Task<WofServiceResult> GetWofRecords(long id, CancellationToken ct)
@@ -437,6 +443,8 @@ public class WofRecordsService
             : "Todo";
         state.UpdatedAt = now;
         await _db.SaveChangesAsync(ct);
+        if (_jobLifecycleService is not null)
+            await _jobLifecycleService.EvaluateAsync(jobId, ct);
 
         return WofServiceResult.Ok(new
         {
@@ -689,6 +697,8 @@ public class WofRecordsService
         if (inserted > 0)
         {
             await _db.SaveChangesAsync(ct);
+            if (_jobLifecycleService is not null)
+                await _jobLifecycleService.EvaluateAsync(id, ct);
         }
 
         await tx.CommitAsync(ct);
@@ -795,6 +805,8 @@ public class WofRecordsService
         record.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync(ct);
+        if (_jobLifecycleService is not null)
+            await _jobLifecycleService.EvaluateAsync(jobId, ct);
 
         return WofServiceResult.Ok(new { success = true });
     }
@@ -971,6 +983,8 @@ public class WofRecordsService
 
         _db.JobWofRecords.Add(record);
         await _db.SaveChangesAsync(ct);
+        if (_jobLifecycleService is not null)
+            await _jobLifecycleService.EvaluateAsync(jobId, ct);
 
         return WofServiceResult.Ok(new
         {
@@ -1058,6 +1072,8 @@ public class WofRecordsService
 
         _db.JobWofRecords.Add(record);
         await _db.SaveChangesAsync(ct);
+        if (_jobLifecycleService is not null)
+            await _jobLifecycleService.EvaluateAsync(id, ct);
 
         return WofServiceResult.Ok(new
         {

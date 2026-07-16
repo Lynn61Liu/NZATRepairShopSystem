@@ -42,7 +42,6 @@ public sealed class PoAutoFollowUpService
                 from state in _db.JobPoStates
                 join job in _db.Jobs on state.JobId equals job.Id
                 where job.NeedsPo
-                where job.Status == null || job.Status.ToLower() != "archived"
                 where state.FollowUpEnabled
                 where state.Status == JobPoStateStatus.AwaitingReply || state.Status == JobPoStateStatus.EscalationRequired
                 select state
@@ -59,7 +58,6 @@ public sealed class PoAutoFollowUpService
                 from state in _db.JobPoStates
                 join job in _db.Jobs on state.JobId equals job.Id
                 where job.NeedsPo
-                where job.Status == null || job.Status.ToLower() != "archived"
                 where state.FollowUpEnabled
                 where state.Status == JobPoStateStatus.AwaitingReply
                 where state.NextFollowUpDueAt.HasValue && state.NextFollowUpDueAt.Value <= DateTime.UtcNow

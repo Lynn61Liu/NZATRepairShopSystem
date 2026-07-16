@@ -43,7 +43,7 @@ export function createSyncingVehicleNztaSyncSteps(): VehicleNztaSyncDialogSteps 
   return {
     lookup: {
       status: "in_progress",
-      message: "正在向 NZTA 查询车辆到期信息。",
+      message: "已打开专用 Chrome。请在窗口中完成 NZTA 验证，系统会自动继续。",
     },
     parse: {
       status: "pending",

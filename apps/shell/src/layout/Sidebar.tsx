@@ -76,7 +76,7 @@ export function Sidebar() {
     { to: "/invoice", label: "发票", icon: CircleDollarSign },
     { to: "/wof-schedule", label: "WOF 排班表", icon: CalendarClock },
     { to: "/po-dashboard-preview", label: "PO", icon: ReceiptText },
-    { to: "/paint-tech", label: "喷漆看板", icon: Paintbrush2 },
+    { to: "/paint-board", label: "喷漆看板", icon: Paintbrush2 },
     { to: "/mech-board", label: "机修看板", icon: Wrench },
     { to: "/device-communication", label: "找钥匙", icon: KeyRound },
     { to: "/worklog", label: "工时", icon: Clock3, badge: worklogAlertCount },

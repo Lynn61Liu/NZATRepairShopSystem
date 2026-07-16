@@ -635,7 +635,19 @@ export function JobsTable({
                   <TagsCell selectedTags={r.selectedTags} />
                 </div>
 
-                <div className="truncate text-left">{r.customerCode || r.customerName || "—"}</div>
+                <div className="flex min-w-0 items-center gap-1 truncate text-left">
+                  <span className="truncate">{r.customerCode || r.customerName || "—"}</span>
+                  {r.poNumber ? (
+                    <button
+                      type="button"
+                      className="shrink-0 cursor-help text-sm"
+                      title={`PO# ${r.poNumber}`}
+                      onClick={() => window.alert(`PO# ${r.poNumber}`)}
+                    >
+                      🙂
+                    </button>
+                  ) : null}
+                </div>
 
                 <div className="min-w-0 text-left font-medium text-[rgba(0,0,0,0.70)]">
                   <div className="flex items-center gap-2 leading-5">

@@ -35,6 +35,45 @@ public sealed class PoStateSchemaInitializerService : IHostedService
                 ALTER TABLE job_po_state ADD COLUMN IF NOT EXISTS manually_marked_sent_at TIMESTAMPTZ;
                 ALTER TABLE job_po_state ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
                 ALTER TABLE gmail_message_logs ADD COLUMN IF NOT EXISTS source TEXT;
+
+                CREATE OR REPLACE FUNCTION enforce_manual_po_sent_state()
+                RETURNS TRIGGER
+                LANGUAGE plpgsql
+                AS $$
+                BEGIN
+                    IF NEW.sent_source = 'manual'
+                       AND NEW.manually_marked_sent_at IS NOT NULL
+                       AND COALESCE(BTRIM(NEW.confirmed_po_number), '') = ''
+                       AND COALESCE(BTRIM(NEW.detected_po_number), '') = ''
+                       AND (NEW.first_request_sent_at IS NULL OR NEW.last_request_sent_at IS NULL)
+                    THEN
+                        NEW.status := 'AwaitingReply';
+                        NEW.first_request_sent_at :=
+                            COALESCE(NEW.first_request_sent_at, NEW.manually_marked_sent_at);
+                        NEW.last_request_sent_at :=
+                            COALESCE(NEW.last_request_sent_at, NEW.manually_marked_sent_at);
+                    END IF;
+
+                    RETURN NEW;
+                END;
+                $$;
+
+                DROP TRIGGER IF EXISTS trg_enforce_manual_po_sent_state ON job_po_state;
+                CREATE TRIGGER trg_enforce_manual_po_sent_state
+                BEFORE INSERT OR UPDATE ON job_po_state
+                FOR EACH ROW
+                EXECUTE FUNCTION enforce_manual_po_sent_state();
+
+                UPDATE job_po_state
+                SET status = 'AwaitingReply',
+                    first_request_sent_at = COALESCE(first_request_sent_at, manually_marked_sent_at),
+                    last_request_sent_at = COALESCE(last_request_sent_at, manually_marked_sent_at),
+                    updated_at = NOW()
+                WHERE sent_source = 'manual'
+                  AND manually_marked_sent_at IS NOT NULL
+                  AND COALESCE(BTRIM(confirmed_po_number), '') = ''
+                  AND COALESCE(BTRIM(detected_po_number), '') = ''
+                  AND (first_request_sent_at IS NULL OR last_request_sent_at IS NULL);
                 """, cancellationToken);
 
             await poStateService.EnsureStatesForNeedsPoJobsAsync(cancellationToken);

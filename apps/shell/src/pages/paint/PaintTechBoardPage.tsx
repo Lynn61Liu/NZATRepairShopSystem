@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import {
+  Archive,
   Car,
   CheckCircle2,
   ClipboardCheck,
   Droplets,
+  ExternalLink,
   Hammer,
   PauseCircle,
   Paintbrush2,
@@ -12,6 +15,7 @@ import {
   Settings2,
 } from "lucide-react";
 import { fetchPaintBoard, updatePaintStage } from "@/features/paint/api/paintApi";
+import { updateJobStatus } from "@/features/jobDetail/api/jobDetailApi";
 import { updateWofStatus as apiUpdateWofStatus } from "@/features/wof/api/wofApi";
 import {
   getDurationDays,
@@ -24,7 +28,7 @@ import {
   type PaintBoardJob,
   type StageKey,
 } from "@/features/paint/paintBoard.utils";
-import { Button, Pagination, Select } from "@/components/ui";
+import { Button, Pagination, Select, useToast } from "@/components/ui";
 import { paginate } from "@/utils/pagination";
 import { notifyWofScheduleRefresh, subscribePaintBoardRefresh } from "@/utils/refreshSignals";
 
@@ -126,7 +130,7 @@ const extractServiceNote = (note?: string | null) => {
   return normalized;
 };
 
-export function PaintTechBoardPage() {
+export function PaintTechBoardPage({ standalone = true }: { standalone?: boolean }) {
   const [jobs, setJobs] = useState<PaintBoardJob[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -135,8 +139,11 @@ export function PaintTechBoardPage() {
   const [search, setSearch] = useState("");
   const [selectedStage, setSelectedStage] = useState<"all" | StageKey>("all");
   const [page, setPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [archiving, setArchiving] = useState(false);
   const pageSize = 30;
   const mountedRef = useRef(true);
+  const toast = useToast();
 
   useEffect(() => {
     mountedRef.current = true;
@@ -234,7 +241,7 @@ export function PaintTechBoardPage() {
       const stageKey = mapStageKey(job.status, job.currentStage);
       if (selectedStage !== "all" && stageKey !== selectedStage) return false;
       if (!keyword) return true;
-      const haystack = `${job.plate} ${job.make ?? ""} ${job.model ?? ""}`.toLowerCase();
+      const haystack = `${job.customerCode ?? ""} ${job.plate} ${job.make ?? ""} ${job.model ?? ""} ${job.notes ?? ""}`.toLowerCase();
       return haystack.includes(keyword);
     });
   }, [visibleJobs, search, selectedStage]);
@@ -313,26 +320,54 @@ export function PaintTechBoardPage() {
     });
   };
 
+  const archiveJobs = async (jobIds: string[]) => {
+    if (standalone || jobIds.length === 0) return;
+    if (!window.confirm(`确认归档 ${jobIds.length} 条工单吗？`)) return;
+
+    setArchiving(true);
+    const results = await Promise.all(jobIds.map((id) => updateJobStatus(id, "Archived")));
+    const failed = results.filter((result) => !result.ok).length;
+    if (failed > 0) toast.error(`${failed} 条工单归档失败`);
+    else toast.success(`${jobIds.length} 条工单已归档`);
+    setSelectedIds(new Set());
+    await load({ silent: true });
+    setArchiving(false);
+  };
+
+  const allPageSelected =
+    pagedJobs.length > 0 && pagedJobs.every((job) => selectedIds.has(job.id));
+
   return (
-    <div className="min-h-screen bg-[#f6f8fb]">
+    <div className={`${standalone ? "min-h-screen" : "h-full overflow-y-auto rounded-2xl"} bg-[#f6f8fb]`}>
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <div className={`flex items-center justify-between gap-3 px-6 ${standalone ? "mx-auto max-w-6xl py-4" : "py-5"}`}>
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-white">
               <Car className="h-5 w-5" />
             </div>
             <div>
-              <div className="text-lg font-semibold text-slate-800">NZAT PNP Board — 喷漆看板</div>
-              <div className="text-xs text-slate-500">Vehicle Painting Tracking Dashboard</div>
+              <div className={`${standalone ? "text-lg font-semibold" : "text-xl font-bold"} text-slate-800`}>
+                NZAT PNP Board — 喷漆看板
+              </div>
+              <div className="text-xs text-slate-500">
+                {standalone ? "Vehicle Painting Tracking Dashboard" : "管理员视图 · PNP 工作管理"}
+              </div>
             </div>
           </div>
-          <div className="text-xs text-slate-500">
-            {new Date().toLocaleString("zh-CN", { hour12: false })}
+          <div className="flex items-center gap-2">
+            {!standalone ? (
+              <Button href="/paint-tech" target="_blank" variant="ghost" leftIcon={<ExternalLink className="h-4 w-4" />}>
+                打开喷漆师傅看板
+              </Button>
+            ) : null}
+            <div className="text-xs text-slate-500">
+              {new Date().toLocaleString("zh-CN", { hour12: false })}
+            </div>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto flex max-w-7xl flex-col gap-5 px-6 py-6">
+      <main className={`flex flex-col gap-5 px-6 py-6 ${standalone ? "mx-auto max-w-7xl" : ""}`}>
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
           <div className="flex items-center gap-3 text-sm font-semibold text-slate-700">
             <Button
@@ -431,8 +466,8 @@ export function PaintTechBoardPage() {
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="搜索车牌、车型、工作内容..."
-              className="w-full bg-transparent text-sm text-slate-700 outline-none"
+              placeholder={standalone ? "搜索车牌、车型、工作内容..." : "搜索 Code、车牌、车型、工作内容..."}
+              className={`w-full bg-transparent text-slate-700 outline-none ${standalone ? "text-sm" : "text-base"}`}
             />
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-400">
@@ -469,8 +504,20 @@ export function PaintTechBoardPage() {
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 text-sm font-semibold text-slate-600">
-            显示 {sortedJobs.length} / {visibleJobs.length} 辆车
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div className={`${standalone ? "text-sm" : "text-base"} font-semibold text-slate-600`}>
+              显示 {sortedJobs.length} / {visibleJobs.length} 辆车
+            </div>
+            {!standalone ? (
+              <Button
+                variant="ghost"
+                disabled={selectedIds.size === 0 || archiving}
+                leftIcon={<Archive className="h-4 w-4" />}
+                onClick={() => void archiveJobs([...selectedIds])}
+              >
+                批量归档{selectedIds.size ? ` (${selectedIds.size})` : ""}
+              </Button>
+            ) : null}
           </div>
           {loading ? (
             <div className="py-8 text-center text-sm text-slate-400">加载中...</div>
@@ -478,17 +525,33 @@ export function PaintTechBoardPage() {
             <div className="py-8 text-center text-sm text-red-600">{loadError}</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-[960px] w-full text-sm text-slate-600">
+              <table className={`w-full text-slate-600 ${standalone ? "min-w-[960px] text-sm" : "min-w-[1180px] text-base"}`}>
                 <thead>
-                  <tr className="border-b border-slate-100 text-left text-xs font-semibold text-slate-400">
+                  <tr className={`border-b border-slate-100 text-left font-semibold ${standalone ? "text-xs text-slate-400" : "text-sm text-slate-500"}`}>
+                    {!standalone ? (
+                      <th className="w-12 px-3 py-3">
+                        <input
+                          type="checkbox"
+                          aria-label="选择当前页全部喷漆工单"
+                          checked={allPageSelected}
+                          onChange={(event) => {
+                            const next = new Set(selectedIds);
+                            pagedJobs.forEach((job) => event.target.checked ? next.add(job.id) : next.delete(job.id));
+                            setSelectedIds(next);
+                          }}
+                        />
+                      </th>
+                    ) : null}
                     <th className="py-2">进厂时间</th>
-                    <th className="py-2">在店时间</th>
+                    <th className={`${standalone ? "py-2" : "w-[130px] min-w-[130px] px-3 py-2 whitespace-nowrap"}`}>在店时间</th>
+                    {!standalone ? <th className="px-3 py-2">Code</th> : null}
                     <th className="py-2">车牌号</th>
                     <th className="py-2">车型</th>
                     <th className="py-2">状态</th>
                     <th className="py-2">WOF状态</th>
                     <th className="py-2">工作内容</th>
                     <th className="py-2 text-right">片数</th>
+                    {!standalone ? <th className="px-3 py-2 text-right">操作</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -501,12 +564,27 @@ export function PaintTechBoardPage() {
                         key={job.id}
                         className="border-b border-slate-100 hover:bg-slate-50"
                       >
-                        <td className="py-3 text-xs text-slate-500">
+                        {!standalone ? (
+                          <td className="px-3 py-4">
+                            <input
+                              type="checkbox"
+                              aria-label={`选择工单 ${job.plate}`}
+                              checked={selectedIds.has(job.id)}
+                              onChange={(event) => {
+                                const next = new Set(selectedIds);
+                                if (event.target.checked) next.add(job.id);
+                                else next.delete(job.id);
+                                setSelectedIds(next);
+                              }}
+                            />
+                          </td>
+                        ) : null}
+                        <td className={`${standalone ? "py-3 text-xs" : "py-4 text-base"} text-slate-500`}>
                           {new Date(job.createdAt).toLocaleDateString("zh-CN")}
                         </td>
-                        <td className="py-3">
+                        <td className={standalone ? "py-3" : "w-[130px] min-w-[130px] whitespace-nowrap px-3 py-4"}>
                           <span
-                            className={`rounded-full border px-2 py-1 text-xs ${
+                            className={`rounded-full border px-2.5 py-1.5 ${standalone ? "text-xs" : "text-base font-bold"} ${
                               overdue
                                 ? "border-2 border-red-400 bg-red-50 text-red-700 shadow-[0_0_0_2px_rgba(239,68,68,0.08)]"
                                 : "border-slate-200 bg-slate-50 text-slate-600"
@@ -515,17 +593,31 @@ export function PaintTechBoardPage() {
                             {durationDays}天{overdue ? " !" : ""}
                           </span>
                         </td>
-                        <td className="py-3">
-                          <span className="rounded-md bg-slate-900 px-2 py-1 text-xs font-semibold text-white">
-                            {job.plate}
-                          </span>
+                        {!standalone ? (
+                          <td className="px-3 py-4 text-base font-bold text-blue-700">
+                            {job.customerCode || "WI"}
+                          </td>
+                        ) : null}
+                        <td className={standalone ? "py-3" : "py-4"}>
+                          {standalone ? (
+                            <span className="rounded-md bg-slate-900 px-2 py-1 text-xs font-semibold text-white">
+                              {job.plate}
+                            </span>
+                          ) : (
+                            <Link
+                              to={`/jobs/${job.id}`}
+                              className="rounded-md bg-slate-900 px-2.5 py-1.5 text-base font-bold text-white hover:bg-blue-600"
+                            >
+                              {job.plate || `#${job.id}`}
+                            </Link>
+                          )}
                         </td>
-                        <td className="py-3">
+                        <td className={`${standalone ? "py-3" : "py-4 text-base font-semibold text-slate-800"}`}>
                           {job.year} {job.make} {job.model}
                         </td>
-                        <td className="py-3">
+                        <td className={standalone ? "py-3" : "py-4"}>
                           <select
-                            className={`rounded-full px-2 py-1 text-xs font-semibold ${STAGES[stageKey].pill} bg-transparent`}
+                            className={`rounded-full px-2 py-1 font-semibold ${standalone ? "text-xs" : "text-base"} ${STAGES[stageKey].pill} bg-transparent`}
                             value={stageKey}
                             onChange={(event) => {
                               event.stopPropagation();
@@ -540,7 +632,7 @@ export function PaintTechBoardPage() {
                             ))}
                           </select>
                         </td>
-                        <td className="py-3">
+                        <td className={standalone ? "py-3" : "py-4"}>
                           <div className="flex flex-wrap items-center gap-2">
                             {job.wofStatus === "Todo" || job.wofStatus === "Checked" ? (
                               <select
@@ -567,14 +659,27 @@ export function PaintTechBoardPage() {
                             ) : null}
                           </div>
                         </td>
-                        <td className="py-3 text-xs text-slate-500">
+                        <td className={`${standalone ? "py-3 text-xs" : "py-4 text-base font-medium"} text-slate-600`}>
                           {extractServiceNote(job.notes) || "—"}
                         </td>
-                        <td className="py-3 text-right">
+                        <td className={`${standalone ? "py-3" : "py-4"} text-right`}>
                           <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
                             {job.panels ?? "—"}
                           </span>
                         </td>
+                        {!standalone ? (
+                          <td className="px-3 py-4 text-right">
+                            <button
+                              type="button"
+                              title="归档工单"
+                              disabled={archiving}
+                              onClick={() => void archiveJobs([job.id])}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                            >
+                              <Archive className="h-4 w-4" />
+                            </button>
+                          </td>
+                        ) : null}
                       </tr>
                     );
                   })}

@@ -27,7 +27,6 @@ public sealed class JobPoStateService
     {
         var jobs = await _db.Jobs
             .Where(x => x.NeedsPo)
-            .Where(x => x.Status == null || x.Status.ToLower() != "archived")
             .Select(x => new
             {
                 x.Id,
@@ -38,6 +37,14 @@ public sealed class JobPoStateService
             .ToListAsync(ct);
 
         var jobIds = jobs.Select(x => x.Id).ToArray();
+        if (jobIds.Length > 0)
+        {
+            var activeCorrelationIds = jobIds.Select(BuildCorrelationId).ToArray();
+            await _db.InactiveGmailCorrelations
+                .Where(x => activeCorrelationIds.Contains(x.CorrelationId))
+                .Where(x => x.Reason != null && EF.Functions.ILike(x.Reason, "%archived%"))
+                .ExecuteDeleteAsync(ct);
+        }
         var existingJobIds = jobIds.Length == 0
             ? new HashSet<long>()
             : (await _db.JobPoStates.AsNoTracking()
@@ -73,7 +80,7 @@ public sealed class JobPoStateService
         var job = await _db.Jobs
             .Include(x => x.Customer)
             .FirstOrDefaultAsync(x => x.Id == jobId, ct);
-        if (job is null || !job.NeedsPo || IsArchivedStatus(job.Status))
+        if (job is null || !job.NeedsPo)
         {
             await RemoveStatesForJobAsync(jobId, ct);
             return;
@@ -244,6 +251,32 @@ public sealed class JobPoStateService
         }
 
         await _db.SaveChangesAsync(ct);
+
+        // A manual "sent" action can commit while this sync is working from an older
+        // tracked snapshot. In that race EF does not overwrite the manual marker, but
+        // it can still overwrite the derived status/timestamps with Draft/null.
+        // Normalize from the persisted manual marker in one database statement so
+        // whichever operation finishes last still leaves the job awaiting a PO.
+        var repairedAt = DateTime.UtcNow;
+        await _db.JobPoStates
+            .Where(x => x.JobId == jobId)
+            .Where(x =>
+                x.SentSource == "manual" &&
+                x.ManuallyMarkedSentAt != null &&
+                string.IsNullOrEmpty(x.ConfirmedPoNumber) &&
+                string.IsNullOrEmpty(x.DetectedPoNumber) &&
+                (x.FirstRequestSentAt == null || x.LastRequestSentAt == null))
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(x => x.Status, JobPoStateStatus.AwaitingReply)
+                    .SetProperty(
+                        x => x.FirstRequestSentAt,
+                        x => x.FirstRequestSentAt ?? x.ManuallyMarkedSentAt)
+                    .SetProperty(
+                        x => x.LastRequestSentAt,
+                        x => x.LastRequestSentAt ?? x.ManuallyMarkedSentAt)
+                    .SetProperty(x => x.UpdatedAt, repairedAt),
+                ct);
     }
 
     public async Task SyncStateByCorrelationAsync(string? correlationId, CancellationToken ct)

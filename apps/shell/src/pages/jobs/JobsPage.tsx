@@ -1,5 +1,5 @@
 import { Link, useSearchParams } from "react-router-dom";
-import { Archive, Plus, RefreshCw, Tags, Trash2 } from "lucide-react";
+import { Archive, MapPinOff, Plus, RefreshCw, Tags, Trash2 } from "lucide-react";
 import { DeleteJobDialog } from "@/components/common/DeleteJobDialog";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import {
@@ -27,6 +27,7 @@ import {
   updateJobCreatedAt,
   updateJobStatus,
   updateJobTags,
+  updateJobYardStatusBatch,
 } from "@/features/jobDetail/api/jobDetailApi";
 import { fetchPaintService, updatePaintStage } from "@/features/paint/api/paintApi";
 import { updateMechWorkflow, type MechWorkflowStatus } from "@/features/mechWorkflow";
@@ -117,7 +118,7 @@ export function JobsPage() {
   const [deleteCompletedId, setDeleteCompletedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [batchTags, setBatchTags] = useState<string[]>([]);
-  const [batchBusy, setBatchBusy] = useState<"archive" | "delete" | "tag" | "xero" | null>(null);
+  const [batchBusy, setBatchBusy] = useState<"archive" | "delete" | "tag" | "yard" | "xero" | null>(null);
   const [pendingBatchAction, setPendingBatchAction] = useState<"archive" | "delete" | null>(null);
   const toast = useToast();
 
@@ -422,6 +423,37 @@ export function JobsPage() {
     void loadJobs();
   }, [batchTags, clearSelection, loadJobs, selectedCount, selectedRows, toast]);
 
+  const handleBatchOffYard = useCallback(async () => {
+    if (selectedCount === 0) return;
+
+    setBatchBusy("yard");
+    try {
+      const result = await updateJobYardStatusBatch(
+        selectedRows.map((row) => row.id),
+        false
+      );
+      if (!result.ok || !result.data) {
+        throw new Error(result.error || "批量设置 Off Yard 失败");
+      }
+
+      if (result.data.skipped > 0) {
+        toast.info(`已设置 ${result.data.updated} 个，跳过 ${result.data.skipped} 个`);
+      } else {
+        toast.success(`已将 ${result.data.updated} 个工单设为 Off Yard`);
+      }
+
+      notifyPaintBoardRefresh();
+      notifyWofScheduleRefresh();
+      notifyPartsFlowRefresh();
+      clearSelection();
+      await loadJobs();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "批量设置 Off Yard 失败");
+    } finally {
+      setBatchBusy(null);
+    }
+  }, [clearSelection, loadJobs, selectedCount, selectedRows, toast]);
+
 
   const handleDelete = useCallback(
     async () => {
@@ -538,9 +570,10 @@ export function JobsPage() {
       localStorage.setItem("mech-board:workflow-updated", String(Date.now()));
       window.dispatchEvent(new Event("mech-board:workflow-updated"));
       toast.success("机修状态已更新");
+      void loadJobs();
       return true;
     },
-    [setAllRows, toast]
+    [loadJobs, setAllRows, toast]
   );
 
   const resolveJobSheetData = useCallback(
@@ -629,6 +662,13 @@ export function JobsPage() {
           已选择 {selectedCount} 个工单
         </div>
         <div className="flex min-w-[280px] flex-1 flex-wrap items-center justify-end gap-2">
+          <Button
+            leftIcon={<MapPinOff size={16} />}
+            disabled={selectedCount === 0 || batchBusy !== null}
+            onClick={() => void handleBatchOffYard()}
+          >
+            {batchBusy === "yard" ? "设置中..." : "批量 Off Yard"}
+          </Button>
           <div className="w-[260px]">
             <MultiTagSelect
               options={tagOptions}

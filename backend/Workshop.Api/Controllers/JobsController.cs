@@ -40,6 +40,7 @@ public class JobsController : ControllerBase
     private readonly NztaExpiryLookupService _nztaExpiryLookupService;
     private readonly XeroInvoiceStatusSyncService? _xeroInvoiceStatusSyncService;
     private readonly MechWorkflowService? _mechWorkflowService;
+    private readonly JobLifecycleService _jobLifecycleService;
 
     public JobsController(
         AppDbContext db,
@@ -48,6 +49,7 @@ public class JobsController : ControllerBase
         JobInvoiceService jobInvoiceService,
         WofQueryService wofQueryService,
         NztaExpiryLookupService nztaExpiryLookupService,
+        JobLifecycleService jobLifecycleService,
         XeroInvoiceStatusSyncService? xeroInvoiceStatusSyncService = null,
         MechWorkflowService? mechWorkflowService = null)
     {
@@ -57,6 +59,7 @@ public class JobsController : ControllerBase
         _jobInvoiceService = jobInvoiceService;
         _wofQueryService = wofQueryService;
         _nztaExpiryLookupService = nztaExpiryLookupService;
+        _jobLifecycleService = jobLifecycleService;
         _xeroInvoiceStatusSyncService = xeroInvoiceStatusSyncService;
         _mechWorkflowService = mechWorkflowService;
     }
@@ -87,6 +90,8 @@ public class JobsController : ControllerBase
             join c in _db.Customers.AsNoTracking() on j.CustomerId equals c.Id
             join ji in _db.JobInvoices.AsNoTracking() on j.Id equals ji.JobId into invoiceGroup
             from ji in invoiceGroup.DefaultIfEmpty()
+            join jp in _db.JobPoStates.AsNoTracking() on j.Id equals jp.JobId into poStateGroup
+            from jp in poStateGroup.DefaultIfEmpty()
             join snapshot in wofSnapshots on j.Id equals snapshot.JobId
             select new
             {
@@ -94,13 +99,13 @@ public class JobsController : ControllerBase
                 Vehicle = v,
                 Customer = c,
                 Invoice = ji,
+                PoState = jp,
                 WofSnapshot = snapshot
             };
 
         if (string.IsNullOrWhiteSpace(request.JobType))
         {
-            if (!request.IncludeArchived)
-                query = query.Where(x => x.Job.Status != null && !EF.Functions.ILike(x.Job.Status, "Archived"));
+            // An empty status means "All", including archived jobs.
         }
         else
         {
@@ -110,6 +115,18 @@ public class JobsController : ControllerBase
                 "Ready" => query.Where(x => x.Job.Status != null && (EF.Functions.ILike(x.Job.Status, "Delivered") || EF.Functions.ILike(x.Job.Status, "Ready"))),
                 _ => query.Where(x => x.Job.Status != null && EF.Functions.ILike(x.Job.Status, request.JobType))
             };
+        }
+
+        if (request.OnYardOnly)
+        {
+            query = query.Where(x =>
+                !EF.Functions.ILike(x.Job.Status ?? "", "archived")
+                && (x.Job.IsOnYardOverride == true
+                    || (x.Job.IsOnYardOverride == null
+                        && !_db.JobMechWorkflows.AsNoTracking()
+                            .Any(workflow => workflow.JobId == x.Job.Id && workflow.Status == MechWorkflowStatus.Delivered)
+                        && !_db.JobPaintServices.AsNoTracking()
+                            .Any(paint => paint.JobId == x.Job.Id && paint.Status == "delivered"))));
         }
 
         if (!string.IsNullOrWhiteSpace(request.Search))
@@ -305,6 +322,11 @@ public class JobsController : ControllerBase
                 x.Job.Status,
                 x.Job.IsUrgent,
                 x.Job.NeedsPo,
+                x.Job.PoNumber,
+                x.PoState != null
+                    && (x.PoState.FirstRequestSentAt != null
+                        || x.PoState.LastRequestSentAt != null
+                        || x.PoState.ManuallyMarkedSentAt != null),
                 x.Job.CreatedAt,
                 x.Job.Notes,
                 x.Job.PrivateNotes,
@@ -342,8 +364,6 @@ public class JobsController : ControllerBase
             .ToListAsync(ct);
 
         var pageJobIds = pageRows.Select(x => x.Id).ToArray();
-        if (_mechWorkflowService is not null)
-            await _mechWorkflowService.EnsureForJobsAsync(pageJobIds, ct);
 
         var tagRows = pageJobIds.Length == 0
             ? new List<JobTagListRow>()
@@ -373,6 +393,13 @@ public class JobsController : ControllerBase
             var selectedTags = row.IsUrgent
                 ? tags.Concat(new[] { "Urgent" }).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
                 : tags;
+            if (row.PoRequestSent)
+            {
+                selectedTags = selectedTags
+                    .Concat(new[] { "📧" })
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
             var hasWofServiceOrRecord = row.HasWofService || row.HasWofRecord;
 
             return new
@@ -381,6 +408,7 @@ public class JobsController : ControllerBase
                 vehicleStatus = MapStatus(row.Status),
                 urgent = row.IsUrgent,
                 needsPo = row.NeedsPo,
+                poNumber = row.PoNumber,
                 selectedTags,
                 plate = row.Plate,
                 vehicleModel = BuildVehicleModel(row.Make, row.Model, row.Year),
@@ -432,6 +460,7 @@ public class JobsController : ControllerBase
             request.PageSize.ToString(CultureInfo.InvariantCulture),
             request.Search,
             request.JobType,
+            request.OnYardOnly.ToString(CultureInfo.InvariantCulture),
             request.WofStatus,
             request.PaintStatus,
             request.XeroStatus,
@@ -512,6 +541,7 @@ public class JobsController : ControllerBase
             query?.Q?.Trim() ?? "",
             query?.Status?.Trim() ?? "",
             query?.IncludeArchived ?? false,
+            query?.OnYardOnly ?? false,
             query?.Wof?.Trim() ?? "",
             query?.Paint?.Trim() ?? "",
             NormalizeXeroStatus(query?.Xero),
@@ -534,6 +564,7 @@ public class JobsController : ControllerBase
         string? Q,
         string? Status,
         bool? IncludeArchived,
+        bool? OnYardOnly,
         string? Wof,
         string? Paint,
         string? Xero,
@@ -551,6 +582,7 @@ public class JobsController : ControllerBase
         string Search,
         string JobType,
         bool IncludeArchived,
+        bool OnYardOnly,
         string WofStatus,
         string PaintStatus,
         string XeroStatus,
@@ -564,6 +596,8 @@ public class JobsController : ControllerBase
         string? Status,
         bool IsUrgent,
         bool NeedsPo,
+        string? PoNumber,
+        bool PoRequestSent,
         DateTime CreatedAt,
         string? Notes,
         string? PrivateNotes,
@@ -644,10 +678,9 @@ public class JobsController : ControllerBase
     [HttpGet("{id:long}")]
     public async Task<IActionResult> GetById(long id, CancellationToken ct)
     {
-        var cacheDuration = await ResolveJobDetailCacheDurationAsync(id, ct);
         var payload = await _appCache.GetOrCreateJsonAsync(
             GetJobDetailCacheKey(id),
-            cacheDuration,
+            JobDetailCacheDuration,
             token => BuildJobDetailResponseJsonAsync(id, token),
             ct
         );
@@ -670,7 +703,8 @@ public class JobsController : ControllerBase
                         .Where(x => x.AggregateType == InvoiceOutboxService.JobAggregateType
                             && x.AggregateId == j.Id
                             && (x.MessageType == InvoiceOutboxService.CreateDraftMessageType
-                                || x.MessageType == InvoiceOutboxService.AttachExistingMessageType))
+                                || x.MessageType == InvoiceOutboxService.AttachExistingMessageType
+                                || x.MessageType == InvoiceOutboxService.ReplaceExistingMessageType))
                         .OrderByDescending(x => x.CreatedAt)
                         .Select(x => x.Status)
                         .FirstOrDefault(),
@@ -708,6 +742,7 @@ public class JobsController : ControllerBase
                         j.Status,
                         j.IsUrgent,
                         j.NeedsPo,
+                        j.IsOnYardOverride,
                         j.PoNumber,
                         j.InvoiceReference,
                         j.Notes,
@@ -813,6 +848,7 @@ public class JobsController : ControllerBase
                             createdAt = FormatDateTime(x.CreatedAt),
                             updatedAt = FormatDateTime(x.UpdatedAt),
                             processedAt = x.ProcessedAt.HasValue ? FormatDateTime(x.ProcessedAt.Value) : null,
+                            requiresXeroReconnect = InvoiceOutboxService.RequiresXeroReconnect(x.LastError),
                         })
                         .FirstOrDefault(),
                     PoRequestState = _db.JobPoStates.AsNoTracking()
@@ -831,15 +867,36 @@ public class JobsController : ControllerBase
         if (row is null)
             return null;
 
-        var tagNames = await (
-                from jt in _db.JobTags.AsNoTracking()
-                join t in _db.Tags.AsNoTracking() on jt.TagId equals t.Id
-                where jt.JobId == id && t.IsActive
-                select t.Name
-            )
-            .Distinct()
-            .ToListAsync(ct);
-        var effectiveInvoiceProcessing = row.Invoice is null ? row.InvoiceProcessing : null;
+        var displayState = await _db.Jobs.AsNoTracking()
+            .Where(x => x.Id == id)
+            .Select(x => new
+            {
+                AutomaticallyOffYard =
+                    _db.JobMechWorkflows.AsNoTracking()
+                    .Any(workflow => workflow.JobId == x.Id && workflow.Status == MechWorkflowStatus.Delivered)
+                    || _db.JobPaintServices.AsNoTracking()
+                        .Any(paint => paint.JobId == x.Id && paint.Status == "delivered"),
+                TagNames = (
+                        from jt in _db.JobTags.AsNoTracking()
+                        join tag in _db.Tags.AsNoTracking() on jt.TagId equals tag.Id
+                        where jt.JobId == x.Id && tag.IsActive
+                        select tag.Name
+                    )
+                    .Distinct()
+                    .ToArray(),
+            })
+            .FirstOrDefaultAsync(ct);
+        var tagNames = displayState?.TagNames ?? [];
+        var isArchived = string.Equals(row.Job.Status, "Archived", StringComparison.OrdinalIgnoreCase);
+        var isOnYard = !isArchived
+            && (row.Job.IsOnYardOverride ?? !(displayState?.AutomaticallyOffYard ?? false));
+        var effectiveInvoiceProcessing =
+            row.InvoiceProcessing is not null
+            && (row.InvoiceProcessing.status == "pending"
+                || row.InvoiceProcessing.status == "processing"
+                || row.Invoice is null)
+                ? row.InvoiceProcessing
+                : null;
         var latestCourtesyCarAgreement = await _db.CourtesyCarAgreements.AsNoTracking()
             .Where(x => x.JobId == id)
             .OrderByDescending(x => x.UpdatedAt)
@@ -871,36 +928,11 @@ public class JobsController : ControllerBase
         var poCorrelationId = string.IsNullOrWhiteSpace(poRequestState?.CorrelationId)
             ? JobPoStateService.BuildCorrelationId(id)
             : poRequestState.CorrelationId;
-        var persistedGmailLogs = await _db.GmailMessageLogs.AsNoTracking()
-            .Where(x => x.CorrelationId == poCorrelationId)
-            .Where(x => !string.IsNullOrWhiteSpace(x.GmailThreadId)
-                || (x.IsSystemInitiated && (x.Direction == "sent" || x.Direction == "reminder")))
-            .OrderByDescending(x => x.InternalDateMs ?? 0)
-            .ThenByDescending(x => x.Id)
-            .Take(50)
-            .Select(x => new
-            {
-                x.GmailThreadId,
-                x.InternalDateMs,
-                x.CreatedAt,
-                x.Direction,
-                x.IsSystemInitiated,
-            })
-            .ToListAsync(ct);
-        var gmailThreadId = persistedGmailLogs
-            .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x.GmailThreadId))
-            ?.GmailThreadId;
-        var latestSystemSentLog = persistedGmailLogs.FirstOrDefault(x =>
-            x.IsSystemInitiated && (x.Direction == "sent" || x.Direction == "reminder"));
         var latestPersistedSentAt = poRequestState?.LastRequestSentAt
-            ?? poRequestState?.FirstRequestSentAt
-            ?? (latestSystemSentLog?.InternalDateMs is { } sentAtMs
-                ? DateTimeOffset.FromUnixTimeMilliseconds(sentAtMs).UtcDateTime
-                : latestSystemSentLog?.CreatedAt);
+            ?? poRequestState?.FirstRequestSentAt;
         var hasPersistedPoRequest = poRequestState?.FirstRequestSentAt is not null
             || poRequestState?.LastRequestSentAt is not null
-            || latestPersistedSentAt is not null
-            || !string.IsNullOrWhiteSpace(gmailThreadId);
+            || latestPersistedSentAt is not null;
 
         var job = new
         {
@@ -908,6 +940,8 @@ public class JobsController : ControllerBase
             status = MapDetailStatus(row.Job.Status),
             isUrgent = row.Job.IsUrgent,
             needsPo = row.Job.NeedsPo,
+            isOnYard,
+            yardSource = isArchived ? "automatic" : row.Job.IsOnYardOverride.HasValue ? "manual" : "automatic",
             poNumber = row.Job.PoNumber,
             invoiceReference = row.Job.InvoiceReference,
             tags = tagNames.ToArray(),
@@ -975,7 +1009,7 @@ public class JobsController : ControllerBase
                     lastRequestSentAt = latestPersistedSentAt is { } lastSentAt
                         ? FormatDateTime(lastSentAt)
                         : null,
-                    gmailThreadId,
+                    gmailThreadId = (string?)null,
                 }
                 : null,
             courtesyCarAgreement = latestCourtesyCarAgreement,
@@ -1041,7 +1075,6 @@ public class JobsController : ControllerBase
         var activeJobs = await _db.Jobs.AsNoTracking()
             .Where(x => jobIds.Contains(x.Id))
             .Where(x => x.NeedsPo)
-            .Where(x => !EF.Functions.ILike(x.Status, "archived"))
             .Select(x => new { x.Id })
             .ToListAsync(ct);
         var activeJobIds = activeJobs.Select(x => x.Id).ToHashSet();
@@ -1087,8 +1120,15 @@ public class JobsController : ControllerBase
                 from p in _db.JobPaintServices.AsNoTracking()
                 join j in _db.Jobs.AsNoTracking() on p.JobId equals j.Id
                 join v in _db.Vehicles.AsNoTracking() on j.VehicleId equals v.Id
+                join c in _db.Customers.AsNoTracking() on j.CustomerId equals c.Id
                 join snapshot in wofSnapshots on j.Id equals snapshot.JobId
-                where !EF.Functions.ILike(j.Status, "archived")
+                where !EF.Functions.ILike(j.Status ?? "", "archived")
+                    && (j.IsOnYardOverride == true
+                        || (j.IsOnYardOverride == null
+                            && !_db.JobMechWorkflows.AsNoTracking()
+                                .Any(workflow => workflow.JobId == j.Id && workflow.Status == MechWorkflowStatus.Delivered)
+                            && !_db.JobPaintServices.AsNoTracking()
+                                .Any(paint => paint.JobId == j.Id && paint.Status == "delivered")))
                 orderby j.CreatedAt descending
                 select new
                 {
@@ -1108,6 +1148,7 @@ public class JobsController : ControllerBase
                     v.Make,
                     v.Model,
                     v.Year,
+                    c.BusinessCode,
                     JobStatus = j.Status,
                     p.Status,
                     p.CurrentStage,
@@ -1125,6 +1166,7 @@ public class JobsController : ControllerBase
             year = r.Year,
             make = r.Make,
             model = r.Model,
+            customerCode = string.IsNullOrWhiteSpace(r.BusinessCode) ? "WI" : r.BusinessCode,
             jobStatus = r.JobStatus,
             status = r.Status,
             currentStage = r.CurrentStage,
@@ -1608,10 +1650,18 @@ public class JobsController : ControllerBase
         service.CurrentStage = normalized.CurrentStage;
         service.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        var lifecycle = await _jobLifecycleService.EvaluateAsync(id, ct);
         await InvalidateJobDetailCachesAsync(id, ct);
         await InvalidatePaintBoardCacheAsync(ct);
 
-        return Ok(new { success = true, status = service.Status, currentStage = service.CurrentStage });
+        return Ok(new
+        {
+            success = true,
+            status = service.Status,
+            currentStage = service.CurrentStage,
+            isOnYard = lifecycle?.IsOnYard,
+            archivedNow = lifecycle?.ArchivedNow ?? false
+        });
     }
 
     [HttpPut("{id:long}/paint-service/panels")]
@@ -1674,7 +1724,7 @@ public class JobsController : ControllerBase
         if (vehicle is null)
             return NotFound(new { error = "Vehicle not found." });
 
-        var lookupResult = await _nztaExpiryLookupService.LookupVehicleDetailsAsync(vehicle.Plate, ct);
+        var lookupResult = await _nztaExpiryLookupService.LookupVehicleDetailsInteractiveAsync(vehicle.Plate, ct);
         if (!lookupResult.Success)
         {
             return BadRequest(new
@@ -1789,6 +1839,7 @@ public class JobsController : ControllerBase
     public record UpdateJobNotesRequest(string? Notes);
     public record UpdateJobPrivateNotesRequest(string? PrivateNotes);
     public record UpdateJobPoSelectionRequest(string? PoNumber, string? InvoiceReference);
+    public record UpdateJobPoNumberRequest(string? PoNumber);
 
     [HttpPut("{id:long}/notes")]
     public async Task<IActionResult> UpdateNotes(long id, [FromBody] UpdateJobNotesRequest req, CancellationToken ct)
@@ -1870,6 +1921,74 @@ public class JobsController : ControllerBase
             success = true,
             poNumber = job.PoNumber,
             invoiceReference = job.InvoiceReference,
+        });
+    }
+
+    [HttpPut("{id:long}/po-number")]
+    public async Task<IActionResult> UpdatePoNumber(long id, [FromBody] UpdateJobPoNumberRequest req, CancellationToken ct)
+    {
+        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (job is null)
+            return NotFound(new { error = "Job not found." });
+
+        var poNumber = string.IsNullOrWhiteSpace(req?.PoNumber) ? null : req.PoNumber.Trim();
+        job.PoNumber = poNumber;
+        job.UpdatedAt = DateTime.UtcNow;
+
+        var correlationId = JobPoStateService.BuildCorrelationId(job.Id);
+        var state = await _db.JobPoStates.FirstOrDefaultAsync(x => x.JobId == id, ct);
+        if (state is null)
+        {
+            state = new JobPoState
+            {
+                JobId = id,
+                CorrelationId = correlationId,
+                CreatedAt = DateTime.UtcNow,
+            };
+            _db.JobPoStates.Add(state);
+        }
+
+        state.ConfirmedPoNumber = poNumber;
+        state.ConfirmationNote = string.IsNullOrWhiteSpace(poNumber)
+            ? "PO number cleared manually in Job Detail."
+            : "PO number entered manually in Job Detail.";
+        state.UpdatedAt = DateTime.UtcNow;
+
+        if (!string.IsNullOrWhiteSpace(poNumber))
+        {
+            state.Status = JobPoStateStatus.PoConfirmed;
+            state.FollowUpEnabled = false;
+            state.NextFollowUpDueAt = null;
+
+            var inactive = await _db.InactiveGmailCorrelations
+                .FirstOrDefaultAsync(x => x.CorrelationId == correlationId, ct);
+            if (inactive is null)
+            {
+                _db.InactiveGmailCorrelations.Add(new InactiveGmailCorrelation
+                {
+                    CorrelationId = correlationId,
+                    Reason = $"PO entered manually in Job Detail for job {job.Id}",
+                    CreatedAt = DateTime.UtcNow,
+                });
+            }
+        }
+        else
+        {
+            await _db.InactiveGmailCorrelations
+                .Where(x => x.CorrelationId == correlationId)
+                .ExecuteDeleteAsync(ct);
+        }
+
+        await _db.SaveChangesAsync(ct);
+        await _jobPoStateService.SyncStateForJobAsync(id, ct);
+        await InvalidateJobDetailCachesAsync(id, ct);
+        await InvalidatePoUnreadSummaryCacheAsync(ct);
+        await TouchJobsListVersionAsync(ct);
+
+        return Ok(new
+        {
+            success = true,
+            poNumber = job.PoNumber,
         });
     }
 
@@ -2239,37 +2358,17 @@ public class JobsController : ControllerBase
         if (string.IsNullOrWhiteSpace(status))
             return BadRequest(new { error = "Status is required." });
 
-        var correlationId = BuildCorrelationId(job.Id);
         if (string.Equals(status, "Archived", StringComparison.OrdinalIgnoreCase))
         {
             job.Status = "Archived";
+            job.IsOnYardOverride = null;
             job.UpdatedAt = DateTime.UtcNow;
-
-            var existingInactive = await _db.InactiveGmailCorrelations
-                .FirstOrDefaultAsync(x => x.CorrelationId == correlationId, ct);
-            if (existingInactive is null)
-            {
-                _db.InactiveGmailCorrelations.Add(new InactiveGmailCorrelation
-                {
-                    CorrelationId = correlationId,
-                    Reason = $"Job {job.Id} archived",
-                    CreatedAt = DateTime.UtcNow,
-                });
-            }
         }
         else if (string.Equals(status, "In Shop", StringComparison.OrdinalIgnoreCase))
         {
             job.Status = "In Shop";
             job.UpdatedAt = DateTime.UtcNow;
 
-            var archivedInactive = await _db.InactiveGmailCorrelations
-                .FirstOrDefaultAsync(
-                    x => x.CorrelationId == correlationId
-                        && x.Reason != null
-                        && EF.Functions.ILike(x.Reason, "%archived%"),
-                    ct);
-            if (archivedInactive is not null)
-                _db.InactiveGmailCorrelations.Remove(archivedInactive);
         }
         else
         {
@@ -2285,6 +2384,45 @@ public class JobsController : ControllerBase
         await InvalidatePoUnreadSummaryCacheAsync(ct);
 
         return Ok(new { status = job.Status });
+    }
+
+    public sealed record UpdateYardStatusRequest(bool? IsOnYard);
+    public sealed record UpdateYardStatusBatchRequest(long[]? JobIds, bool? IsOnYard);
+
+    [HttpPut("yard-status/batch")]
+    public async Task<IActionResult> UpdateYardStatusBatch(
+        [FromBody] UpdateYardStatusBatchRequest request,
+        CancellationToken ct)
+    {
+        var result = await _jobLifecycleService.SetYardOverrideBatchAsync(
+            request?.JobIds ?? [],
+            request?.IsOnYard,
+            ct);
+
+        return Ok(new
+        {
+            updated = result.Updated,
+            skipped = result.Skipped,
+            isOnYard = request?.IsOnYard,
+        });
+    }
+
+    [HttpPut("{id:long}/yard-status")]
+    public async Task<IActionResult> UpdateYardStatus(
+        long id,
+        [FromBody] UpdateYardStatusRequest request,
+        CancellationToken ct)
+    {
+        var result = await _jobLifecycleService.SetYardOverrideAsync(id, request?.IsOnYard, ct);
+        if (result is null)
+            return NotFound(new { error = "Job not found." });
+
+        return Ok(new
+        {
+            isOnYard = result.IsOnYard,
+            yardSource = result.YardSource,
+            archivedNow = result.ArchivedNow
+        });
     }
 
     [HttpPut("{id:long}/created-at")]

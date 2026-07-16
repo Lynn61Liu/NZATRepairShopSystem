@@ -2,7 +2,11 @@ using System.Text;
 
 namespace Workshop.Api.Services;
 
-public sealed record GmailMessageAttachment(string FileName, string ContentType, byte[] ContentBytes);
+public sealed record GmailMessageAttachment(
+    string FileName,
+    string ContentType,
+    byte[] ContentBytes,
+    string? ContentId = null);
 
 public static class GmailMimeMessageBuilder
 {
@@ -15,7 +19,7 @@ public static class GmailMimeMessageBuilder
         string? replyToRfcMessageId,
         string? referencesHeader,
         IReadOnlyList<GmailMessageAttachment>? attachments = null)
-        => BuildRawMessage(to, null, subject, body, isHtmlBody, htmlBodyOverride, replyToRfcMessageId, referencesHeader, attachments);
+        => BuildRawMessage(to, null, subject, body, isHtmlBody, htmlBodyOverride, replyToRfcMessageId, referencesHeader, attachments, null);
 
     public static string BuildRawMessage(
         string to,
@@ -26,7 +30,8 @@ public static class GmailMimeMessageBuilder
         string? htmlBodyOverride,
         string? replyToRfcMessageId,
         string? referencesHeader,
-        IReadOnlyList<GmailMessageAttachment>? attachments = null)
+        IReadOnlyList<GmailMessageAttachment>? attachments = null,
+        string? bcc = null)
     {
         var normalizedBody = !string.IsNullOrWhiteSpace(htmlBodyOverride)
             ? htmlBodyOverride
@@ -34,7 +39,16 @@ public static class GmailMimeMessageBuilder
                 ? body
                 : ConvertPlainTextToHtml(body);
 
-        var hasAttachments = attachments is { Count: > 0 };
+        var preparedAttachments = attachments?
+            .Select(attachment => new PreparedMimeAttachment(attachment, NormalizeContentId(attachment.ContentId)))
+            .ToArray() ?? [];
+        var inlineAttachments = preparedAttachments
+            .Where(item => !string.IsNullOrWhiteSpace(item.ContentId))
+            .ToArray();
+        var regularAttachments = preparedAttachments
+            .Where(item => string.IsNullOrWhiteSpace(item.ContentId))
+            .Select(item => item.Attachment)
+            .ToArray();
         var bodyHeaders = new List<string>
         {
             "Content-Type: text/html; charset=utf-8",
@@ -51,6 +65,9 @@ public static class GmailMimeMessageBuilder
         if (!string.IsNullOrWhiteSpace(cc))
             headers.Add($"Cc: {cc}");
 
+        if (!string.IsNullOrWhiteSpace(bcc))
+            headers.Add($"Bcc: {bcc}");
+
         if (!string.IsNullOrWhiteSpace(replyToRfcMessageId))
             headers.Add($"In-Reply-To: {replyToRfcMessageId.Trim()}");
 
@@ -58,7 +75,7 @@ public static class GmailMimeMessageBuilder
         if (!string.IsNullOrWhiteSpace(normalizedReferences))
             headers.Add($"References: {normalizedReferences}");
 
-        if (!hasAttachments)
+        if (inlineAttachments.Length == 0 && regularAttachments.Length == 0)
         {
             headers.AddRange(bodyHeaders);
             headers.Add("");
@@ -66,29 +83,99 @@ public static class GmailMimeMessageBuilder
             return EncodeRawMime(headers);
         }
 
-        var boundary = $"mix-{Guid.NewGuid():N}";
-        headers.Add($"Content-Type: multipart/mixed; boundary=\"{boundary}\"");
-        headers.Add("");
-        headers.Add($"--{boundary}");
-        headers.AddRange(bodyHeaders);
-        headers.Add("");
-        headers.Add(normalizedBody);
-
-        foreach (var attachment in attachments!)
+        if (regularAttachments.Length == 0)
         {
+            var relatedBoundary = $"rel-{Guid.NewGuid():N}";
+            headers.Add($"Content-Type: multipart/related; boundary=\"{relatedBoundary}\"");
             headers.Add("");
-            headers.Add($"--{boundary}");
-            headers.Add($"Content-Type: {attachment.ContentType}; name=\"{EscapeHeaderValue(attachment.FileName)}\"");
-            headers.Add($"Content-Disposition: attachment; filename=\"{EscapeHeaderValue(attachment.FileName)}\"");
-            headers.Add("Content-Transfer-Encoding: base64");
+            AppendHtmlPart(headers, relatedBoundary, bodyHeaders, normalizedBody);
+            foreach (var inlineAttachment in inlineAttachments)
+                AppendInlinePart(headers, relatedBoundary, inlineAttachment);
+
             headers.Add("");
-            headers.Add(EncodeBase64Mime(attachment.ContentBytes));
+            headers.Add($"--{relatedBoundary}--");
+            return EncodeRawMime(headers);
         }
 
+        var mixedBoundary = $"mix-{Guid.NewGuid():N}";
+        headers.Add($"Content-Type: multipart/mixed; boundary=\"{mixedBoundary}\"");
         headers.Add("");
-        headers.Add($"--{boundary}--");
+        headers.Add($"--{mixedBoundary}");
+
+        if (inlineAttachments.Length > 0)
+        {
+            var relatedBoundary = $"rel-{Guid.NewGuid():N}";
+            headers.Add($"Content-Type: multipart/related; boundary=\"{relatedBoundary}\"");
+            headers.Add("");
+            AppendHtmlPart(headers, relatedBoundary, bodyHeaders, normalizedBody);
+            foreach (var inlineAttachment in inlineAttachments)
+                AppendInlinePart(headers, relatedBoundary, inlineAttachment);
+
+            headers.Add("");
+            headers.Add($"--{relatedBoundary}--");
+        }
+        else
+        {
+            headers.AddRange(bodyHeaders);
+            headers.Add("");
+            headers.Add(normalizedBody);
+        }
+
+        foreach (var attachment in regularAttachments)
+            AppendRegularAttachmentPart(headers, mixedBoundary, attachment);
+
+        headers.Add("");
+        headers.Add($"--{mixedBoundary}--");
 
         return EncodeRawMime(headers);
+    }
+
+    private static void AppendHtmlPart(
+        List<string> lines,
+        string boundary,
+        IReadOnlyCollection<string> bodyHeaders,
+        string normalizedBody)
+    {
+        lines.Add($"--{boundary}");
+        lines.AddRange(bodyHeaders);
+        lines.Add("");
+        lines.Add(normalizedBody);
+    }
+
+    private static void AppendInlinePart(
+        List<string> lines,
+        string boundary,
+        PreparedMimeAttachment inlineAttachment)
+    {
+        var attachment = inlineAttachment.Attachment;
+        var fileName = EscapeHeaderValue(attachment.FileName);
+        var contentId = inlineAttachment.ContentId!;
+
+        lines.Add("");
+        lines.Add($"--{boundary}");
+        lines.Add($"Content-Type: {NormalizeContentType(attachment.ContentType)}; name=\"{fileName}\"");
+        lines.Add($"Content-Disposition: inline; filename=\"{fileName}\"");
+        lines.Add($"Content-ID: <{contentId}>");
+        lines.Add($"X-Attachment-Id: {contentId}");
+        lines.Add("Content-Transfer-Encoding: base64");
+        lines.Add("");
+        lines.Add(EncodeBase64Mime(attachment.ContentBytes));
+    }
+
+    private static void AppendRegularAttachmentPart(
+        List<string> lines,
+        string boundary,
+        GmailMessageAttachment attachment)
+    {
+        var fileName = EscapeHeaderValue(attachment.FileName);
+
+        lines.Add("");
+        lines.Add($"--{boundary}");
+        lines.Add($"Content-Type: {NormalizeContentType(attachment.ContentType)}; name=\"{fileName}\"");
+        lines.Add($"Content-Disposition: attachment; filename=\"{fileName}\"");
+        lines.Add("Content-Transfer-Encoding: base64");
+        lines.Add("");
+        lines.Add(EncodeBase64Mime(attachment.ContentBytes));
     }
 
     private static string EncodeRawMime(IEnumerable<string> lines)
@@ -108,9 +195,34 @@ public static class GmailMimeMessageBuilder
     }
 
     private static string EscapeHeaderValue(string value) =>
-        (value ?? "")
+        RemoveHeaderLineBreaks(value)
             .Replace("\\", "\\\\")
             .Replace("\"", "\\\"");
+
+    private static string NormalizeContentType(string? value)
+    {
+        var normalized = RemoveHeaderLineBreaks(value).Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? "application/octet-stream" : normalized;
+    }
+
+    private static string? NormalizeContentId(string? value)
+    {
+        var normalized = RemoveHeaderLineBreaks(value).Trim().Trim('<', '>');
+        if (string.IsNullOrWhiteSpace(normalized))
+            return null;
+
+        var sanitized = new string(normalized
+            .Where(character =>
+                character is >= 'a' and <= 'z' or
+                    >= 'A' and <= 'Z' or
+                    >= '0' and <= '9' or
+                    '.' or '_' or '-' or '+' or '@')
+            .ToArray());
+        return string.IsNullOrWhiteSpace(sanitized) ? null : sanitized;
+    }
+
+    private static string RemoveHeaderLineBreaks(string? value) =>
+        (value ?? "").Replace("\r", "").Replace("\n", "");
 
     private static string EncodeMimeHeader(string value)
     {
@@ -161,4 +273,6 @@ public static class GmailMimeMessageBuilder
 </html>
 """;
     }
+
+    private sealed record PreparedMimeAttachment(GmailMessageAttachment Attachment, string? ContentId);
 }

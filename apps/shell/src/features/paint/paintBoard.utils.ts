@@ -66,6 +66,7 @@ export type PaintBoardJob = {
   id: string;
   createdAt: string;
   plate: string;
+  customerCode?: string | null;
   year?: number;
   make?: string;
   model?: string;

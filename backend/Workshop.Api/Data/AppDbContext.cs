@@ -245,6 +245,7 @@ public class AppDbContext : DbContext
         j.Property(x => x.Status).HasColumnName("status").IsRequired();
         j.Property(x => x.IsUrgent).HasColumnName("is_urgent");
         j.Property(x => x.NeedsPo).HasColumnName("needs_po");
+        j.Property(x => x.IsOnYardOverride).HasColumnName("is_on_yard_override");
         j.Property(x => x.UseServiceCatalogMapping).HasColumnName("use_service_catalog_mapping").HasDefaultValue(false);
         j.Property(x => x.PoNumber).HasColumnName("po_number");
         j.Property(x => x.InvoiceReference).HasColumnName("invoice_reference");

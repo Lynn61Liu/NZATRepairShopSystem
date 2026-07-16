@@ -14,13 +14,19 @@ public sealed class MechWorkflowService
     private const string BoardSortSettingKey = "mech-board:sort-order";
     private readonly AppDbContext _db;
     private readonly WofQueryService _wofQueryService;
+    private readonly JobLifecycleService? _jobLifecycleService;
     private readonly IAppCache? _cache;
 
-    public MechWorkflowService(AppDbContext db, WofQueryService wofQueryService, IAppCache? cache = null)
+    public MechWorkflowService(
+        AppDbContext db,
+        WofQueryService wofQueryService,
+        IAppCache? cache = null,
+        JobLifecycleService? jobLifecycleService = null)
     {
         _db = db;
         _wofQueryService = wofQueryService;
         _cache = cache;
+        _jobLifecycleService = jobLifecycleService;
     }
 
     public async Task<WofServiceResult> GetBoardAsync(CancellationToken ct)
@@ -38,7 +44,14 @@ public sealed class MechWorkflowService
             join customer in _db.Customers.AsNoTracking() on job.CustomerId equals customer.Id into customers
             from customer in customers.DefaultIfEmpty()
             join workflow in _db.JobMechWorkflows.AsNoTracking() on job.Id equals workflow.JobId
-            where jobIds.Contains(job.Id) && !EF.Functions.ILike(job.Status, "archived")
+            where jobIds.Contains(job.Id)
+                && !EF.Functions.ILike(job.Status ?? "", "archived")
+                && (job.IsOnYardOverride == true
+                    || (job.IsOnYardOverride == null
+                        && !_db.JobMechWorkflows.AsNoTracking()
+                            .Any(candidate => candidate.JobId == job.Id && candidate.Status == MechWorkflowStatus.Delivered)
+                        && !_db.JobPaintServices.AsNoTracking()
+                            .Any(paint => paint.JobId == job.Id && paint.Status == "delivered")))
             select new { Job = job, Vehicle = vehicle, Customer = customer, Workflow = workflow }
         ).ToListAsync(ct);
 
@@ -183,6 +196,8 @@ public sealed class MechWorkflowService
         workflow.Status = status;
         workflow.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        if (_jobLifecycleService is not null)
+            await _jobLifecycleService.EvaluateAsync(jobId, ct);
         await InvalidateRelatedCachesAsync(jobId, ct);
 
         return WofServiceResult.Ok(ToWorkflowPayload(workflow, eligibility));
@@ -359,7 +374,8 @@ public sealed class MechWorkflowService
         var legacyMechIds = await _db.JobMechServices.AsNoTracking().Select(x => x.JobId).Distinct().ToListAsync(ct);
         var candidateIds = wofIds.Concat(selectedMechIds).Concat(legacyMechIds).Distinct().ToArray();
         var existingJobIds = await _db.Jobs.AsNoTracking()
-            .Where(x => candidateIds.Contains(x.Id))
+            .Where(x => candidateIds.Contains(x.Id)
+                && !EF.Functions.ILike(x.Status ?? "", "archived"))
             .Select(x => x.Id)
             .ToListAsync(ct);
         var existing = existingJobIds.ToHashSet();

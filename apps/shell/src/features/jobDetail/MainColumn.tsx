@@ -118,10 +118,13 @@ type MainColumnProps = {
   isCreatingXeroInvoice?: boolean;
   onAttachXeroInvoice?: (invoiceNumber: string) => Promise<{ success: boolean; message?: string }>;
   isAttachingXeroInvoice?: boolean;
+  onReplaceXeroInvoice?: (invoiceNumber: string) => Promise<{ success: boolean; message?: string }>;
+  isReplacingXeroInvoice?: boolean;
   onDetachXeroInvoice?: () => Promise<{ success: boolean; message?: string }>;
   isDetachingXeroInvoice?: boolean;
   onArchiveJob?: () => Promise<{ success: boolean; message?: string }>;
   onUnarchiveJob?: () => Promise<{ success: boolean; message?: string }>;
+  onSaveYardStatus?: (isOnYard: boolean | null) => Promise<{ success: boolean; message?: string }>;
   isArchivingJob?: boolean;
   onDeleteJob?: () => void;
   isDeletingJob?: boolean;
@@ -129,6 +132,7 @@ type MainColumnProps = {
   onSaveTags?: (tagIds: string[]) => Promise<{ success: boolean; message?: string; tags?: string[] }>;
   onSaveNotes?: (notes: string) => Promise<{ success: boolean; message?: string }>;
   onSavePrivateNotes?: (privateNotes: string) => Promise<{ success: boolean; message?: string }>;
+  onSavePoNumber?: (poNumber: string) => Promise<{ success: boolean; message?: string; poNumber?: string }>;
   // onCreatePaintService?: (status?: string) => Promise<{ success: boolean; message?: string }>;
 };
 
@@ -174,10 +178,13 @@ export function MainColumn({
   isCreatingXeroInvoice,
   onAttachXeroInvoice,
   isAttachingXeroInvoice,
+  onReplaceXeroInvoice,
+  isReplacingXeroInvoice,
   onDetachXeroInvoice,
   isDetachingXeroInvoice,
   onArchiveJob,
   onUnarchiveJob,
+  onSaveYardStatus,
   isArchivingJob,
   onDeleteJob,
   isDeletingJob,
@@ -185,6 +192,7 @@ export function MainColumn({
   onSaveTags,
   onSaveNotes,
   onSavePrivateNotes,
+  onSavePoNumber,
   onCreatePaintService,
 }: MainColumnProps) {
   const hasPartsServices = partsServices.length > 0;
@@ -219,17 +227,7 @@ export function MainColumn({
   const tabs = useMemo(() => {
     const base: { key: JobDetailTabKey; label: ReactNode }[] = [
       { key: "WOF", label: JOB_DETAIL_TEXT.tabs.wof },
-      { key: "Mechanical", label: JOB_DETAIL_TEXT.tabs.mechanical },
     ];
-    if (hasPartsServices || partsTabVisibleForCreate) {
-      base.push({ key: "Parts", label: JOB_DETAIL_TEXT.tabs.parts });
-    }
-    base.push(
-      { key: "Paint", label: JOB_DETAIL_TEXT.tabs.paint },
-      { key: "Worklog", label: JOB_DETAIL_TEXT.tabs.worklog },
-      { key: "Log", label: JOB_DETAIL_TEXT.tabs.log },
-      { key: "Invoice", label: JOB_DETAIL_TEXT.tabs.invoice }
-    );
     if (needsPo) {
       base.push({
         key: "PO",
@@ -245,6 +243,16 @@ export function MainColumn({
         ),
       });
     }
+    base.push({ key: "Mechanical", label: JOB_DETAIL_TEXT.tabs.mechanical });
+    if (hasPartsServices || partsTabVisibleForCreate) {
+      base.push({ key: "Parts", label: JOB_DETAIL_TEXT.tabs.parts });
+    }
+    base.push(
+      { key: "Paint", label: JOB_DETAIL_TEXT.tabs.paint },
+      { key: "Worklog", label: JOB_DETAIL_TEXT.tabs.worklog },
+      { key: "Invoice", label: JOB_DETAIL_TEXT.tabs.invoice },
+      { key: "Log", label: JOB_DETAIL_TEXT.tabs.log }
+    );
     return base;
   }, [hasPartsServices, needsPo, partsTabVisibleForCreate, invoiceDashboard.poPanel.unreadReplyCount]);
 
@@ -294,6 +302,7 @@ export function MainColumn({
           customerPhone={jobData.customer.phone}
           externalInvoiceId={jobData.invoice?.externalInvoiceId}
           needsPo={needsPo}
+          poNumber={jobData.poNumber}
           paintPanels={paintService?.panels ?? null}
           vin={jobData.vehicle.vin}
           nzFirstRegistration={jobData.vehicle.nzFirstRegistration}
@@ -301,6 +310,9 @@ export function MainColumn({
           hasWofService={jobData.hasWofService}
           onArchive={onArchiveJob}
           onUnarchive={onUnarchiveJob}
+          isOnYard={jobData.isOnYard !== false}
+          yardSource={jobData.yardSource}
+          onSaveYardStatus={onSaveYardStatus}
           isArchiving={isArchivingJob}
           onDelete={onDeleteJob}
           isDeleting={isDeletingJob}
@@ -308,6 +320,7 @@ export function MainColumn({
           onSaveTags={onSaveTags}
           onSaveNotes={onSaveNotes}
           onSavePrivateNotes={onSavePrivateNotes}
+          onSavePoNumber={onSavePoNumber}
           onCreatePaintService={onCreatePaintService}
           onCreateXeroInvoice={onCreateXeroInvoice}
           isCreatingXeroInvoice={isCreatingXeroInvoice}
@@ -409,7 +422,7 @@ export function MainColumn({
         {activeTab === "Worklog" ? (
           <WorklogPanel jobData={jobData} paintPanels={paintService?.panels ?? null} />
         ) : null}
-        {activeTab === "Log" ? <LogPanel /> : null}
+        {activeTab === "Log" ? <LogPanel jobId={jobData.id} /> : null}
         {activeTab === "Invoice" ? (
           <InvoicePanel
             model={invoiceDashboard.invoicePanel}
@@ -419,6 +432,8 @@ export function MainColumn({
             isCreatingInvoice={isCreatingXeroInvoice}
             onAttachInvoice={onAttachXeroInvoice}
             isAttachingInvoice={isAttachingXeroInvoice}
+            onReplaceInvoice={onReplaceXeroInvoice}
+            isReplacingInvoice={isReplacingXeroInvoice}
             onDetachInvoice={onDetachXeroInvoice}
             isDetachingInvoice={isDetachingXeroInvoice}
             needsPo={needsPo}

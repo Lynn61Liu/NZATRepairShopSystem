@@ -27,7 +27,9 @@ export function searchParamsToFilters(sp: URLSearchParams): JobsFilters {
   const next: JobsFilters = { ...DEFAULT_JOBS_FILTERS };
 
   next.search = sp.get("q") ?? "";
-  next.jobType = (sp.get("status") ?? "") as JobsFilters["jobType"];
+  if (sp.has("status")) {
+    next.jobType = (sp.get("status") ?? "") as JobsFilters["jobType"];
+  }
   next.wofStatus = (sp.get("wof") ?? "") as JobsFilters["wofStatus"];
   next.paintStatus = (sp.get("paint") ?? "") as JobsFilters["paintStatus"];
   next.xeroStatus = (sp.get("xero") ?? "") as JobsFilters["xeroStatus"];

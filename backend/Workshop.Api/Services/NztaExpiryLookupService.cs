@@ -1,12 +1,17 @@
 using System.Globalization;
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using Microsoft.Playwright;
+using Microsoft.Extensions.Options;
 using System.Text.Json;
+using Workshop.Api.Options;
 
 namespace Workshop.Api.Services;
 
 public sealed class NztaExpiryLookupService
 {
+    private static readonly SemaphoreSlim InteractiveBrowserLock = new(1, 1);
+    private static readonly JsonSerializerOptions BrowserJsonOptions = new(JsonSerializerDefaults.Web);
     private const string CheckExpiryUrl = "https://transact.nzta.govt.nz/v2/check-expiry";
     private const string VehicleExpiryApiPath = "/v2/api/vehicles/expiry/details";
     private const float DefaultTimeoutMs = 25000;
@@ -29,10 +34,14 @@ public sealed class NztaExpiryLookupService
         RegexOptions.Compiled);
 
     private readonly ILogger<NztaExpiryLookupService> _logger;
+    private readonly NztaBrowserOptions _browserOptions;
 
-    public NztaExpiryLookupService(ILogger<NztaExpiryLookupService> logger)
+    public NztaExpiryLookupService(
+        ILogger<NztaExpiryLookupService> logger,
+        IOptions<NztaBrowserOptions> browserOptions)
     {
         _logger = logger;
+        _browserOptions = browserOptions.Value;
     }
 
     public async Task<NztaExpiryLookupResult> LookupInspectionExpiryAsync(string plate, CancellationToken ct)
@@ -116,6 +125,146 @@ public sealed class NztaExpiryLookupService
             _logger.LogWarning(ex, "NZTA WOF/COF expiry lookup failed for plate {Plate}", normalizedPlate);
             return NztaVehicleDetailsLookupResult.Failed(ex.Message);
         }
+    }
+
+    public async Task<NztaVehicleDetailsLookupResult> LookupVehicleDetailsInteractiveAsync(string plate, CancellationToken ct)
+    {
+        var normalizedPlate = NormalizePlate(plate);
+        if (string.IsNullOrWhiteSpace(normalizedPlate))
+            return NztaVehicleDetailsLookupResult.Failed("Plate is empty after normalization.");
+
+        if (!await InteractiveBrowserLock.WaitAsync(0, ct))
+            return NztaVehicleDetailsLookupResult.Failed("Another NZTA browser lookup is already running. Please wait and try again.");
+
+        Process? process = null;
+        try
+        {
+            var shellDirectory = FindShellDirectory();
+            var scriptPath = Path.Combine(shellDirectory, "scripts", "nztaSingleLookup.mjs");
+            var timeoutSeconds = Math.Max(60, _browserOptions.TimeoutSeconds);
+            var payload = JsonSerializer.Serialize(new
+            {
+                plate = normalizedPlate,
+                profilePath = ResolveProfilePath(_browserOptions.BrowserProfilePath),
+                timeoutMs = timeoutSeconds * 1000,
+            }, BrowserJsonOptions);
+
+            var startInfo = new ProcessStartInfo("node")
+            {
+                WorkingDirectory = shellDirectory,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+            startInfo.ArgumentList.Add(scriptPath);
+            startInfo.ArgumentList.Add(payload);
+
+            process = Process.Start(startInfo)
+                ?? throw new InvalidOperationException("Failed to start the NZTA browser process.");
+
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds + 15));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(linkedCts.Token);
+            var stderrTask = process.StandardError.ReadToEndAsync(linkedCts.Token);
+
+            try
+            {
+                await process.WaitForExitAsync(linkedCts.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                TryKillProcess(process);
+                return NztaVehicleDetailsLookupResult.Failed(
+                    "NZTA browser lookup timed out. Please complete the verification in Chrome and try again.");
+            }
+
+            var stdout = await stdoutTask;
+            var stderr = await stderrTask;
+            if (process.ExitCode != 0)
+            {
+                _logger.LogWarning("NZTA browser process exited {ExitCode}: {Error}", process.ExitCode, stderr);
+                return NztaVehicleDetailsLookupResult.Failed("NZTA browser process failed.");
+            }
+
+            var response = JsonSerializer.Deserialize<NztaBrowserResponse>(stdout, BrowserJsonOptions);
+            if (response is null)
+            {
+                _logger.LogWarning("NZTA browser returned an invalid response: {Response}", Truncate(stdout, 1000));
+                return NztaVehicleDetailsLookupResult.Failed("NZTA browser returned an invalid response.");
+            }
+
+            if (!response.Success)
+            {
+                _logger.LogWarning(
+                    "NZTA interactive lookup returned status {Status}: {Response}",
+                    response.Status,
+                    Truncate(response.Text ?? "", 1000));
+                return NztaVehicleDetailsLookupResult.Failed(
+                    response.Error ?? $"NZTA API returned status {response.Status}.",
+                    Truncate(response.Text ?? "", 2000));
+            }
+
+            using var json = JsonDocument.Parse(response.Text ?? "{}");
+            var resolved = ResolveVehicleDetails(json.RootElement);
+            return NztaVehicleDetailsLookupResult.Found(
+                resolved.WofExpiry,
+                resolved.LicenceExpiry,
+                resolved.RucLicenceNumber,
+                resolved.RucEndDistance,
+                Truncate(response.Text ?? "", 2000));
+        }
+        catch (OperationCanceledException)
+        {
+            if (process is not null)
+                TryKillProcess(process);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "NZTA interactive vehicle lookup failed for plate {Plate}", normalizedPlate);
+            return NztaVehicleDetailsLookupResult.Failed(ex.Message);
+        }
+        finally
+        {
+            process?.Dispose();
+            InteractiveBrowserLock.Release();
+        }
+    }
+
+    private static void TryKillProcess(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+        catch
+        {
+            // Best effort cleanup when the request is cancelled or times out.
+        }
+    }
+
+    private static string ResolveProfilePath(string path)
+    {
+        if (path.StartsWith("~/", StringComparison.Ordinal))
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), path[2..]);
+
+        return Environment.ExpandEnvironmentVariables(path);
+    }
+
+    private static string FindShellDirectory()
+    {
+        var current = new DirectoryInfo(AppContext.BaseDirectory);
+        while (current is not null)
+        {
+            var candidate = Path.Combine(current.FullName, "apps", "shell", "scripts", "nztaSingleLookup.mjs");
+            if (File.Exists(candidate))
+                return Path.Combine(current.FullName, "apps", "shell");
+
+            current = current.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Could not locate the NZTA browser lookup script.");
     }
 
     private static async Task ClickContinueAsync(IPage page)
@@ -241,6 +390,14 @@ public sealed class NztaExpiryLookupService
 
     private static string Truncate(string value, int maxLength)
         => value.Length <= maxLength ? value : value[..maxLength];
+}
+
+sealed class NztaBrowserResponse
+{
+    public bool Success { get; set; }
+    public int Status { get; set; }
+    public string? Error { get; set; }
+    public string? Text { get; set; }
 }
 
 public sealed record NztaVehicleDetailsLookupResult(

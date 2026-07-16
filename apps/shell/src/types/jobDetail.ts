@@ -232,6 +232,8 @@ export type JobDetailData = {
   notes?: string;
   privateNotes?: string;
   needsPo?: boolean;
+  isOnYard?: boolean;
+  yardSource?: "automatic" | "manual";
   poNumber?: string;
   invoiceReference?: string;
   poRequest?: {
@@ -258,5 +260,6 @@ export type JobDetailData = {
     createdAt?: string;
     updatedAt?: string;
     processedAt?: string | null;
+    requiresXeroReconnect?: boolean;
   } | null;
 };

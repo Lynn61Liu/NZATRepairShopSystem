@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useJobDetailState } from "@/features/jobDetail";
 import { DeleteJobDialog } from "@/components/common/DeleteJobDialog";
@@ -7,7 +7,7 @@ import {
   createInitialDeleteJobSteps,
   resolveDeleteJobDialogSteps,
 } from "@/components/common/DeleteJobDialogState";
-import { Alert, EmptyState } from "@/components/ui";
+import { Alert, EmptyState, useToast } from "@/components/ui";
 import { CourtesyCarAssignDialog } from "@/features/courtesyCarAgreements/components/CourtesyCarAssignDialog";
 import { JobDetailContent } from "@/features/jobDetail/components/JobDetailContent";
 import { useJobDetailData } from "@/features/jobDetail/hooks/useJobDetailData";
@@ -17,6 +17,7 @@ export function JobDetailPage() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const toast = useToast();
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteModalPhase, setDeleteModalPhase] = useState<"confirm" | "status">("confirm");
   const [deleteSteps, setDeleteSteps] = useState(() => createInitialDeleteJobSteps());
@@ -26,6 +27,20 @@ export function JobDetailPage() {
   const tabParam = searchParams.get("tab");
   const initialTab: JobDetailTabKey = isJobDetailTab(tabParam) ? tabParam : "WOF";
   const { activeTab, setActiveTab, isSidebarOpen, setIsSidebarOpen } = useJobDetailState({ initialTab });
+
+  useEffect(() => {
+    if (searchParams.get("integration") !== "xero") return;
+    const status = searchParams.get("status");
+    const message = searchParams.get("message") || (status === "connected" ? "Xero connected" : "Xero connection failed");
+    if (status === "connected") toast.success(message);
+    else toast.error(message);
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("integration");
+    nextParams.delete("status");
+    nextParams.delete("message");
+    navigate({ search: nextParams.toString() }, { replace: true });
+  }, [navigate, searchParams, toast]);
   const {
     jobData,
     loading,
@@ -35,6 +50,7 @@ export function JobDetailPage() {
     archivingJob,
     creatingXeroInvoice,
     attachingXeroInvoice,
+    replacingXeroInvoice,
     detachingXeroInvoice,
     hasWofRecord,
     wofRecords,
@@ -68,12 +84,15 @@ export function JobDetailPage() {
     deleteJob,
     archiveJob,
     unarchiveJob,
+    saveYardStatus,
     createJobXeroDraftInvoice,
     attachJobXeroInvoice,
+    replaceJobXeroInvoice,
     detachJobXeroInvoice,
     saveTags,
     saveJobNotes,
     saveJobPrivateNotes,
+    saveJobPoNumber,
     createPaintService,
     updatePaintStage,
     updatePaintPanels,
@@ -173,10 +192,13 @@ export function JobDetailPage() {
         isCreatingXeroInvoice={creatingXeroInvoice}
         onAttachXeroInvoice={attachJobXeroInvoice}
         isAttachingXeroInvoice={attachingXeroInvoice}
+        onReplaceXeroInvoice={replaceJobXeroInvoice}
+        isReplacingXeroInvoice={replacingXeroInvoice}
         onDetachXeroInvoice={detachJobXeroInvoice}
         isDetachingXeroInvoice={detachingXeroInvoice}
         onArchiveJob={archiveJob}
         onUnarchiveJob={unarchiveJob}
+        onSaveYardStatus={saveYardStatus}
         isArchivingJob={archivingJob}
         onDeleteJob={openDeleteModal}
         isDeletingJob={deletingJob}
@@ -185,6 +207,7 @@ export function JobDetailPage() {
         onSaveTags={saveTags}
         onSaveNotes={saveJobNotes}
         onSavePrivateNotes={saveJobPrivateNotes}
+        onSavePoNumber={saveJobPoNumber}
         onRefreshVehicle={refreshVehicleInfo}
         onSyncVehicleNzta={syncVehicleNztaInfo}
         onSaveVehicle={saveVehicleInfo}

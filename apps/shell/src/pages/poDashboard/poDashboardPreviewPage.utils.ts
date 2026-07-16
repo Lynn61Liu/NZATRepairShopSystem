@@ -21,7 +21,7 @@ export function shouldShowCompletionActionColumn(tab: PoTodoTab) {
 }
 
 export function getPoTodoTableColSpan(tab: PoTodoTab) {
-  if (tab === "pendingSend") return 10;
+  if (tab === "pendingSend") return 11;
   if (tab === "invoiced") return 8;
   return 12;
 }

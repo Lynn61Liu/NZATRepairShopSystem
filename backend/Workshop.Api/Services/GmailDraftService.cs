@@ -54,8 +54,6 @@ public sealed class GmailDraftService
 
         if (job is null)
             return GmailDraftStatusResult.Fail(404, "Job not found.");
-        if (IsArchivedStatus(job.Status))
-            return GmailDraftStatusResult.Fail(400, "Draft status is not available for archived jobs.");
         if (!job.NeedsPo)
             return GmailDraftStatusResult.Fail(400, "Draft status is only available for PO jobs.");
 
@@ -174,8 +172,6 @@ public sealed class GmailDraftService
 
         if (job is null)
             return GmailDraftUpsertResult.Fail(404, "Job not found.");
-        if (IsArchivedStatus(job.Status))
-            return GmailDraftUpsertResult.Fail(400, "Draft generation is not available for archived jobs.");
         if (!job.NeedsPo)
             return GmailDraftUpsertResult.Fail(400, "Draft generation is only available for PO jobs.");
 

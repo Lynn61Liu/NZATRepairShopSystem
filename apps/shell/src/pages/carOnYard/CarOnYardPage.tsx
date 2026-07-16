@@ -83,7 +83,7 @@ function normalizeRows(rows: JobRow[]) {
 }
 
 async function fetchAllOpenJobs(signal?: AbortSignal) {
-  const first = await requestJson<JobsListResponse>(`/api/jobs?page=1&pageSize=${PAGE_SIZE}`, {
+  const first = await requestJson<JobsListResponse>(`/api/jobs?onYardOnly=true&page=1&pageSize=${PAGE_SIZE}`, {
     cache: "no-store",
     signal,
   });
@@ -97,7 +97,7 @@ async function fetchAllOpenJobs(signal?: AbortSignal) {
   const allRows = [...firstRows];
 
   for (let page = 2; page <= totalPages; page += 1) {
-    const res = await requestJson<JobsListResponse>(`/api/jobs?page=${page}&pageSize=${PAGE_SIZE}`, {
+    const res = await requestJson<JobsListResponse>(`/api/jobs?onYardOnly=true&page=${page}&pageSize=${PAGE_SIZE}`, {
       cache: "no-store",
       signal,
     });

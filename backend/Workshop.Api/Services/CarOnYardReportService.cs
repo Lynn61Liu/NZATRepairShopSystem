@@ -123,7 +123,13 @@ public sealed class CarOnYardReportService
             from job in _db.Jobs.AsNoTracking()
             join vehicle in _db.Vehicles.AsNoTracking() on job.VehicleId equals vehicle.Id
             join customer in _db.Customers.AsNoTracking() on job.CustomerId equals customer.Id
-            where job.Status != null && !EF.Functions.ILike(job.Status, "Archived")
+            where !EF.Functions.ILike(job.Status ?? "", "archived")
+                && (job.IsOnYardOverride == true
+                    || (job.IsOnYardOverride == null
+                        && !_db.JobMechWorkflows.AsNoTracking()
+                            .Any(workflow => workflow.JobId == job.Id && workflow.Status == MechWorkflowStatus.Delivered)
+                        && !_db.JobPaintServices.AsNoTracking()
+                            .Any(paint => paint.JobId == job.Id && paint.Status == "delivered")))
             select new
             {
                 job.Id,

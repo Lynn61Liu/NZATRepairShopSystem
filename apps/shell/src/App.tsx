@@ -14,7 +14,6 @@ import { ServiceCatalogPage } from "./pages/settings/ServiceCatalogPage";
 import { EftposQuickJobsPage } from "./pages/settings/EftposQuickJobsPage";
 import { IntegrationsPage } from "./pages/settings/IntegrationsPage";
 import { PartFlowPage } from "./pages/PartFlowPages/PartFlowPage";
-import { PaintBoardPage } from "./pages/paint/PaintBoardPage";
 import { PaintTechBoardPage } from "./pages/paint/PaintTechBoardPage";
 import { MechTechBoardPage } from "./pages/mech/MechTechBoardPage";
 import { WorklogPage } from "./pages/worklog/WorklogPage";
@@ -39,6 +38,7 @@ import { ProcurementAdmin } from "./pages/procurement/ProcurementAdmin";
 
 const router = createBrowserRouter([
   { path: "/mech-tech", element: <MechTechBoardPage standalone /> },
+  { path: "/paint-tech", element: <PaintTechBoardPage standalone /> },
   { path: "/customer/new-job", element: <CustomerSelfServiceNewJobPage /> },
   { path: "/courtesy-car", element: <CourtesyCarEntryPage /> },
   { path: "/light-finder", element: <LightFinderPage /> },
@@ -52,7 +52,7 @@ const router = createBrowserRouter([
       { index: true, element: <DashboardPage /> },
       { path: "jobs", element: <JobsPage /> },
       { path: "car-on-yard", element: <CarOnYardPage /> },
-      { path: "paint-board", element: <PaintBoardPage /> },
+      { path: "paint-board", element: <PaintTechBoardPage standalone={false} /> },
       { path: "wof-schedule", element: <WofSchedulePage /> }, 
       { path: "courtesy-cars", element: <CourtesyCarsPage /> },
       { path: "courtesy-car-drafts", element: <CourtesyCarAgreementsPage /> },
@@ -60,7 +60,6 @@ const router = createBrowserRouter([
       { path: "courtesy-car-drafts/:agreementId/message", element: <CourtesyCarAgreementMessagePage /> },
       { path: "agreement-history", element: <AgreementHistoryPage /> },
       { path: "po-dashboard-preview", element: <PoDashboardPreviewPage /> },
-      { path: "paint-tech", element: <PaintTechBoardPage /> },
       { path: "mech-board", element: <MechTechBoardPage /> },
       { path: "device-communication", element: <DeviceCommunicationPage /> },
       { path: "worklog", element: <WorklogPage /> },
