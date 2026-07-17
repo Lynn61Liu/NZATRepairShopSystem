@@ -111,7 +111,10 @@ public class JobsController : ControllerBase
         {
             query = request.JobType switch
             {
-                "In Progress" => query.Where(x => x.Job.Status != null && (EF.Functions.ILike(x.Job.Status, "InProgress") || EF.Functions.ILike(x.Job.Status, "In Progress"))),
+                "In Progress" => query.Where(x => x.Job.Status != null && (
+                    EF.Functions.ILike(x.Job.Status, "InProgress")
+                    || EF.Functions.ILike(x.Job.Status, "In Progress")
+                    || EF.Functions.ILike(x.Job.Status, "In Shop"))),
                 "Ready" => query.Where(x => x.Job.Status != null && (EF.Functions.ILike(x.Job.Status, "Delivered") || EF.Functions.ILike(x.Job.Status, "Ready"))),
                 _ => query.Where(x => x.Job.Status != null && EF.Functions.ILike(x.Job.Status, request.JobType))
             };
