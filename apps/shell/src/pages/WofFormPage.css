@@ -82,6 +82,12 @@
 /* .cName{
   Width: 82MM;
 } */
+.cEmail{
+  grid-area: cEmail;
+}
+.cAddress{
+  grid-area: cAddress;
+}
 
 .vehicle{
   width: 100%;

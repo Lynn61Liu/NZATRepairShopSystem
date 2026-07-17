@@ -18,11 +18,11 @@ export function WofFormPage() {
               
               <div className="customeTitle"></div>
               <div className="customeContent">
-                <div className="cName"></div>
-                <div className="cPhone"></div>
-                <div className="cPhone"></div>
-                <div className="cEmail"></div>
-                <div className="cAddress"></div>
+                <div className="cName">Faste Used</div>
+                <div className="cPhone"> 0988384893</div>
+                <div className="cAddress">4/5 mountWell cresecent,Mount Wellington ,AUCKLAND 1060</div>
+                <div className="cEmail">34839438@gmail.com</div>
+                
               </div>
               </div>
             <div className="vehicle" >vehicle</div>
