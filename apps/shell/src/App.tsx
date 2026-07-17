@@ -1,25 +1,25 @@
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { AppFrame } from "./layout/AppFrame";
-import { DashboardPage } from "./pages/DashboardPage";
+import { DashboardPage } from "./pages/dashboard/DashboardPage";
 import { JobsPage } from "./pages/jobs/JobsPage";
-import { JobDetailPage } from "./pages/jobDetail/JobDetailPage";
-import { InvoicePage } from "./pages/InvoicePage";
-import { NewJobPage } from "./pages/NewJobPage";
+import { JobDetailPage } from "./pages/jobs/JobDetailPage";
+import { InvoicePage } from "./pages/invoice/InvoicePage";
+import { NewJobPage } from "./pages/jobs/NewJobPage";
 import { TagsPage } from "./pages/tags/TagsPage";
 import { CustomersPage } from "./pages/customers/CustomersPage";
 import { CustomerProfilePage } from "./pages/customers/CustomerProfilePage";
-import { WofFailReasonsPage } from "./pages/wofFails/WofFailReasonsPage";
+import { WofFailReasonsPage } from "./pages/wof/WofFailReasonsPage";
 import { XeroItemCodesPage } from "./pages/settings/XeroItemCodesPage";
 import { ServiceCatalogPage } from "./pages/settings/ServiceCatalogPage";
 import { EftposQuickJobsPage } from "./pages/settings/EftposQuickJobsPage";
 import { IntegrationsPage } from "./pages/settings/IntegrationsPage";
-import { PartFlowPage } from "./pages/PartFlowPages/PartFlowPage";
+import { PartFlowPage } from "./pages/parts/PartFlowPage";
 import { PaintTechBoardPage } from "./pages/paint/PaintTechBoardPage";
 import { MechTechBoardPage } from "./pages/mech/MechTechBoardPage";
 import { WorklogPage } from "./pages/worklog/WorklogPage";
 import { PoDashboardPreviewPage } from "./pages/poDashboard/PoDashboardPreviewPage";
-import { WofSchedulePage } from "./pages/WofSchedulePage"; // 保留原有的 WofSchedule
-import { WofFormPage } from "./pages/WofFormPage";
+import { WofSchedulePage } from "./pages/wof/WofSchedulePage"; // 保留原有的 WofSchedule
+import { WofFormPage } from "./pages/wof/WofFormPage";
 import { ToastProvider } from "@/components/ui";
 import { CustomerSelfServiceNewJobPage } from "./pages/customerSelfService/CustomerSelfServiceNewJobPage";
 import { CourtesyCarsPage } from "./features/courtesyCars/CourtesyCarsPage";
@@ -29,7 +29,7 @@ import { CourtesyCarAgreementMessagePage } from "./pages/courtesyCarAgreements/C
 import { AgreementHistoryPage } from "./pages/agreementHistory/AgreementHistoryPage";
 import { CourtesyCarEntryPage } from "./pages/courtesyCarEntry/CourtesyCarEntryPage";
 import { DeviceCommunicationPage } from "./pages/deviceCommunication/DeviceCommunicationPage";
-import { LightFinderPage } from "./pages/LightFinderPage";
+import { LightFinderPage } from "./pages/lightFinder/LightFinderPage";
 import { CarOnYardPage } from "./pages/carOnYard/CarOnYardPage";
 
 // --- [从 Eric 版引入] 采购相关组件 ---
