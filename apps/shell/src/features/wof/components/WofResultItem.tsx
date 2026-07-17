@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import type { WofCheckItem, WofFailReason, WofRecord, WofRecordUpdatePayload } from "@/types";
 import { Button, useToast } from "@/components/ui";
 import { JOB_DETAIL_TEXT } from "@/features/jobDetail/jobDetail.constants";
@@ -164,6 +165,7 @@ export function WofResultItem({
   onCancel,
 }: WofResultItemProps) {
   const toast = useToast();
+  const navigate = useNavigate();
   const normalizedRecord = useMemo(() => normalizeRecord(record), [record]);
   const [editing, setEditing] = useState(Boolean(isDraft));
   const [form, setForm] = useState<WofFormState>(() =>
@@ -305,6 +307,11 @@ export function WofResultItem({
     toast.success("已打开打印预览");
   };
 
+  const handleOpenWofForm = () => {
+    const recordId = String(record.id ?? "").trim();
+    navigate(recordId ? `/wof-form/${encodeURIComponent(recordId)}` : "/wof-form");
+  };
+
   const handleDelete = async () => {
     if (isDraft || !onDelete) return;
     if (!window.confirm("确定删除这条 WOF 记录？")) return;
@@ -371,8 +378,8 @@ export function WofResultItem({
                 取消
               </Button>
             ) : (
-              <Button variant="ghost" onClick={() => setEditing((v) => !v)}>
-                {editing ? "取消" : "修改"}
+              <Button variant="ghost" onClick={handleOpenWofForm}>
+                修改
               </Button>
             )}
             {!isDraft ? (

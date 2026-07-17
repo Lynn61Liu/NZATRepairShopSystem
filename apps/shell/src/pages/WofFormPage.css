@@ -1,0 +1,166 @@
+.wof-form-page {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  align-items: center;
+  overflow: auto;
+  background: rgb(241 245 249);
+  padding: 32px 0;
+}
+
+.wof-print-controls {
+  display: flex;
+  width: 210mm;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+
+.wof-print-sheet {
+  width: 210mm;
+  min-height: 297mm;
+  box-sizing: border-box;
+  border: 1px solid red;
+  background: white;
+  padding: 4mm 5mm;
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 2mm;
+}
+
+.custome-box {
+  /* grid-column: 1 / 3; */
+  /* width: 128mm;*/
+  height: 80mm; 
+  box-sizing: border-box;
+  border: 1px solid rgb(16, 19, 203);
+  display: flex;
+  flex-direction: column;
+  gap: 1mm;
+}
+.organisation{
+  width: 100%;
+  height: 30mm;
+  box-sizing: border-box;
+  border: 1px solid rgb(240, 95, 11);
+}
+.customeDetail{ 
+  display: flex;
+  width: 100%;
+  height: 21mm;
+  box-sizing: border-box;
+  border: 1px solid rgb(26, 240, 11);
+
+
+}
+.customeTitle{
+  font-size: 12px;
+  text-transform: uppercase;
+  width: 10mm;
+  height: 100%;
+ background-color: rgb(33, 123, 27);
+  
+}
+.customeContent{
+   display: grid;
+ grid-template-columns: 1fr 1fr;
+  grid-template-areas:
+    "cName cPhone"
+    "cEmail cEmail"
+    "cAddress cAddress";
+
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  /* border: 1px solid rgb(11, 118, 240); */
+}
+ .customeContent *{
+  font-size: 12px;
+ height: 7mm;
+  box-sizing: border-box;
+   border: 1px solid rgb(95, 240, 11);
+} 
+/* .cName{
+  Width: 82MM;
+} */
+
+.vehicle{
+  width: 100%;
+  height: 28mm;
+  box-sizing: border-box;
+  border: 1px solid rgb(11, 118, 240);
+}
+
+.list {
+  display: flex;
+  gap: 2mm;
+  height: 100%;
+}
+
+.C1-box {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgb(186, 21, 96);
+}
+
+.C2-box {
+  width: 100%;
+ height: 100%;
+  box-sizing: border-box;
+  border: 1px solid black;
+}
+
+.C3-box {
+  width: 70mm;
+  height: 100%;
+  box-sizing: border-box;
+  border: 1px solid black;
+
+}
+
+@page {
+  size: A4;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0;
+    background: white;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .wof-form-page,
+  .wof-form-page * {
+    visibility: visible !important;
+  }
+
+  .wof-print-controls {
+    display: none !important;
+  }
+
+  .wof-form-page {
+    position: fixed;
+    inset: 0;
+    display: block !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+
+  .wof-print-sheet {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 210mm !important;
+    min-height: 297mm !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
