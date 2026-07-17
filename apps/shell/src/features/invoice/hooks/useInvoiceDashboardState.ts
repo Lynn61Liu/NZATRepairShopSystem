@@ -154,24 +154,43 @@ function getLineAmount(item: InvoiceItem, amountsAre: AmountsAre) {
 }
 
 function buildReference(currentReference: string, poNumber: string) {
-  const trimmedPo = poNumber.trim();
+  const collapseWhitespace = (value: string) => value.trim().replace(/\s+/g, " ");
+  const trimmedPo = collapseWhitespace(poNumber);
   if (!trimmedPo) return currentReference;
 
-  const trimmedReference = currentReference.trim();
-  if (!trimmedReference) return trimmedPo;
+  let suffix = collapseWhitespace(currentReference);
+  const labelledPoPrefixes = [
+    /^(?:(?:po\s*#?\s*)?pending|\[po\])(?:\s+|$)/i,
+    /^po\s*#?\s*\d+(?:\s+|$)/i,
+    /^po\s*#?(?:\s+|$)/i,
+  ];
+  const escapedPo = trimmedPo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const exactBarePoPrefix = new RegExp(`^${escapedPo}(?:\\s+|$)`, "i");
 
-  if (trimmedReference.includes("[PO]")) {
-    return trimmedReference.replace("[PO]", trimmedPo).replace(/\s+/g, " ").trim();
+  let removedPrefix = true;
+  let allowBarePoPrefix = true;
+  while (suffix && removedPrefix) {
+    removedPrefix = false;
+    for (const prefix of labelledPoPrefixes) {
+      const next = suffix.replace(prefix, "").trimStart();
+      if (next === suffix) continue;
+      suffix = next;
+      removedPrefix = true;
+      allowBarePoPrefix = false;
+      break;
+    }
+
+    if (!removedPrefix && allowBarePoPrefix) {
+      const next = suffix.replace(exactBarePoPrefix, "").trimStart();
+      if (next !== suffix) {
+        suffix = next;
+        removedPrefix = true;
+        allowBarePoPrefix = false;
+      }
+    }
   }
 
-  const pendingReference = trimmedReference.replace(/^po\s+pending\s+/i, "");
-  if (pendingReference !== trimmedReference) {
-    return `${trimmedPo} ${pendingReference}`.replace(/\s+/g, " ").trim();
-  }
-
-  const parts = trimmedReference.split(/\s+/);
-  if (parts.length <= 1) return trimmedPo;
-  return `${trimmedPo} ${parts.slice(1).join(" ")}`.trim();
+  return collapseWhitespace(`PO# ${trimmedPo}${suffix ? ` ${suffix}` : ""}`);
 }
 
 function extractPoFromReference(reference: string) {
@@ -587,14 +606,15 @@ export function useInvoiceDashboardState({
   });
 
   const refreshFromXero = async () => {
-    if (!jobId) return;
+    if (!jobId) return { success: false, message: "Missing job id." };
 
     setRefreshingFromXero(true);
     try {
       const res = await pullJobXeroDraftInvoice(jobId);
       if (!res.ok) {
-        toast.error(res.error || "Failed to pull invoice from Xero");
-        return;
+        const message = res.error || "Failed to pull invoice from Xero";
+        toast.error(message);
+        return { success: false, message };
       }
 
       const pulledInvoice = res.data?.invoice;
@@ -632,6 +652,7 @@ export function useInvoiceDashboardState({
       }
 
       toast.success("Invoice pulled from Xero");
+      return { success: true, message: "Invoice pulled from Xero" };
     } finally {
       setRefreshingFromXero(false);
     }
@@ -685,6 +706,25 @@ export function useInvoiceDashboardState({
       ? `https://go.xero.com/AccountsReceivable/View.aspx?invoiceID=${encodeURIComponent(invoiceId)}`
       : "https://go.xero.com";
     window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const invoiceInsertInFlightRef = useRef(false);
+  const pullAndInsertInvoice = async () => {
+    if (invoiceInsertInFlightRef.current)
+      return { success: false, message: "Invoice insertion is already in progress." };
+
+    invoiceInsertInFlightRef.current = true;
+    setPullingInvoicePdf(true);
+    try {
+      const refreshed = await refreshFromXero();
+      if (!refreshed.success)
+        return refreshed;
+
+      return await pullInvoicePdf();
+    } finally {
+      invoiceInsertInFlightRef.current = false;
+      setPullingInvoicePdf(false);
+    }
   };
 
   const {
@@ -1314,7 +1354,9 @@ export function useInvoiceDashboardState({
     createPoDraft,
     recreatePoDraft,
     sendPoEmail,
-    pullInvoicePdf,
+    pullInvoicePdf: pullAndInsertInvoice,
+    openInXero,
+    hasXeroInvoice: Boolean(invoice.xeroInvoiceId.trim()),
     viewPoDraft,
     openSentMailbox,
     sendReminderNow,

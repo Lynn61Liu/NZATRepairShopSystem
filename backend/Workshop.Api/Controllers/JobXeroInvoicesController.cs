@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Workshop.Api.Data;
 using Workshop.Api.DTOs;
 using Workshop.Api.Services;
 
@@ -10,14 +12,30 @@ public class JobXeroInvoicesController : ControllerBase
 {
     private readonly JobInvoiceService _jobInvoiceService;
     private readonly InvoiceOutboxService _invoiceOutboxService;
+    private readonly InvoiceOutboxKickService _invoiceOutboxKickService;
+    private readonly AppDbContext _db;
+    private readonly IWebHostEnvironment _environment;
 
-    public JobXeroInvoicesController(JobInvoiceService jobInvoiceService, InvoiceOutboxService invoiceOutboxService)
+    public JobXeroInvoicesController(
+        JobInvoiceService jobInvoiceService,
+        InvoiceOutboxService invoiceOutboxService,
+        InvoiceOutboxKickService invoiceOutboxKickService,
+        AppDbContext db,
+        IWebHostEnvironment environment)
     {
         _jobInvoiceService = jobInvoiceService;
         _invoiceOutboxService = invoiceOutboxService;
+        _invoiceOutboxKickService = invoiceOutboxKickService;
+        _db = db;
+        _environment = environment;
     }
 
     public sealed class AttachExistingInvoiceRequest
+    {
+        public string InvoiceNumber { get; set; } = "";
+    }
+
+    public sealed class ReplaceExistingInvoiceRequest
     {
         public string InvoiceNumber { get; set; } = "";
     }
@@ -29,12 +47,13 @@ public class JobXeroInvoicesController : ControllerBase
         if (!result.Ok)
             return BadRequest(new { error = result.Error });
 
+        var started = await StartImmediatelyAsync(result, id, "manual_invoice_create", ct);
         return Ok(new
         {
             queued = true,
             alreadyExists = result.AlreadyHandled,
             messageId = result.MessageId,
-            status = result.Status,
+            status = started ? "processing" : result.Status,
         });
     }
 
@@ -101,6 +120,28 @@ public class JobXeroInvoicesController : ControllerBase
         });
     }
 
+    [HttpPost("email/preview")]
+    public async Task<IActionResult> SendInvoiceEmailPreview(long id, CancellationToken ct)
+    {
+        if (!_environment.IsDevelopment())
+            return NotFound();
+
+        var result = await _jobInvoiceService.SendInvoicePreviewAsync(id, ct);
+        if (!result.Ok)
+        {
+            return StatusCode(result.StatusCode, new
+            {
+                error = result.Error,
+            });
+        }
+
+        return Ok(new
+        {
+            message = "Invoice email preview sent to the active Gmail account.",
+            delivery = result.Payload,
+        });
+    }
+
     [HttpGet("pdf")]
     public async Task<IActionResult> DownloadPdf(long id, CancellationToken ct)
     {
@@ -130,12 +171,84 @@ public class JobXeroInvoicesController : ControllerBase
         if (!result.Ok)
             return BadRequest(new { error = result.Error });
 
+        var started = await StartImmediatelyAsync(result, id, "manual_invoice_attach", ct);
         return Ok(new
         {
             queued = true,
             alreadyExists = result.AlreadyHandled,
             messageId = result.MessageId,
-            status = result.Status,
+            status = started ? "processing" : result.Status,
+        });
+    }
+
+    [HttpPost("replace")]
+    public async Task<IActionResult> ReplaceExistingInvoice(long id, [FromBody] ReplaceExistingInvoiceRequest request, CancellationToken ct)
+    {
+        var result = await _invoiceOutboxService.EnqueueReplaceExistingAsync(id, request.InvoiceNumber, ct);
+        if (!result.Ok)
+            return BadRequest(new { error = result.Error });
+
+        var started = await StartImmediatelyAsync(result, id, "manual_invoice_replace", ct);
+        return Ok(new
+        {
+            queued = true,
+            alreadyExists = result.AlreadyHandled,
+            messageId = result.MessageId,
+            status = started ? "processing" : result.Status,
+        });
+    }
+
+    [HttpGet("processing")]
+    public async Task<IActionResult> GetProcessingState(long id, CancellationToken ct)
+    {
+        var state = await _db.Jobs.AsNoTracking()
+            .Where(x => x.Id == id)
+            .Select(job => new
+            {
+                hasInvoice = _db.JobInvoices.AsNoTracking().Any(x => x.JobId == job.Id),
+                processing = _db.OutboxMessages.AsNoTracking()
+                    .Where(x => x.AggregateType == InvoiceOutboxService.JobAggregateType
+                        && x.AggregateId == job.Id
+                        && (x.MessageType == InvoiceOutboxService.CreateDraftMessageType
+                            || x.MessageType == InvoiceOutboxService.AttachExistingMessageType
+                            || x.MessageType == InvoiceOutboxService.ReplaceExistingMessageType))
+                    .OrderByDescending(x => x.CreatedAt)
+                    .Select(x => new
+                    {
+                        id = x.Id.ToString(),
+                        messageType = x.MessageType,
+                        status = x.Status,
+                        attemptCount = x.AttemptCount,
+                        lastError = x.LastError,
+                        availableAt = x.AvailableAt,
+                        lockedAt = x.LockedAt,
+                        createdAt = x.CreatedAt,
+                        updatedAt = x.UpdatedAt,
+                        processedAt = x.ProcessedAt,
+                    })
+                    .FirstOrDefault(),
+            })
+            .FirstOrDefaultAsync(ct);
+        if (state is null)
+            return NotFound(new { error = "Job not found." });
+
+        return Ok(new
+        {
+            state.hasInvoice,
+            processing = state.processing is null ? null : new
+            {
+                state.processing.id,
+                state.processing.messageType,
+                state.processing.status,
+                state.processing.attemptCount,
+                state.processing.lastError,
+                state.processing.availableAt,
+                state.processing.lockedAt,
+                state.processing.createdAt,
+                state.processing.updatedAt,
+                state.processing.processedAt,
+                requiresXeroReconnect = InvoiceOutboxService.RequiresXeroReconnect(state.processing.lastError),
+            },
         });
     }
 
@@ -147,6 +260,20 @@ public class JobXeroInvoicesController : ControllerBase
             return StatusCode(result.StatusCode, new { error = result.Error });
 
         return Ok(new { ok = true });
+    }
+
+    private async Task<bool> StartImmediatelyAsync(
+        InvoiceOutboxEnqueueResult result,
+        long jobId,
+        string segmentName,
+        CancellationToken ct)
+    {
+        if (result.MessageId is not { } messageId)
+            return false;
+
+        var started = await _invoiceOutboxService.TryStartMessageNowAsync(messageId, ct);
+        _invoiceOutboxKickService.Dispatch(messageId, jobId, segmentName, alreadyStarted: started);
+        return started;
     }
 
     [HttpPut("state")]

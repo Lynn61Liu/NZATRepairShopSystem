@@ -954,13 +954,13 @@ public sealed class PaymarkTransactionsController : ControllerBase
 
         var rego = string.IsNullOrWhiteSpace(vehicle.Plate) ? "[REGO]" : vehicle.Plate.Trim().ToUpperInvariant();
         var poPrefix = string.IsNullOrWhiteSpace(job.PoNumber)
-            ? $"PO# Pending {rego}"
-            : $"{job.PoNumber.Trim()} {rego}";
+            ? "PO# Pending"
+            : $"PO# {job.PoNumber.Trim()}";
         var year = vehicle.Year.HasValue && vehicle.Year.Value > 0 ? vehicle.Year.Value.ToString() : "[YEAR]";
         var make = string.IsNullOrWhiteSpace(vehicle.Make) ? "[MAKE]" : vehicle.Make.Trim();
         var model = string.IsNullOrWhiteSpace(vehicle.Model) ? "[MODEL]" : vehicle.Model.Trim();
 
-        return $"{poPrefix} {year} {make} {model}";
+        return $"{poPrefix} {rego} {year} {make} {model}";
     }
 
     private static string BuildQuickContactName(Customer customer, Vehicle vehicle)

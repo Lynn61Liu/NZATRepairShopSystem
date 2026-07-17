@@ -19,12 +19,16 @@ import {
   updateJobPrivateNotes,
   updateJobTags,
   updateJobStatus,
+  updateJobYardStatus,
+  updateJobPoNumber,
   updateJobCustomer,
   updateVehicleInfo,
   syncVehicleNztaInfo as apiSyncVehicleNztaInfo,
   deleteJob as apiDeleteJob,
   createJobXeroDraftInvoice as apiCreateJobXeroDraftInvoice,
   attachJobXeroInvoice as apiAttachJobXeroInvoice,
+  replaceJobXeroInvoice as apiReplaceJobXeroInvoice,
+  fetchJobXeroInvoiceProcessing,
   detachJobXeroInvoice as apiDetachJobXeroInvoice,
 } from "../api/jobDetailApi";
 import {
@@ -122,6 +126,7 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
   const [archivingJob, setArchivingJob] = useState(false);
   const [creatingXeroInvoice, setCreatingXeroInvoice] = useState(false);
   const [attachingXeroInvoice, setAttachingXeroInvoice] = useState(false);
+  const [replacingXeroInvoice, setReplacingXeroInvoice] = useState(false);
   const [detachingXeroInvoice, setDetachingXeroInvoice] = useState(false);
   const [hasWofRecord, setHasWofRecord] = useState(false);
   const [wofInitialized, setWofInitialized] = useState(false);
@@ -778,17 +783,61 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
     }
   }, [jobData?.status, jobId, toast]);
 
+  const saveYardStatus = useCallback(async (isOnYard: boolean | null) => {
+    if (!jobId) return { success: false, message: "缺少工单 ID" };
+    const res = await updateJobYardStatus(jobId, isOnYard);
+    if (!res.ok) {
+      const message = res.error || "更新车辆在场状态失败";
+      toast.error(message);
+      return { success: false, message };
+    }
+
+    setJobData((prev) => prev ? {
+      ...prev,
+      isOnYard: Boolean(res.data?.isOnYard),
+      yardSource: res.data?.yardSource === "manual" ? "manual" : "automatic",
+    } : prev);
+    notifyPaintBoardRefresh();
+    toast.success(res.data?.yardSource === "manual" ? "车辆在场状态已人工覆盖" : "已恢复自动判断");
+    return { success: true, message: "车辆在场状态已更新" };
+  }, [jobId, toast]);
+
+  const refreshInvoiceProcessing = useCallback(async () => {
+    if (!jobId) return;
+    const res = await fetchJobXeroInvoiceProcessing(jobId);
+    if (!res.ok) return;
+
+    const processing = res.data?.processing ?? null;
+    if (processing?.status === "succeeded") {
+      await refreshJobSummary();
+      return;
+    }
+
+    setJobData((prev) => prev ? {
+      ...prev,
+      invoiceProcessing: processing,
+    } : prev);
+  }, [jobId, refreshJobSummary]);
+
   useEffect(() => {
-    if (!jobData || jobData.invoice) return;
-    const processingStatus = jobData.invoiceProcessing?.status;
+    const processingStatus = jobData?.invoiceProcessing?.status;
     if (processingStatus !== "pending" && processingStatus !== "processing") return;
 
-    const timer = window.setInterval(() => {
-      void refreshJobSummary();
-    }, 2000);
+    let cancelled = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      await refreshInvoiceProcessing();
+      if (!cancelled) {
+        timer = window.setTimeout(() => void poll(), 1000);
+      }
+    };
+    timer = window.setTimeout(() => void poll(), 1000);
 
-    return () => window.clearInterval(timer);
-  }, [jobData, refreshJobSummary]);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [jobData?.invoiceProcessing?.status, refreshInvoiceProcessing]);
 
   const createJobXeroDraftInvoice = useCallback(async () => {
     if (!jobId || !jobData) {
@@ -804,14 +853,14 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
         return { success: false, message };
       }
 
-      await refreshJobSummary();
+      await refreshInvoiceProcessing();
       const message = res.data?.alreadyExists ? "Xero invoice 已存在或已在后台处理中" : "Xero invoice 已加入后台创建队列";
       toast.success(message);
       return { success: true, message };
     } finally {
       setCreatingXeroInvoice(false);
     }
-  }, [jobData, jobId, refreshJobSummary, toast]);
+  }, [jobData, jobId, refreshInvoiceProcessing, toast]);
 
   const attachJobXeroInvoice = useCallback(async (invoiceNumber: string) => {
     if (!jobId) {
@@ -832,14 +881,42 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
         return { success: false, message };
       }
 
-      await refreshJobSummary();
+      await refreshInvoiceProcessing();
       const message = res.data?.alreadyExists ? "Xero invoice 已存在或已在后台处理中" : "已加入后台关联 Xero invoice 队列";
       toast.success(message);
       return { success: true, message };
     } finally {
       setAttachingXeroInvoice(false);
     }
-  }, [jobId, refreshJobSummary, toast]);
+  }, [jobId, refreshInvoiceProcessing, toast]);
+
+  const replaceJobXeroInvoice = useCallback(async (invoiceNumber: string) => {
+    if (!jobId) {
+      return { success: false, message: "缺少工单 ID" };
+    }
+
+    const normalizedInvoiceNumber = invoiceNumber.trim();
+    if (!normalizedInvoiceNumber) {
+      return { success: false, message: "Invoice Number 为必填" };
+    }
+
+    setReplacingXeroInvoice(true);
+    try {
+      const res = await apiReplaceJobXeroInvoice(jobId, normalizedInvoiceNumber);
+      if (!res.ok) {
+        const message = res.error || "替换 Xero invoice 失败";
+        toast.error(message);
+        return { success: false, message };
+      }
+
+      await refreshInvoiceProcessing();
+      const message = "正在后台替换 Invoice，完成后页面会自动更新";
+      toast.success(message);
+      return { success: true, message };
+    } finally {
+      setReplacingXeroInvoice(false);
+    }
+  }, [jobId, refreshInvoiceProcessing, toast]);
 
   const detachJobXeroInvoice = useCallback(async () => {
     if (!jobId) {
@@ -1046,6 +1123,30 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
     [jobId, toast]
   );
 
+  const saveJobPoNumber = useCallback(
+    async (poNumber: string) => {
+      if (!jobId) return { success: false, message: "缺少工单 ID" };
+
+      const res = await updateJobPoNumber(jobId, poNumber);
+      if (!res.ok) {
+        const message = res.error || "保存 PO Number 失败";
+        toast.error(message);
+        return { success: false, message };
+      }
+
+      const savedPoNumber = res.data?.poNumber?.trim() || "";
+      setJobData((prev) => prev ? { ...prev, poNumber: savedPoNumber || undefined } : prev);
+      notifyPoDashboardRefresh();
+      toast.success(savedPoNumber ? "PO Number 已保存" : "PO Number 已清空");
+      return {
+        success: true,
+        message: savedPoNumber ? "PO Number 已保存" : "PO Number 已清空",
+        poNumber: savedPoNumber,
+      };
+    },
+    [jobId, toast]
+  );
+
   const loadWofFailReasons = useCallback(async () => {
     const res = await fetchWofFailReasons();
     if (!res.ok) {
@@ -1193,6 +1294,7 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
     archivingJob,
     creatingXeroInvoice,
     attachingXeroInvoice,
+    replacingXeroInvoice,
     detachingXeroInvoice,
     hasWofRecord,
     wofRecords,
@@ -1228,13 +1330,16 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
     refreshPartsServices,
     archiveJob,
     unarchiveJob,
+    saveYardStatus,
     deleteJob,
     createJobXeroDraftInvoice,
     attachJobXeroInvoice,
+    replaceJobXeroInvoice,
     detachJobXeroInvoice,
     saveTags,
     saveJobNotes,
     saveJobPrivateNotes,
+    saveJobPoNumber,
     createPaintService: createPaintServiceRow,
     updatePaintStage: updatePaintStageRow,
     updatePaintPanels: updatePaintPanelsRow,

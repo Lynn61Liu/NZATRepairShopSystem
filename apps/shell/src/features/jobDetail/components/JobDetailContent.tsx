@@ -106,10 +106,13 @@ type JobDetailContentProps = {
   isCreatingXeroInvoice?: boolean;
   onAttachXeroInvoice?: (invoiceNumber: string) => Promise<{ success: boolean; message?: string }>;
   isAttachingXeroInvoice?: boolean;
+  onReplaceXeroInvoice?: (invoiceNumber: string) => Promise<{ success: boolean; message?: string }>;
+  isReplacingXeroInvoice?: boolean;
   onDetachXeroInvoice?: () => Promise<{ success: boolean; message?: string }>;
   isDetachingXeroInvoice?: boolean;
   onArchiveJob?: () => Promise<{ success: boolean; message?: string }>;
   onUnarchiveJob?: () => Promise<{ success: boolean; message?: string }>;
+  onSaveYardStatus?: (isOnYard: boolean | null) => Promise<{ success: boolean; message?: string }>;
   isArchivingJob?: boolean;
   onDeleteJob?: () => void;
   isDeletingJob?: boolean;
@@ -118,6 +121,7 @@ type JobDetailContentProps = {
   onSaveTags?: (tagIds: string[]) => Promise<{ success: boolean; message?: string; tags?: string[] }>;
   onSaveNotes?: (notes: string) => Promise<{ success: boolean; message?: string }>;
   onSavePrivateNotes?: (privateNotes: string) => Promise<{ success: boolean; message?: string }>;
+  onSavePoNumber?: (poNumber: string) => Promise<{ success: boolean; message?: string; poNumber?: string }>;
   isSidebarOpen: boolean;
   onToggleSidebar: () => void;
 };
@@ -165,10 +169,13 @@ export function JobDetailContent({
   isCreatingXeroInvoice,
   onAttachXeroInvoice,
   isAttachingXeroInvoice,
+  onReplaceXeroInvoice,
+  isReplacingXeroInvoice,
   onDetachXeroInvoice,
   isDetachingXeroInvoice,
   onArchiveJob,
   onUnarchiveJob,
+  onSaveYardStatus,
   isArchivingJob,
   onDeleteJob,
   isDeletingJob,
@@ -177,6 +184,7 @@ export function JobDetailContent({
   onSaveTags,
   onSaveNotes,
   onSavePrivateNotes,
+  onSavePoNumber,
   isSidebarOpen,
   onToggleSidebar,
 }: JobDetailContentProps) {
@@ -226,10 +234,13 @@ export function JobDetailContent({
           isCreatingXeroInvoice={isCreatingXeroInvoice}
           onAttachXeroInvoice={onAttachXeroInvoice}
           isAttachingXeroInvoice={isAttachingXeroInvoice}
+          onReplaceXeroInvoice={onReplaceXeroInvoice}
+          isReplacingXeroInvoice={isReplacingXeroInvoice}
           onDetachXeroInvoice={onDetachXeroInvoice}
           isDetachingXeroInvoice={isDetachingXeroInvoice}
           onArchiveJob={onArchiveJob}
           onUnarchiveJob={onUnarchiveJob}
+          onSaveYardStatus={onSaveYardStatus}
           isArchivingJob={isArchivingJob}
           onDeleteJob={onDeleteJob}
           isDeletingJob={isDeletingJob}
@@ -237,6 +248,7 @@ export function JobDetailContent({
           onSaveTags={onSaveTags}
           onSaveNotes={onSaveNotes}
           onSavePrivateNotes={onSavePrivateNotes}
+          onSavePoNumber={onSavePoNumber}
         />
       }
       sidebar={

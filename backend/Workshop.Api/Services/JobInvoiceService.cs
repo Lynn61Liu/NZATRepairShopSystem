@@ -1,7 +1,10 @@
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Workshop.Api.Data;
 using Workshop.Api.DTOs;
 using Workshop.Api.Models;
@@ -12,12 +15,17 @@ namespace Workshop.Api.Services;
 public sealed class JobInvoiceService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private const string InvoiceEmailLogoContentId = "nz-auto-tech-logo@nzautotech";
 
     private readonly AppDbContext _db;
     private readonly ReferenceDataCacheService _referenceDataCache;
     private readonly ServiceCatalogService _serviceCatalogService;
     private readonly XeroInvoiceService _xeroInvoiceService;
     private readonly XeroPaymentService _xeroPaymentService;
+    private readonly GmailAccountService _gmailAccountService;
+    private readonly GmailMessageSenderService _gmailMessageSenderService;
+    private readonly NpgsqlDataSource _dataSource;
+    private readonly JobLifecycleService _jobLifecycleService;
     private readonly XeroPaymentOptions _xeroPaymentOptions;
     private readonly IWebHostEnvironment _environment;
     private readonly ILogger<JobInvoiceService> _logger;
@@ -28,6 +36,10 @@ public sealed class JobInvoiceService
         ServiceCatalogService serviceCatalogService,
         XeroInvoiceService xeroInvoiceService,
         XeroPaymentService xeroPaymentService,
+        GmailAccountService gmailAccountService,
+        GmailMessageSenderService gmailMessageSenderService,
+        NpgsqlDataSource dataSource,
+        JobLifecycleService jobLifecycleService,
         Microsoft.Extensions.Options.IOptions<XeroPaymentOptions> xeroPaymentOptions,
         IWebHostEnvironment environment,
         ILogger<JobInvoiceService> logger)
@@ -37,6 +49,10 @@ public sealed class JobInvoiceService
         _serviceCatalogService = serviceCatalogService;
         _xeroInvoiceService = xeroInvoiceService;
         _xeroPaymentService = xeroPaymentService;
+        _gmailAccountService = gmailAccountService;
+        _gmailMessageSenderService = gmailMessageSenderService;
+        _dataSource = dataSource;
+        _jobLifecycleService = jobLifecycleService;
         _xeroPaymentOptions = xeroPaymentOptions.Value;
         _environment = environment;
         _logger = logger;
@@ -299,16 +315,651 @@ public sealed class JobInvoiceService
             : JobInvoiceCreateResult.Fail(409, "Xero reference update could not be verified.");
     }
 
-    public async Task<JobInvoiceCreateResult> EmailInvoiceAsync(long jobId, CancellationToken ct)
+    public Task<JobInvoiceCreateResult> EmailInvoiceAsync(long jobId, CancellationToken ct) =>
+        SendInvoiceEmailCoreAsync(jobId, previewOnly: false, ct);
+
+    public Task<JobInvoiceCreateResult> SendInvoicePreviewAsync(long jobId, CancellationToken ct) =>
+        SendInvoiceEmailCoreAsync(jobId, previewOnly: true, ct);
+
+    public async Task<JobInvoiceCreateResult> RepairInvoiceSentToContactAsync(long jobId, CancellationToken ct)
     {
-        var invoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
-        if (invoice is null || !Guid.TryParse(invoice.ExternalInvoiceId, out var invoiceId))
+        var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (jobInvoice is null || !Guid.TryParse(jobInvoice.ExternalInvoiceId, out var invoiceId))
             return JobInvoiceCreateResult.Fail(404, "Xero invoice not found.");
 
-        var result = await _xeroInvoiceService.EmailInvoiceAsync(invoiceId, ct);
-        return result.Ok
-            ? JobInvoiceCreateResult.Success(invoice, alreadyExists: false, payload: result.Payload)
-            : JobInvoiceCreateResult.Fail(result.StatusCode, result.Error ?? "Failed to email Xero invoice.", result.Payload);
+        var lockKey = BuildInvoiceEmailLockKey(invoiceId);
+        NpgsqlConnection? lockConnection = null;
+        try
+        {
+            lockConnection = await AcquireInvoiceEmailLockAsync(lockKey, ct);
+            var existingSend = await FindSentInvoiceEmailAsync(BuildInvoiceEmailCorrelationId(invoiceId), ct);
+            if (existingSend is null)
+            {
+                return JobInvoiceCreateResult.Success(
+                    jobInvoice,
+                    alreadyExists: true,
+                    payload: new InvoiceSentRepairPayload(false, false, null));
+            }
+
+            var verification = await MarkInvoiceSentAndRefreshAsync(jobInvoice, invoiceId, ct);
+            return JobInvoiceCreateResult.Success(
+                jobInvoice,
+                alreadyExists: true,
+                payload: new InvoiceSentRepairPayload(true, verification.Verified, verification.Error));
+        }
+        finally
+        {
+            await ReleaseInvoiceEmailLockAsync(lockConnection, lockKey);
+        }
+    }
+
+    private async Task<JobInvoiceCreateResult> SendInvoiceEmailCoreAsync(
+        long jobId,
+        bool previewOnly,
+        CancellationToken ct)
+    {
+        var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (jobInvoice is null || !Guid.TryParse(jobInvoice.ExternalInvoiceId, out var invoiceId))
+            return JobInvoiceCreateResult.Fail(404, "Xero invoice not found.");
+
+        if (previewOnly)
+            return await SendInvoiceEmailAfterLockAsync(jobId, jobInvoice, invoiceId, previewOnly: true, ct);
+
+        var lockKey = BuildInvoiceEmailLockKey(invoiceId);
+        NpgsqlConnection? lockConnection = null;
+        try
+        {
+            lockConnection = await AcquireInvoiceEmailLockAsync(lockKey, ct);
+            return await SendInvoiceEmailAfterLockAsync(jobId, jobInvoice, invoiceId, previewOnly: false, ct);
+        }
+        finally
+        {
+            await ReleaseInvoiceEmailLockAsync(lockConnection, lockKey);
+        }
+    }
+
+    private async Task<JobInvoiceCreateResult> SendInvoiceEmailAfterLockAsync(
+        long jobId,
+        JobInvoice jobInvoice,
+        Guid invoiceId,
+        bool previewOnly,
+        CancellationToken ct)
+    {
+
+        var correlationId = BuildInvoiceEmailCorrelationId(invoiceId);
+        if (!previewOnly)
+        {
+            var existingSend = await FindSentInvoiceEmailAsync(correlationId, ct);
+            if (existingSend is not null)
+            {
+                var markVerification = await MarkInvoiceSentAndRefreshAsync(jobInvoice, invoiceId, ct);
+                if (!markVerification.Verified)
+                {
+                    _logger.LogWarning(
+                        "Invoice Gmail delivery already existed, but Xero SentToContact repair failed for job {JobId} / invoice {InvoiceId}: {Error}",
+                        jobId,
+                        invoiceId,
+                        markVerification.Error);
+                }
+
+                return JobInvoiceCreateResult.Success(
+                    jobInvoice,
+                    alreadyExists: true,
+                    payload: new InvoiceEmailDeliveryPayload(
+                        existingSend.GmailMessageId,
+                        existingSend.GmailThreadId ?? "",
+                        existingSend.ToAddress ?? existingSend.CounterpartyEmail,
+                        existingSend.GmailAccountEmail,
+                        null,
+                        jobInvoice.ExternalInvoiceNumber ?? "",
+                        "",
+                        BuildPdfDownloadFileName(jobInvoice),
+                        markVerification.Verified,
+                        markVerification.Error,
+                        false));
+            }
+        }
+
+        var xeroInvoice = await _xeroInvoiceService.GetInvoiceByIdAsync(invoiceId, ct);
+        if (!xeroInvoice.Ok)
+        {
+            return JobInvoiceCreateResult.Fail(
+                xeroInvoice.StatusCode,
+                xeroInvoice.Error ?? "Failed to read the invoice from Xero.",
+                xeroInvoice.Payload);
+        }
+
+        var emailContext = ExtractInvoiceEmailContext(xeroInvoice.Payload);
+        if (emailContext is null)
+            return JobInvoiceCreateResult.Fail(502, "Xero returned an invalid invoice response.", xeroInvoice.Payload);
+
+        if (string.Equals(emailContext.Status, "DRAFT", StringComparison.OrdinalIgnoreCase))
+            return JobInvoiceCreateResult.Fail(409, "The Xero invoice must be Awaiting Payment before it can be emailed.", xeroInvoice.Payload);
+
+        var xeroRecipient = NormalizeEmailAddress(emailContext.ContactEmailAddress);
+        if (string.IsNullOrWhiteSpace(xeroRecipient))
+        {
+            return JobInvoiceCreateResult.Fail(
+                400,
+                "The Xero invoice contact does not have a valid primary email address.",
+                xeroInvoice.Payload);
+        }
+
+        var gmailAccount = await _gmailAccountService.GetEffectiveAccountAsync(ct);
+        if (gmailAccount is null || string.IsNullOrWhiteSpace(NormalizeEmailAddress(gmailAccount.Email)))
+            return JobInvoiceCreateResult.Fail(500, "No active Gmail account is configured for invoice delivery.");
+
+        var pdfResult = await _xeroInvoiceService.GetInvoicePdfByIdAsync(invoiceId, ct);
+        if (!pdfResult.Ok || pdfResult.PdfBytes is null || pdfResult.PdfBytes.Length == 0)
+        {
+            return JobInvoiceCreateResult.Fail(
+                pdfResult.Ok ? 502 : pdfResult.StatusCode,
+                pdfResult.Error ?? "Failed to download the official invoice PDF from Xero.",
+                pdfResult.Payload);
+        }
+
+        var onlineInvoice = await _xeroInvoiceService.GetOnlineInvoiceUrlAsync(invoiceId, ct);
+        if (!onlineInvoice.Ok || !IsSafeOnlineInvoiceUrl(onlineInvoice.OnlineInvoiceUrl))
+        {
+            return JobInvoiceCreateResult.Fail(
+                onlineInvoice.Ok ? 502 : onlineInvoice.StatusCode,
+                onlineInvoice.Error ?? "Failed to retrieve the online invoice URL from Xero.",
+                onlineInvoice.Payload);
+        }
+
+        var latestRequest = BuildRequestFromPayload(xeroInvoice.Payload, jobInvoice);
+        ApplyInvoiceUpdate(jobInvoice, latestRequest, xeroInvoice.Payload, xeroInvoice.TenantId);
+        jobInvoice.PdfContent = pdfResult.PdfBytes;
+        jobInvoice.PdfDownloadedAt = DateTime.UtcNow;
+        jobInvoice.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        var invoiceNumber = FirstNonEmpty(emailContext.InvoiceNumber, jobInvoice.ExternalInvoiceNumber)
+            ?? $"Invoice {jobInvoice.Id.ToString(CultureInfo.InvariantCulture)}";
+        var customerName = FirstNonEmpty(emailContext.ContactName, jobInvoice.ContactName);
+        var recipient = previewOnly ? gmailAccount.Email.Trim() : xeroRecipient;
+        var bcc = previewOnly || string.Equals(recipient, gmailAccount.Email, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : gmailAccount.Email.Trim();
+        var subject = $"{(previewOnly ? "[TEST] " : "")}Invoice {invoiceNumber} from NZ AUTO TECH" +
+            (customerName is null ? "" : $" for {customerName}");
+        var plainBody = BuildInvoiceEmailPlainBody(emailContext, invoiceNumber, onlineInvoice.OnlineInvoiceUrl, previewOnly);
+        var pdfFileName = BuildPdfDownloadFileName(jobInvoice);
+        var logoBytes = TryLoadInvoiceEmailLogo();
+        var logoContentId = logoBytes is { Length: > 0 } ? InvoiceEmailLogoContentId : null;
+        var htmlBody = BuildInvoiceEmailHtmlBody(
+            emailContext,
+            invoiceNumber,
+            onlineInvoice.OnlineInvoiceUrl,
+            previewOnly,
+            logoContentId);
+        var emailAttachments = new List<GmailMessageAttachment>
+        {
+            new(pdfFileName, "application/pdf", pdfResult.PdfBytes),
+        };
+        if (logoBytes is { Length: > 0 })
+        {
+            emailAttachments.Add(new GmailMessageAttachment(
+                "nzat-logo.jpg",
+                "image/jpeg",
+                logoBytes,
+                InvoiceEmailLogoContentId));
+        }
+
+        var sendResult = await _gmailMessageSenderService.SendAsync(
+            new GmailMessageSendRequest(
+                To: recipient,
+                Subject: subject,
+                Body: plainBody,
+                CorrelationId: previewOnly ? $"{correlationId}:preview" : correlationId,
+                ThreadId: null,
+                ReplyToRfcMessageId: null,
+                ReferencesHeader: null,
+                GmailAccountId: gmailAccount.Id,
+                IsHtmlBody: true,
+                HtmlBodyOverride: htmlBody,
+                BypassDuplicateProtection: previewOnly,
+                Attachments: emailAttachments,
+                Cc: null,
+                Bcc: bcc),
+            ct);
+
+        if (!sendResult.Ok)
+        {
+            if (!previewOnly && sendResult.StatusCode == 409)
+            {
+                var racedSend = await FindSentInvoiceEmailAsync(correlationId, ct);
+                if (racedSend is not null)
+                    return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true, payload: racedSend);
+            }
+
+            return JobInvoiceCreateResult.Fail(
+                sendResult.StatusCode,
+                sendResult.Error ?? "Failed to send the invoice through Gmail.",
+                sendResult);
+        }
+
+        var xeroMarkedSent = false;
+        string? xeroMarkError = null;
+        if (!previewOnly)
+        {
+            var markVerification = await MarkInvoiceSentAndRefreshAsync(jobInvoice, invoiceId, ct);
+            xeroMarkedSent = markVerification.Verified;
+            xeroMarkError = markVerification.Error;
+            if (!markVerification.Verified)
+            {
+                _logger.LogWarning(
+                    "Invoice email was sent through Gmail, but Xero SentToContact update failed for job {JobId} / invoice {InvoiceId}: {Error}",
+                    jobId,
+                    invoiceId,
+                    markVerification.Error);
+            }
+        }
+
+        return JobInvoiceCreateResult.Success(
+            jobInvoice,
+            alreadyExists: false,
+            payload: new InvoiceEmailDeliveryPayload(
+                sendResult.MessageId,
+                sendResult.ThreadId,
+                recipient,
+                sendResult.GmailAccountEmail,
+                bcc,
+                invoiceNumber,
+                onlineInvoice.OnlineInvoiceUrl,
+                pdfFileName,
+                xeroMarkedSent,
+                xeroMarkError,
+                previewOnly));
+    }
+
+    private Task<GmailMessageLog?> FindSentInvoiceEmailAsync(string correlationId, CancellationToken ct) =>
+        _db.GmailMessageLogs.AsNoTracking()
+            .Where(item => item.Direction == "sent" && item.CorrelationId == correlationId)
+            .OrderByDescending(item => item.CreatedAt)
+            .ThenByDescending(item => item.Id)
+            .FirstOrDefaultAsync(ct);
+
+    private async Task<InvoiceSentMarkVerification> MarkInvoiceSentAndRefreshAsync(
+        JobInvoice jobInvoice,
+        Guid invoiceId,
+        CancellationToken ct)
+    {
+        try
+        {
+            var markResult = await _xeroInvoiceService.MarkInvoiceSentToContactAsync(invoiceId, ct);
+            if (!markResult.Ok)
+            {
+                return InvoiceSentMarkVerification.Warning(
+                    markResult.Error ?? "Xero rejected the SentToContact update.");
+            }
+
+            var fullInvoice = await _xeroInvoiceService.GetInvoiceByIdAsync(invoiceId, ct);
+            if (!fullInvoice.Ok)
+            {
+                return InvoiceSentMarkVerification.Warning(
+                    $"Xero accepted the SentToContact update, but the full invoice could not be reloaded: {fullInvoice.Error ?? "unknown Xero error"}");
+            }
+
+            if (!IsSentToContactVerified(fullInvoice.Payload, invoiceId))
+            {
+                return InvoiceSentMarkVerification.Warning(
+                    "Xero accepted the SentToContact update, but the refreshed invoice did not confirm SentToContact=true.");
+            }
+
+            var refreshedRequest = BuildRequestFromPayload(fullInvoice.Payload, jobInvoice);
+            ApplyInvoiceUpdate(jobInvoice, refreshedRequest, fullInvoice.Payload, fullInvoice.TenantId);
+            await _db.SaveChangesAsync(ct);
+            return InvoiceSentMarkVerification.Success();
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return InvoiceSentMarkVerification.Warning(
+                $"Xero SentToContact verification failed: {ex.Message}");
+        }
+    }
+
+    private static bool IsSentToContactVerified(object? payload, Guid expectedInvoiceId)
+    {
+        if (payload is null)
+            return false;
+
+        try
+        {
+            using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload, JsonOptions));
+            if (!TryGetInvoices(document.RootElement, out var invoices))
+                return false;
+
+            foreach (var invoice in invoices.EnumerateArray())
+            {
+                if (!Guid.TryParse(TryGetString(invoice, "InvoiceID"), out var invoiceId) || invoiceId != expectedInvoiceId)
+                    continue;
+
+                return invoice.TryGetProperty("SentToContact", out var sentToContact) &&
+                       sentToContact.ValueKind == JsonValueKind.True;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        return false;
+    }
+
+    private async Task<NpgsqlConnection?> AcquireInvoiceEmailLockAsync(long lockKey, CancellationToken ct)
+    {
+        if (!_db.Database.IsRelational())
+            return null;
+
+        if (!string.Equals(
+                _db.Database.ProviderName,
+                "Npgsql.EntityFrameworkCore.PostgreSQL",
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Invoice email advisory locking requires PostgreSQL.");
+        }
+
+        var connection = await _dataSource.OpenConnectionAsync(ct);
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT pg_advisory_lock(@lock_key);";
+            command.Parameters.AddWithValue("lock_key", lockKey);
+            await command.ExecuteNonQueryAsync(ct);
+            return connection;
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
+    }
+
+    private async Task ReleaseInvoiceEmailLockAsync(NpgsqlConnection? connection, long lockKey)
+    {
+        if (connection is null)
+            return;
+
+        var released = false;
+        try
+        {
+            if (connection.State == System.Data.ConnectionState.Open)
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = "SELECT pg_advisory_unlock(@lock_key);";
+                command.CommandTimeout = 5;
+                command.Parameters.AddWithValue("lock_key", lockKey);
+                released = await command.ExecuteScalarAsync(CancellationToken.None) is true;
+            }
+
+            if (!released)
+            {
+                _logger.LogWarning(
+                    "PostgreSQL reported that invoice email advisory lock {LockKey} was not held during release.",
+                    lockKey);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to explicitly release invoice email advisory lock {LockKey}.", lockKey);
+        }
+        finally
+        {
+            if (!released)
+                NpgsqlConnection.ClearPool(connection);
+
+            await connection.DisposeAsync();
+        }
+    }
+
+    private static long BuildInvoiceEmailLockKey(Guid invoiceId)
+    {
+        var hash = SHA256.HashData(invoiceId.ToByteArray());
+        return BinaryPrimitives.ReadInt64BigEndian(hash);
+    }
+
+    private static string BuildInvoiceEmailCorrelationId(Guid invoiceId) =>
+        $"xero-invoice:{invoiceId:D}";
+
+    private static string? NormalizeEmailAddress(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            !System.Net.Mail.MailAddress.TryCreate(value.Trim(), out var address) ||
+            string.IsNullOrWhiteSpace(address.Address))
+        {
+            return null;
+        }
+
+        return address.Address.Trim();
+    }
+
+    private static bool IsSafeOnlineInvoiceUrl(string? value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+        string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) &&
+        (string.Equals(uri.Host, "xero.com", StringComparison.OrdinalIgnoreCase) ||
+         uri.Host.EndsWith(".xero.com", StringComparison.OrdinalIgnoreCase));
+
+    private static InvoiceEmailContext? ExtractInvoiceEmailContext(object? payload)
+    {
+        if (payload is null)
+            return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload, JsonOptions));
+            if (!TryGetInvoices(document.RootElement, out var invoices) || invoices.GetArrayLength() == 0)
+                return null;
+
+            var invoice = invoices[0];
+            JsonElement contact = default;
+            if (invoice.TryGetProperty("Contact", out var contactElement) && contactElement.ValueKind == JsonValueKind.Object)
+                contact = contactElement;
+
+            return new InvoiceEmailContext(
+                TryGetString(invoice, "InvoiceNumber"),
+                TryGetString(invoice, "Status"),
+                contact.ValueKind == JsonValueKind.Object ? TryGetString(contact, "Name") : null,
+                contact.ValueKind == JsonValueKind.Object ? TryGetString(contact, "EmailAddress") : null,
+                ParseXeroDate(invoice, "DateString", "Date"),
+                TryGetString(invoice, "CurrencyCode"),
+                TryGetDecimal(invoice, "AmountDue") ?? TryGetDecimal(invoice, "Total"),
+                TryGetString(invoice, "Reference"));
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static decimal? TryGetDecimal(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var value))
+            return null;
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetDecimal(out var number))
+            return number;
+
+        return value.ValueKind == JsonValueKind.String &&
+               decimal.TryParse(value.GetString(), NumberStyles.Number, CultureInfo.InvariantCulture, out number)
+            ? number
+            : null;
+    }
+
+    private static DateOnly? ParseXeroDate(JsonElement invoice, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            var raw = TryGetString(invoice, propertyName);
+            if (string.IsNullOrWhiteSpace(raw))
+                continue;
+
+            if (DateOnly.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var date))
+                return date;
+            if (DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var dateTime))
+                return DateOnly.FromDateTime(dateTime.DateTime);
+        }
+
+        return null;
+    }
+
+    private static string BuildInvoiceEmailPlainBody(
+        InvoiceEmailContext context,
+        string invoiceNumber,
+        string onlineInvoiceUrl,
+        bool previewOnly)
+    {
+        var lines = new List<string>();
+        if (previewOnly)
+            lines.Add("TEST COPY — this preview has not marked the invoice as sent in Xero.");
+
+        lines.Add("Hi Team,");
+        lines.Add("");
+        lines.Add("Thank you for choosing NZ AUTO TECH.");
+        lines.Add($"Please find invoice {invoiceNumber} attached as a PDF for your records. You can also view it securely online using the link below.");
+        lines.Add("");
+        if (context.AmountDue.HasValue)
+            lines.Add($"Amount Due: {FormatInvoiceAmount(context.AmountDue.Value, context.CurrencyCode)}");
+        if (context.InvoiceDate.HasValue)
+            lines.Add($"Invoice Date: {context.InvoiceDate.Value.ToString("dd MMMM yyyy", CultureInfo.GetCultureInfo("en-NZ"))}");
+        if (!string.IsNullOrWhiteSpace(context.Reference))
+            lines.Add($"Reference: {context.Reference.Trim()}");
+
+        lines.Add("");
+        lines.Add($"View Invoice Online: {onlineInvoiceUrl}");
+        lines.Add("");
+        lines.Add("A PDF copy of the invoice is attached to this email.");
+        lines.Add("If you have any questions about this invoice, please let us know. We're happy to help.");
+        lines.Add("");
+        lines.Add("Kind regards,");
+        lines.Add("NZ AUTO TECH");
+        lines.Add("Phone: 09 213 1988");
+        lines.Add("Email: info@nzautotech.co.nz");
+        lines.Add("Address: 486 Ellerslie Panmure Highway,Mount Wellington, Auckland 1060");
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string BuildInvoiceEmailHtmlBody(
+        InvoiceEmailContext context,
+        string invoiceNumber,
+        string onlineInvoiceUrl,
+        bool previewOnly,
+        string? logoContentId)
+    {
+        Func<string?, string?> encode = System.Net.WebUtility.HtmlEncode;
+        var amountRow = context.AmountDue.HasValue
+            ? $"<tr><td style=\"padding:12px 16px;color:#667085;border-bottom:1px solid #eaecf0;\">Amount Due</td><td align=\"right\" style=\"padding:12px 16px;font-weight:700;color:#101828;border-bottom:1px solid #eaecf0;\">{encode(FormatInvoiceAmount(context.AmountDue.Value, context.CurrencyCode))}</td></tr>"
+            : "";
+        var invoiceDateRow = context.InvoiceDate.HasValue
+            ? $"<tr><td style=\"padding:12px 16px;color:#667085;border-bottom:1px solid #eaecf0;\">Invoice Date</td><td align=\"right\" style=\"padding:12px 16px;font-weight:600;color:#101828;border-bottom:1px solid #eaecf0;\">{encode(context.InvoiceDate.Value.ToString("dd MMMM yyyy", CultureInfo.GetCultureInfo("en-NZ")))}</td></tr>"
+            : "";
+        var referenceRow = !string.IsNullOrWhiteSpace(context.Reference)
+            ? $"<tr><td style=\"padding:12px 16px;color:#667085;\">Reference</td><td align=\"right\" style=\"padding:12px 16px;font-weight:600;color:#101828;\">{encode(context.Reference.Trim())}</td></tr>"
+            : "";
+        var previewBanner = previewOnly
+            ? "<div style=\"margin:0 0 20px;padding:12px 16px;border-radius:6px;background:#fff4e5;color:#8a4b08;font-weight:600;\">TEST COPY — this preview has not marked the invoice as sent in Xero.</div>"
+            : "";
+        var logoMarkup = string.IsNullOrWhiteSpace(logoContentId)
+            ? "<div style=\"font-size:24px;font-weight:800;letter-spacing:.08em;color:#ffffff;\">NZ AUTO TECH</div>"
+            : $"<img src=\"cid:{encode(logoContentId)}\" width=\"460\" alt=\"NZ AUTO TECH\" style=\"display:block;width:100%;max-width:460px;height:auto;margin:0 auto;border:0;\">";
+
+        return $"""
+            <!doctype html>
+            <html>
+              <body style="margin:0;background:#f5f7fa;font-family:Arial,sans-serif;color:#1d2939;">
+                <div style="max-width:640px;margin:0 auto;padding:32px 16px;">
+                  <div style="background:#ffffff;border:1px solid #e4e7ec;border-radius:10px;overflow:hidden;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#000000;">
+                      <tr>
+                        <td align="center" style="padding:24px 28px 12px;">{logoMarkup}</td>
+                      </tr>
+                      <tr>
+                        <td align="center" style="padding:0 28px 24px;color:#ffffff;font-size:24px;font-weight:700;">Invoice {encode(invoiceNumber)}</td>
+                      </tr>
+                    </table>
+                    <div style="padding:30px 28px 28px;">
+                      {previewBanner}
+                      <p style="margin:0 0 16px;font-size:15px;line-height:1.7;">Hi Team,</p>
+                      <p style="margin:0 0 8px;font-size:15px;line-height:1.7;">Thank you for choosing NZ AUTO TECH.</p>
+                      <p style="margin:0 0 24px;font-size:15px;line-height:1.7;">Please find invoice {encode(invoiceNumber)} attached as a PDF for your records.</p>
+                      <p style="margin:0 0 24px;font-size:15px;line-height:1.7;">You can also view it online using the button below.</p>
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;margin:0 0 26px;font-size:14px;border:1px solid #eaecf0;border-radius:8px;background:#f9fafb;">
+                        {invoiceDateRow}{amountRow}{referenceRow}
+                      </table>
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                        <tr>
+                          <td align="center" style="padding:0 0 4px;">
+                            <a href="{encode(onlineInvoiceUrl)}" style="display:inline-block;padding:13px 24px;border-radius:6px;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;">View Invoice Online</a>
+                          </td>
+                        </tr>
+                      </table>
+                      <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#667085;">A PDF copy of the invoice is attached to this email.</p>
+                      <p style="margin:16px 0 0;font-size:15px;line-height:1.7;">If you have any questions about this invoice, please let us know.</p>
+                      <p style="margin:24px 0 0;font-size:15px;line-height:1.7;">Kind regards,<br><strong>NZ AUTO TECH</strong></p>
+                    </div>
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#111111;">
+                      <tr>
+                        <td align="center" style="padding:22px 24px;color:#d0d5dd;font-size:13px;line-height:1.8;">
+                          <strong style="color:#ffffff;letter-spacing:.04em;">CONTACT</strong><br>
+                          <a href="tel:+6492131988" style="color:#ffffff;text-decoration:none;">☎️:09 213 1988</a>
+                          <span style="color:#667085;">&nbsp;&nbsp;|&nbsp;&nbsp;</span>
+                          <a href="mailto:info@nzautotech.co.nz" style="color:#ffffff;text-decoration:none;">📧:info@nzautotech.co.nz</a><br>
+                          486 Ellerslie Panmure Highway,Mount Wellington, Auckland 1060
+                        </td>
+                      </tr>
+                    </table>
+                  </div>
+                </div>
+              </body>
+            </html>
+            """;
+    }
+
+    private static string FormatInvoiceAmount(decimal amount, string? currencyCode)
+    {
+        var currency = string.IsNullOrWhiteSpace(currencyCode) ? "NZD" : currencyCode.Trim().ToUpperInvariant();
+        return $"{currency} {amount.ToString("N2", CultureInfo.GetCultureInfo("en-NZ"))}";
+    }
+
+    private byte[]? TryLoadInvoiceEmailLogo()
+    {
+        try
+        {
+            var path = Path.Combine(AppContext.BaseDirectory, "Assets", "nzat-logo.jpg");
+            if (!File.Exists(path))
+            {
+                _logger.LogWarning("Invoice email logo was not found at {LogoPath}; falling back to text branding.", path);
+                return null;
+            }
+
+            var bytes = File.ReadAllBytes(path);
+            return bytes.Length > 0 ? bytes : null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Invoice email logo could not be loaded; falling back to text branding.");
+            return null;
+        }
+    }
+
+    private sealed record InvoiceEmailContext(
+        string? InvoiceNumber,
+        string? Status,
+        string? ContactName,
+        string? ContactEmailAddress,
+        DateOnly? InvoiceDate,
+        string? CurrencyCode,
+        decimal? AmountDue,
+        string? Reference);
+
+    private sealed record InvoiceSentMarkVerification(bool Verified, string? Error)
+    {
+        public static InvoiceSentMarkVerification Success() => new(true, null);
+
+        public static InvoiceSentMarkVerification Warning(string error) => new(false, error);
     }
 
     public async Task<JobInvoiceCreateResult> MarkInvoiceWaitingPaymentAsync(long jobId, CancellationToken ct)
@@ -507,6 +1158,99 @@ public sealed class JobInvoiceService
         return syncResult;
     }
 
+    public async Task<JobInvoiceCreateResult> ReplaceExistingXeroInvoiceAsync(long jobId, string invoiceNumber, CancellationToken ct)
+    {
+        var normalizedInvoiceNumber = invoiceNumber?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedInvoiceNumber))
+            return JobInvoiceCreateResult.Fail(400, "Invoice number is required.");
+
+        var currentInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (currentInvoice is null)
+            return await AttachExistingXeroInvoiceAsync(jobId, normalizedInvoiceNumber, ct);
+
+        var hasPayment = await _db.JobPayments.AsNoTracking().AnyAsync(x => x.JobInvoiceId == currentInvoice.Id, ct);
+        if (hasPayment)
+            return JobInvoiceCreateResult.Fail(409, "This invoice has a recorded payment and cannot be replaced.");
+
+        var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == jobId, ct);
+        if (job is null)
+            return JobInvoiceCreateResult.Fail(404, "Job not found.");
+
+        var xeroLookup = await _xeroInvoiceService.GetInvoicesByNumberAsync(normalizedInvoiceNumber, ct);
+        if (!xeroLookup.Ok)
+        {
+            return JobInvoiceCreateResult.Fail(
+                xeroLookup.StatusCode,
+                xeroLookup.Error ?? "Failed to find invoice in Xero.",
+                xeroLookup.Payload);
+        }
+
+        var matchedInvoices = ExtractInvoiceSummaries(xeroLookup.Payload)
+            .Where(x => string.Equals(x.InvoiceNumber, normalizedInvoiceNumber, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (matchedInvoices.Count == 0)
+            return JobInvoiceCreateResult.Fail(404, $"Invoice '{normalizedInvoiceNumber}' was not found in Xero.");
+        if (matchedInvoices.Count > 1)
+            return JobInvoiceCreateResult.Fail(409, $"Multiple Xero invoices matched '{normalizedInvoiceNumber}'.");
+
+        var matchedInvoice = matchedInvoices[0];
+        if (string.IsNullOrWhiteSpace(matchedInvoice.InvoiceId) || !Guid.TryParse(matchedInvoice.InvoiceId, out var invoiceId))
+            return JobInvoiceCreateResult.Fail(502, "Xero returned an invoice without a valid InvoiceID.", xeroLookup.Payload);
+
+        if (string.Equals(currentInvoice.ExternalInvoiceId, invoiceId.ToString(), StringComparison.OrdinalIgnoreCase))
+            return await SyncFromXeroInvoiceIdAsync(invoiceId, ct);
+
+        var linkedElsewhere = await _db.JobInvoices.AsNoTracking()
+            .AnyAsync(x => x.ExternalInvoiceId == invoiceId.ToString() && x.JobId != jobId, ct);
+        if (linkedElsewhere)
+            return JobInvoiceCreateResult.Fail(409, $"Invoice '{normalizedInvoiceNumber}' is already linked to another job.");
+
+        var fullInvoice = await _xeroInvoiceService.GetInvoiceByIdAsync(invoiceId, ct);
+        if (!fullInvoice.Ok)
+        {
+            return JobInvoiceCreateResult.Fail(
+                fullInvoice.StatusCode,
+                fullInvoice.Error ?? "Failed to load the replacement invoice from Xero.",
+                fullInvoice.Payload);
+        }
+
+        if (string.Equals(currentInvoice.Provider, "xero", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(currentInvoice.ExternalStatus, "DRAFT", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(currentInvoice.ExternalInvoiceId)
+            && Guid.TryParse(currentInvoice.ExternalInvoiceId, out _))
+        {
+            var deleteResult = await SyncInvoiceStatusAsync(currentInvoice, "DELETED", ct);
+            if (!deleteResult.Ok && deleteResult.StatusCode is not 400 and not 404)
+            {
+                return JobInvoiceCreateResult.Fail(
+                    deleteResult.StatusCode,
+                    deleteResult.Error ?? "Failed to delete the old Xero draft invoice.",
+                    deleteResult.Payload);
+            }
+        }
+
+        DeleteInvoiceDocuments(currentInvoice.Id);
+        currentInvoice.PdfContent = null;
+        currentInvoice.PdfPreviewContent = null;
+        currentInvoice.PdfFilePath = null;
+        currentInvoice.PdfPreviewPath = null;
+        currentInvoice.PdfDownloadedAt = null;
+        currentInvoice.PdfPreviewGeneratedAt = null;
+
+        var request = BuildRequestFromPayload(fullInvoice.Payload, currentInvoice);
+        ApplyInvoiceUpdate(currentInvoice, request, fullInvoice.Payload, fullInvoice.TenantId);
+        job.InvoiceReference = currentInvoice.Reference;
+        job.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        await _jobLifecycleService.EvaluateAsync(job.Id, ct);
+
+        return JobInvoiceCreateResult.Success(
+            currentInvoice,
+            alreadyExists: true,
+            payload: fullInvoice.Payload,
+            requestBody: request);
+    }
+
     public async Task<JobInvoiceCreateResult> SyncFromXeroAsync(long jobId, CancellationToken ct)
     {
         await EnsureJobInvoicePdfColumnsAsync(ct);
@@ -545,6 +1289,7 @@ public sealed class JobInvoiceService
         job.InvoiceReference = jobInvoice.Reference;
         job.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        await _jobLifecycleService.EvaluateAsync(job.Id, ct);
 
         return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true, payload: xeroResult.Payload, requestBody: request);
     }
@@ -608,7 +1353,11 @@ public sealed class JobInvoiceService
         }
 
         if (synced > 0)
+        {
             await _db.SaveChangesAsync(ct);
+            foreach (var jobId in syncTargets.Select(x => x.Invoice.JobId).Distinct())
+                await _jobLifecycleService.EvaluateAsync(jobId, ct);
+        }
 
         return JobInvoiceBulkSyncResult.Success(targets.Count, synced, xeroResult.Payload);
     }
@@ -657,8 +1406,10 @@ public sealed class JobInvoiceService
             return JobInvoiceCreateResult.Fail(400, "Missing Xero invoice id.");
 
         var pulled = await TrySyncInvoicePdfAsync(jobInvoice, invoiceId, ct);
-        if (!pulled)
-            return JobInvoiceCreateResult.Fail(502, "Failed to pull invoice PDF from Xero.");
+        if (!pulled.Ok)
+            return JobInvoiceCreateResult.Fail(
+                pulled.StatusCode,
+                pulled.Error ?? "Failed to pull invoice PDF from Xero.");
 
         return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true);
     }
@@ -896,7 +1647,6 @@ public sealed class JobInvoiceService
 
     public async Task<JobInvoiceUnlinkResult> UnlinkInvoiceAsync(long jobId, CancellationToken ct)
     {
-        await EnsureJobInvoicePdfColumnsAsync(ct);
         var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
         if (jobInvoice is null)
             return JobInvoiceUnlinkResult.Fail(404, "Job invoice not found.");
@@ -1213,7 +1963,10 @@ public sealed class JobInvoiceService
         return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true, payload: syncResult.Payload, requestBody: request);
     }
 
-    private async Task<bool> TrySyncInvoicePdfAsync(JobInvoice jobInvoice, Guid invoiceId, CancellationToken ct)
+    private async Task<(bool Ok, int StatusCode, string? Error)> TrySyncInvoicePdfAsync(
+        JobInvoice jobInvoice,
+        Guid invoiceId,
+        CancellationToken ct)
     {
         try
         {
@@ -1225,7 +1978,10 @@ public sealed class JobInvoiceService
                     jobInvoice.Id,
                     invoiceId,
                     pdfResult.Error ?? "empty pdf response");
-                return false;
+                return (
+                    false,
+                    pdfResult.StatusCode > 0 ? pdfResult.StatusCode : 502,
+                    pdfResult.Error ?? "Failed to pull invoice PDF from Xero.");
             }
 
             var now = DateTime.UtcNow;
@@ -1250,7 +2006,7 @@ public sealed class JobInvoiceService
             jobInvoice.UpdatedAt = now;
             await _db.SaveChangesAsync(ct);
 
-            return true;
+            return (true, 200, null);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1259,7 +2015,7 @@ public sealed class JobInvoiceService
                 "Failed to store invoice PDF for job invoice {JobInvoiceId} / Xero invoice {InvoiceId}",
                 jobInvoice.Id,
                 invoiceId);
-            return false;
+            return (false, 502, ex.Message);
         }
     }
 
@@ -1969,13 +2725,13 @@ public sealed class JobInvoiceService
 
         var rego = string.IsNullOrWhiteSpace(vehicle.Plate) ? "[REGO]" : vehicle.Plate.Trim().ToUpperInvariant();
         var poPrefix = string.IsNullOrWhiteSpace(job.PoNumber)
-            ? $"PO# Pending {rego}"
-            : $"{job.PoNumber.Trim()} {rego}";
+            ? "PO# Pending"
+            : $"PO# {job.PoNumber.Trim()}";
         var year = vehicle.Year.HasValue && vehicle.Year.Value > 0 ? vehicle.Year.Value.ToString() : "[YEAR]";
         var make = string.IsNullOrWhiteSpace(vehicle.Make) ? "[MAKE]" : vehicle.Make.Trim();
         var model = string.IsNullOrWhiteSpace(vehicle.Model) ? "[MODEL]" : vehicle.Model.Trim();
 
-        return $"{poPrefix} {year} {make} {model}";
+        return $"{poPrefix} {rego} {year} {make} {model}";
     }
 
     private static string BuildContactName(Customer customer, Vehicle vehicle)
@@ -2442,6 +3198,24 @@ public sealed class JobInvoiceCreateResult
 }
 
 public sealed record JobInvoiceXeroSyncTarget(long JobId, long JobInvoiceId, string ExternalInvoiceId);
+
+public sealed record InvoiceEmailDeliveryPayload(
+    string MessageId,
+    string ThreadId,
+    string RecipientEmail,
+    string? GmailAccountEmail,
+    string? BccEmail,
+    string InvoiceNumber,
+    string OnlineInvoiceUrl,
+    string PdfFileName,
+    bool XeroMarkedSent,
+    string? XeroMarkError,
+    bool PreviewOnly);
+
+public sealed record InvoiceSentRepairPayload(
+    bool GmailDeliveryFound,
+    bool XeroMarkedSent,
+    string? Error);
 
 public sealed class JobInvoiceBulkSyncResult
 {

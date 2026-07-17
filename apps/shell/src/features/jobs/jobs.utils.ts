@@ -101,8 +101,6 @@ export function filterJobs(rows: JobRow[], filters: JobsFilters): JobRow[] {
       if (!hit) return false;
     }
 
-    // Job Type: 默认隐藏 Archived，只有筛选时才显示
-    if (!filters.jobType && r.vehicleStatus === "Archived") return false;
     if (filters.jobType && r.vehicleStatus !== filters.jobType) return false;
 
     // WOF 状态

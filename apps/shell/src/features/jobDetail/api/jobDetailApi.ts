@@ -4,6 +4,17 @@ export function fetchJob(jobId: string) {
   return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}`);
 }
 
+export type JobLogItem = {
+  occurredAt: string;
+  category: string;
+  title: string;
+  detail?: string | null;
+};
+
+export function fetchJobLogs(jobId: string) {
+  return requestJson<{ items: JobLogItem[] }>(`/api/jobs/${encodeURIComponent(jobId)}/logs`);
+}
+
 export function deleteJob(jobId: string) {
   return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE" });
 }
@@ -26,6 +37,28 @@ export function updateJobStatus(jobId: string, status: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status }),
   });
+}
+
+export function updateJobYardStatus(jobId: string, isOnYard: boolean | null) {
+  return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}/yard-status`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ isOnYard }),
+  });
+}
+
+export function updateJobYardStatusBatch(jobIds: string[], isOnYard: boolean | null) {
+  return requestJson<{ updated: number; skipped: number; isOnYard: boolean | null }>(
+    "/api/jobs/yard-status/batch",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jobIds: jobIds.map((id) => Number(id)).filter(Number.isFinite),
+        isOnYard,
+      }),
+    }
+  );
 }
 
 export function updateJobCreatedAt(jobId: string, date: string) {
@@ -90,6 +123,17 @@ export function updateJobPoSelection(jobId: string, payload: { poNumber?: string
   });
 }
 
+export function updateJobPoNumber(jobId: string, poNumber: string) {
+  return requestJson<{ success: boolean; poNumber?: string | null }>(
+    `/api/jobs/${encodeURIComponent(jobId)}/po-number`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ poNumber }),
+    }
+  );
+}
+
 export function updateVehicleInfo(
   jobId: string,
   payload: { year?: number | null; make?: string | null; fuelType?: string | null; vin?: string | null; nzFirstRegistration?: string | null }
@@ -132,6 +176,18 @@ export function attachJobXeroInvoice(jobId: string, invoiceNumber: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ invoiceNumber }),
   });
+}
+
+export function replaceJobXeroInvoice(jobId: string, invoiceNumber: string) {
+  return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}/xero-draft-invoice/replace`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ invoiceNumber }),
+  });
+}
+
+export function fetchJobXeroInvoiceProcessing(jobId: string) {
+  return requestJson<any>(`/api/jobs/${encodeURIComponent(jobId)}/xero-draft-invoice/processing`);
 }
 
 export function detachJobXeroInvoice(jobId: string) {

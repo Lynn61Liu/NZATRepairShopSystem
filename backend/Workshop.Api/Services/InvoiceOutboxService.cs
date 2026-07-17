@@ -9,6 +9,7 @@ public sealed class InvoiceOutboxService
 {
     public const string CreateDraftMessageType = "job_invoice.create_draft";
     public const string AttachExistingMessageType = "job_invoice.attach_existing";
+    public const string ReplaceExistingMessageType = "job_invoice.replace_existing";
     public const string SyncWofDraftMessageType = "job_invoice.sync_wof_draft";
     public const string RemoveWofDraftItemsMessageType = "job_invoice.remove_wof_draft_items";
     public const string SyncPoStateMessageType = "job_po.sync_state";
@@ -48,6 +49,13 @@ public sealed class InvoiceOutboxService
             new AttachExistingPayload(jobId, invoiceNumber.Trim()),
             utcNow);
 
+    public OutboxMessage BuildReplaceExistingMessage(long jobId, string invoiceNumber, DateTime utcNow)
+        => BuildMessage(
+            ReplaceExistingMessageType,
+            jobId,
+            new ReplaceExistingPayload(jobId, invoiceNumber.Trim()),
+            utcNow);
+
     public OutboxMessage BuildSyncPoStateMessage(long jobId, DateTime utcNow)
         => BuildMessage(SyncPoStateMessageType, jobId, new SyncPoStatePayload(jobId), utcNow);
 
@@ -66,7 +74,7 @@ public sealed class InvoiceOutboxService
         if (existingInvoice)
             return InvoiceOutboxEnqueueResult.AsAlreadyHandled("Invoice already exists.");
 
-        var active = await FindActiveMessageAsync(jobId, CreateDraftMessageType, ct);
+        var active = await FindActiveInvoiceMessageAsync(jobId, ct);
         if (active is not null)
             return InvoiceOutboxEnqueueResult.Queued(active.Id, active.Status);
 
@@ -87,12 +95,33 @@ public sealed class InvoiceOutboxService
         if (existingInvoice)
             return InvoiceOutboxEnqueueResult.AsAlreadyHandled("Invoice already exists.");
 
-        var active = await FindActiveMessageAsync(jobId, AttachExistingMessageType, ct);
+        var active = await FindActiveInvoiceMessageAsync(jobId, ct);
         if (active is not null)
             return InvoiceOutboxEnqueueResult.Queued(active.Id, active.Status);
 
         var now = DateTime.UtcNow;
         var message = BuildAttachExistingMessage(jobId, normalizedInvoiceNumber, now);
+        _db.OutboxMessages.Add(message);
+        await _db.SaveChangesAsync(ct);
+        return InvoiceOutboxEnqueueResult.Queued(message.Id, message.Status);
+    }
+
+    public async Task<InvoiceOutboxEnqueueResult> EnqueueReplaceExistingAsync(long jobId, string invoiceNumber, CancellationToken ct)
+    {
+        var normalizedInvoiceNumber = invoiceNumber.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedInvoiceNumber))
+            return InvoiceOutboxEnqueueResult.Fail("Invoice number is required.");
+
+        var existingInvoice = await _db.JobInvoices.AsNoTracking().AnyAsync(x => x.JobId == jobId, ct);
+        if (!existingInvoice)
+            return await EnqueueAttachExistingAsync(jobId, normalizedInvoiceNumber, ct);
+
+        var active = await FindActiveInvoiceMessageAsync(jobId, ct);
+        if (active is not null)
+            return InvoiceOutboxEnqueueResult.Queued(active.Id, active.Status);
+
+        var now = DateTime.UtcNow;
+        var message = BuildReplaceExistingMessage(jobId, normalizedInvoiceNumber, now);
         _db.OutboxMessages.Add(message);
         await _db.SaveChangesAsync(ct);
         return InvoiceOutboxEnqueueResult.Queued(message.Id, message.Status);
@@ -122,7 +151,7 @@ public sealed class InvoiceOutboxService
                 FROM outbox_messages
                 WHERE status = 'pending'
                   AND available_at <= {now}
-                  AND message_type IN ({CreateDraftMessageType}, {AttachExistingMessageType}, {SyncWofDraftMessageType}, {RemoveWofDraftItemsMessageType}, {SyncPoStateMessageType})
+                  AND message_type IN ({CreateDraftMessageType}, {AttachExistingMessageType}, {ReplaceExistingMessageType}, {SyncWofDraftMessageType}, {RemoveWofDraftItemsMessageType}, {SyncPoStateMessageType})
                 ORDER BY created_at
                 FOR UPDATE SKIP LOCKED
                 LIMIT {batchSize}")
@@ -184,7 +213,7 @@ public sealed class InvoiceOutboxService
                 WHERE id = {messageId}
                   AND status = 'pending'
                   AND available_at <= {now}
-                  AND message_type IN ({CreateDraftMessageType}, {AttachExistingMessageType}, {SyncWofDraftMessageType}, {RemoveWofDraftItemsMessageType}, {SyncPoStateMessageType})
+                  AND message_type IN ({CreateDraftMessageType}, {AttachExistingMessageType}, {ReplaceExistingMessageType}, {SyncWofDraftMessageType}, {RemoveWofDraftItemsMessageType}, {SyncPoStateMessageType})
                 FOR UPDATE SKIP LOCKED")
             .FirstOrDefaultAsync(ct);
 
@@ -213,6 +242,7 @@ public sealed class InvoiceOutboxService
                      x.Status == "processing" &&
                      (x.MessageType == CreateDraftMessageType ||
                       x.MessageType == AttachExistingMessageType ||
+                      x.MessageType == ReplaceExistingMessageType ||
                       x.MessageType == SyncWofDraftMessageType ||
                       x.MessageType == RemoveWofDraftItemsMessageType ||
                       x.MessageType == SyncPoStateMessageType),
@@ -240,6 +270,7 @@ public sealed class InvoiceOutboxService
         {
             CreateDraftMessageType => await ProcessCreateDraftAsync(message, ct),
             AttachExistingMessageType => await ProcessAttachExistingAsync(message, ct),
+            ReplaceExistingMessageType => await ProcessReplaceExistingAsync(message, ct),
             SyncWofDraftMessageType => await ProcessSyncWofDraftAsync(message, ct),
             RemoveWofDraftItemsMessageType => await ProcessRemoveWofDraftItemsAsync(message, ct),
             SyncPoStateMessageType => await ProcessSyncPoStateAsync(message, ct),
@@ -254,11 +285,12 @@ public sealed class InvoiceOutboxService
             return InvoiceOutboxDispatchResult.Fail("Invalid create draft outbox payload.");
 
         var result = await _jobInvoiceService.CreateDraftForJobAsync(payload.JobId, ct);
+        var reconnectRequired = RequiresXeroReconnect(result.Error);
         return result.Ok
             ? InvoiceOutboxDispatchResult.Success()
             : InvoiceOutboxDispatchResult.Fail(
                 result.Error ?? "Failed to create draft invoice.",
-                IsRetryableStatusCode(result.StatusCode));
+                !reconnectRequired && IsRetryableStatusCode(result.StatusCode));
     }
 
     private async Task<InvoiceOutboxDispatchResult> ProcessAttachExistingAsync(OutboxMessage message, CancellationToken ct)
@@ -268,11 +300,27 @@ public sealed class InvoiceOutboxService
             return InvoiceOutboxDispatchResult.Fail("Invalid attach existing invoice outbox payload.");
 
         var result = await _jobInvoiceService.AttachExistingXeroInvoiceAsync(payload.JobId, payload.InvoiceNumber, ct);
+        var reconnectRequired = RequiresXeroReconnect(result.Error);
         return result.Ok
             ? InvoiceOutboxDispatchResult.Success()
             : InvoiceOutboxDispatchResult.Fail(
                 result.Error ?? "Failed to attach existing Xero invoice.",
-                IsRetryableStatusCode(result.StatusCode));
+                !reconnectRequired && IsRetryableStatusCode(result.StatusCode));
+    }
+
+    private async Task<InvoiceOutboxDispatchResult> ProcessReplaceExistingAsync(OutboxMessage message, CancellationToken ct)
+    {
+        var payload = JsonSerializer.Deserialize<ReplaceExistingPayload>(message.PayloadJson, JsonOptions);
+        if (payload is null || payload.JobId <= 0 || string.IsNullOrWhiteSpace(payload.InvoiceNumber))
+            return InvoiceOutboxDispatchResult.Fail("Invalid replace existing invoice outbox payload.", retryable: false);
+
+        var result = await _jobInvoiceService.ReplaceExistingXeroInvoiceAsync(payload.JobId, payload.InvoiceNumber, ct);
+        var reconnectRequired = RequiresXeroReconnect(result.Error);
+        return result.Ok
+            ? InvoiceOutboxDispatchResult.Success()
+            : InvoiceOutboxDispatchResult.Fail(
+                result.Error ?? "Failed to replace linked Xero invoice.",
+                !reconnectRequired && IsRetryableStatusCode(result.StatusCode));
     }
 
     private async Task<InvoiceOutboxDispatchResult> ProcessSyncWofDraftAsync(OutboxMessage message, CancellationToken ct)
@@ -366,6 +414,17 @@ public sealed class InvoiceOutboxService
             .OrderByDescending(x => x.CreatedAt)
             .FirstOrDefaultAsync(ct);
 
+    private async Task<OutboxMessage?> FindActiveInvoiceMessageAsync(long jobId, CancellationToken ct)
+        => await _db.OutboxMessages.AsNoTracking()
+            .Where(x => x.AggregateType == JobAggregateType
+                && x.AggregateId == jobId
+                && (x.MessageType == CreateDraftMessageType
+                    || x.MessageType == AttachExistingMessageType
+                    || x.MessageType == ReplaceExistingMessageType)
+                && (x.Status == "pending" || x.Status == "processing"))
+            .OrderByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+
     private static OutboxMessage BuildMessage(string messageType, long jobId, object payload, DateTime utcNow)
         => new()
         {
@@ -392,6 +451,16 @@ public sealed class InvoiceOutboxService
 
     private static bool IsRetryableStatusCode(int statusCode)
         => statusCode == 0 || statusCode == 408 || statusCode == 429 || statusCode >= 500;
+
+    public static bool RequiresXeroReconnect(string? error)
+    {
+        if (string.IsNullOrWhiteSpace(error))
+            return false;
+
+        return error.Contains("invalid_grant", StringComparison.OrdinalIgnoreCase)
+            || error.Contains("refresh token is invalid or expired", StringComparison.OrdinalIgnoreCase)
+            || error.Contains("Missing configuration: Xero:RefreshToken", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string FormatExceptionForDisplay(Exception ex)
     {
@@ -422,6 +491,7 @@ public sealed class InvoiceOutboxService
 
     private sealed record CreateDraftPayload(long JobId);
     private sealed record AttachExistingPayload(long JobId, string InvoiceNumber);
+    private sealed record ReplaceExistingPayload(long JobId, string InvoiceNumber);
     private sealed record SyncWofDraftPayload(long JobId);
     public sealed record RemovedServiceSelectionPayload(long ServiceCatalogItemId, string ServiceNameSnapshot);
     private sealed record RemoveWofDraftItemsPayload(long JobId, IReadOnlyList<RemovedServiceSelectionPayload> Selections);

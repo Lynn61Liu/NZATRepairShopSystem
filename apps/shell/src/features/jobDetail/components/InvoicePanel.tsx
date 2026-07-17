@@ -4,6 +4,7 @@ import { Button, Input, Select } from "@/components/ui";
 import { InvoiceDashboard } from "@/features/invoice/components/invoicePanel/InvoiceDashboard";
 import type { InvoicePanelModel } from "@/features/invoice/hooks/useInvoiceDashboardState";
 import { formatNzDateTime } from "@/utils/date";
+import { withApiBase } from "@/utils/api";
 
 type InvoicePanelProps = {
   model?: InvoicePanelModel;
@@ -18,11 +19,14 @@ type InvoicePanelProps = {
     createdAt?: string;
     updatedAt?: string;
     processedAt?: string | null;
+    requiresXeroReconnect?: boolean;
   } | null;
   onCreateInvoice?: () => Promise<{ success: boolean; message?: string }>;
   isCreatingInvoice?: boolean;
   onAttachInvoice?: (invoiceNumber: string) => Promise<{ success: boolean; message?: string }>;
   isAttachingInvoice?: boolean;
+  onReplaceInvoice?: (invoiceNumber: string) => Promise<{ success: boolean; message?: string }>;
+  isReplacingInvoice?: boolean;
   onDetachInvoice?: () => Promise<{ success: boolean; message?: string }>;
   isDetachingInvoice?: boolean;
   needsPo?: boolean;
@@ -36,6 +40,8 @@ export function InvoicePanel({
   isCreatingInvoice,
   onAttachInvoice,
   isAttachingInvoice,
+  onReplaceInvoice,
+  isReplacingInvoice,
   onDetachInvoice,
   isDetachingInvoice,
   needsPo,
@@ -79,6 +85,21 @@ export function InvoicePanel({
     if (result.success) {
       setInvoiceNumber("");
     }
+  };
+
+  const handleReplaceInvoice = async () => {
+    if (!onReplaceInvoice) return;
+    const result = await onReplaceInvoice(invoiceNumber);
+    if (result.success) {
+      setInvoiceNumber("");
+    }
+  };
+
+  const reconnectXero = () => {
+    const returnUrl = window.location.href;
+    window.location.assign(withApiBase(
+      `/api/xero/connect?redirect=true&returnUrl=${encodeURIComponent(returnUrl)}`
+    ));
   };
 
   const handleSavePayment = async () => {
@@ -152,46 +173,60 @@ export function InvoicePanel({
               </Button>
             </div>
           </div>
-          {invoiceProcessing ? (
-            <div
-              className={[
-                "mt-4 rounded-[12px] border px-4 py-3 text-sm",
-                invoiceProcessing.status === "failed"
-                  ? "border-[rgba(220,38,38,0.16)] bg-[rgba(254,242,242,0.95)] text-red-700"
-                  : "border-[rgba(37,99,235,0.14)] bg-[rgba(239,246,255,0.9)] text-blue-700",
-              ].join(" ")}
-            >
-              <div className="font-semibold">
-                {invoiceProcessing.status === "failed"
-                  ? `Invoice background processing failed${invoiceProcessing.lastError ? `: ${invoiceProcessing.lastError}` : "."}`
-                  : `Invoice background processing is ${invoiceProcessing.status}.`}
-              </div>
-              <div className="mt-2 grid gap-1 text-xs opacity-85 sm:grid-cols-2">
-                <div>Type: {formatInvoiceProcessingType(invoiceProcessing.messageType)}</div>
-                <div>Attempts: {invoiceProcessing.attemptCount}</div>
-                <div>Queued: {formatNzDateTime(invoiceProcessing.createdAt)}</div>
-                <div>Available: {formatNzDateTime(invoiceProcessing.availableAt)}</div>
-                <div>Last update: {formatNzDateTime(invoiceProcessing.updatedAt)}</div>
-                <div>
-                  {invoiceProcessing.lockedAt
-                    ? `Started: ${formatNzDateTime(invoiceProcessing.lockedAt)}`
-                    : "Started: not yet"}
-                </div>
-              </div>
-            </div>
-          ) : null}
         </div>
       ) : (
-        <div className="mb-4 flex justify-end">
+        <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
+          <Input
+            value={invoiceNumber}
+            onChange={(event) => setInvoiceNumber(event.target.value)}
+            placeholder="New invoice number"
+            className="h-10 w-[210px]"
+          />
+          <Button
+            variant="primary"
+            onClick={() => void handleReplaceInvoice()}
+            disabled={isReplacingInvoice || !invoiceNumber.trim()}
+          >
+            {isReplacingInvoice ? "Replacing..." : "Replace Invoice"}
+          </Button>
           <Button
             variant="ghost"
             onClick={() => void onDetachInvoice?.()}
-            disabled={isDetachingInvoice}
+            disabled={isDetachingInvoice || isReplacingInvoice}
           >
             {isDetachingInvoice ? "Unlinking..." : "Unlink Invoice"}
           </Button>
         </div>
       )}
+      {invoiceProcessing ? (
+        <div
+          className={[
+            "mb-4 rounded-[12px] border px-4 py-3 text-sm",
+            invoiceProcessing.status === "failed"
+              ? "border-[rgba(220,38,38,0.16)] bg-[rgba(254,242,242,0.95)] text-red-700"
+              : "border-[rgba(37,99,235,0.14)] bg-[rgba(239,246,255,0.9)] text-blue-700",
+          ].join(" ")}
+        >
+          <div className="font-semibold">
+            {invoiceProcessing.status === "failed"
+              ? `Invoice 操作失败${invoiceProcessing.lastError ? `：${invoiceProcessing.lastError}` : "。"}`
+              : invoiceProcessing.status === "pending" && invoiceProcessing.lastError
+                ? `Xero 暂时没有完成操作，系统会在 ${formatNzDateTime(invoiceProcessing.availableAt)} 自动重试：${invoiceProcessing.lastError}`
+                : `${formatInvoiceProcessingType(invoiceProcessing.messageType)} 正在后台执行，完成后页面会自动更新。`}
+          </div>
+          {invoiceProcessing.requiresXeroReconnect ? (
+            <Button className="mt-3" variant="primary" onClick={reconnectXero}>
+              Reconnect Xero Now
+            </Button>
+          ) : null}
+          <div className="mt-2 grid gap-1 text-xs opacity-85 sm:grid-cols-2">
+            <div>Action: {formatInvoiceProcessingType(invoiceProcessing.messageType)}</div>
+            <div>Status: {invoiceProcessing.status}</div>
+            <div>Queued: {formatNzDateTime(invoiceProcessing.createdAt)}</div>
+            <div>Last update: {formatNzDateTime(invoiceProcessing.updatedAt)}</div>
+          </div>
+        </div>
+      ) : null}
       <InvoiceDashboard
         model={model}
         hasInvoice={hasInvoice}
@@ -271,6 +306,8 @@ function formatInvoiceProcessingType(messageType: string) {
       return "Create Xero draft";
     case "job_invoice.attach_existing":
       return "Attach existing invoice";
+    case "job_invoice.replace_existing":
+      return "Replace linked invoice";
     default:
       return messageType || "Unknown";
   }

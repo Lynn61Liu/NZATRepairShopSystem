@@ -68,6 +68,8 @@ builder.Services.Configure<XeroPaymentOptions>(builder.Configuration.GetSection(
 builder.Services.Configure<XeroPollingOptions>(builder.Configuration.GetSection(XeroPollingOptions.SectionName));
 builder.Services.Configure<EStationMqttOptions>(builder.Configuration.GetSection(EStationMqttOptions.SectionName));
 builder.Services.Configure<PaymarkOptions>(builder.Configuration.GetSection(PaymarkOptions.SectionName));
+builder.Services.Configure<NztaBrowserOptions>(builder.Configuration.GetSection(NztaBrowserOptions.SectionName));
+builder.Services.AddSingleton<NztaAutoSyncQueue>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
@@ -124,6 +126,7 @@ dataSourceBuilder.MapEnum<WofUiState>("wof_ui_state");
 dataSourceBuilder.MapEnum<PartsServiceStatus>("parts_service_status");
 dataSourceBuilder.MapEnum<WorklogServiceType>("worklog_service_type");
 var dataSource = dataSourceBuilder.Build();
+builder.Services.AddSingleton(dataSource);
 
 builder.Services.AddSingleton<DbQueryCountingInterceptor>();
 
@@ -140,6 +143,7 @@ builder.Services.AddDbContext<ProcurementDbContext>((sp, opt) =>
 builder.Services.AddScoped<WofRecordsService>();
 builder.Services.AddScoped<WofPrintService>();
 builder.Services.AddScoped<WofQueryService>();
+builder.Services.AddScoped<JobLifecycleService>();
 builder.Services.AddScoped<PartsServicesService>();
 builder.Services.AddScoped<MechWorkflowService>();
 builder.Services.AddScoped<NztaExpiryLookupService>();
@@ -190,6 +194,7 @@ builder.Services.AddHostedService<PoTodoBackgroundSyncService>();
 builder.Services.AddHostedService<PoAutoFollowUpBackgroundService>();
 builder.Services.AddHostedService<CarOnYardReportBackgroundService>();
 builder.Services.AddHostedService<XeroInvoiceStatusBackgroundService>();
+builder.Services.AddHostedService<NztaAutoSyncBackgroundService>();
 builder.Services.AddHostedService<EStationMqttListenerBackgroundService>();
 
 // ========= Carjam Importer DI =========

@@ -20,6 +20,7 @@ public sealed class NewJobCreationService
     private readonly ReferenceDataCacheService _referenceDataCache;
     private readonly InvoiceOutboxService _invoiceOutboxService;
     private readonly InvoiceOutboxKickService _invoiceOutboxKickService;
+    private readonly NztaAutoSyncQueue _nztaAutoSyncQueue;
     private readonly ILogger<NewJobCreationService> _logger;
 
     public NewJobCreationService(
@@ -28,6 +29,7 @@ public sealed class NewJobCreationService
         ReferenceDataCacheService referenceDataCache,
         InvoiceOutboxService invoiceOutboxService,
         InvoiceOutboxKickService invoiceOutboxKickService,
+        NztaAutoSyncQueue nztaAutoSyncQueue,
         ILogger<NewJobCreationService> logger)
     {
         _db = db;
@@ -35,6 +37,7 @@ public sealed class NewJobCreationService
         _referenceDataCache = referenceDataCache;
         _invoiceOutboxService = invoiceOutboxService;
         _invoiceOutboxKickService = invoiceOutboxKickService;
+        _nztaAutoSyncQueue = nztaAutoSyncQueue;
         _logger = logger;
     }
 
@@ -290,6 +293,8 @@ public sealed class NewJobCreationService
         jobCustomerId = job.CustomerId;
 
         await tx.CommitAsync(ct);
+        if (isBusiness && wofCreated && vehicle.Id > 0)
+            await _nztaAutoSyncQueue.EnqueueAsync(new NztaAutoSyncRequest(job.Id, vehicle.Id, vehicle.Plate), ct);
         await InvalidateJobsOverviewCachesAsync(hasPaint, wofCreated, job.NeedsPo, ct);
         transactionStopwatch.Stop();
         _logger.LogInformation(

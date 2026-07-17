@@ -38,6 +38,7 @@ interface JobHeaderProps {
   customerPhone?: string;
   externalInvoiceId?: string;
   needsPo?: boolean;
+  poNumber?: string;
   vin?: string | null;
   nzFirstRegistration?: string | null;
   paintPanels?: number | null;
@@ -47,6 +48,9 @@ interface JobHeaderProps {
   isCreatingXeroInvoice?: boolean;
   onArchive?: () => Promise<{ success: boolean; message?: string }> | void;
   onUnarchive?: () => Promise<{ success: boolean; message?: string }> | void;
+  isOnYard?: boolean;
+  yardSource?: "automatic" | "manual";
+  onSaveYardStatus?: (isOnYard: boolean | null) => Promise<{ success: boolean; message?: string }>;
   isArchiving?: boolean;
   onDelete?: () => void;
   isDeleting?: boolean;
@@ -54,6 +58,7 @@ interface JobHeaderProps {
   onSaveTags?: (tagIds: string[]) => Promise<{ success: boolean; message?: string; tags?: string[] }>;
   onSaveNotes?: (notes: string) => Promise<{ success: boolean; message?: string }>;
   onSavePrivateNotes?: (privateNotes: string) => Promise<{ success: boolean; message?: string }>;
+  onSavePoNumber?: (poNumber: string) => Promise<{ success: boolean; message?: string; poNumber?: string }>;
   onCreatePaintService?: (status?: string, panels?: number) => Promise<{ success: boolean; message?: string }>;
 }
 
@@ -70,6 +75,8 @@ export function JobHeader({
   customerName,
   customerCode,
   externalInvoiceId,
+  needsPo,
+  poNumber,
   vin,
   nzFirstRegistration,
   paintPanels,
@@ -77,6 +84,9 @@ export function JobHeader({
   hasWofService,
   onArchive,
   onUnarchive,
+  isOnYard = true,
+  yardSource = "automatic",
+  onSaveYardStatus,
   isArchiving,
   onDelete,
   isDeleting,
@@ -84,6 +94,7 @@ export function JobHeader({
   onSaveTags,
   onSaveNotes,
   onSavePrivateNotes,
+  onSavePoNumber,
   onCreatePaintService,
 }: JobHeaderProps) {
   const [editingTags, setEditingTags] = useState(false);
@@ -110,6 +121,10 @@ export function JobHeader({
   const [lightCommandBusy, setLightCommandBusy] = useState(false);
   const [lightCommandMessage, setLightCommandMessage] = useState<string | null>(null);
   const [lightCommandError, setLightCommandError] = useState<string | null>(null);
+  const [poDialogOpen, setPoDialogOpen] = useState(false);
+  const [poDraft, setPoDraft] = useState(poNumber ?? "");
+  const [savingPo, setSavingPo] = useState(false);
+  const [poError, setPoError] = useState<string | null>(null);
   const bindingInputRef = useRef<HTMLInputElement | null>(null);
 
   const tagIdByLabel = useMemo(() => {
@@ -268,6 +283,25 @@ export function JobHeader({
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
+  const openPoDialog = () => {
+    setPoDraft(poNumber ?? "");
+    setPoError(null);
+    setPoDialogOpen(true);
+  };
+
+  const savePoNumber = async () => {
+    if (!onSavePoNumber) return;
+    setSavingPo(true);
+    setPoError(null);
+    const result = await onSavePoNumber(poDraft.trim());
+    setSavingPo(false);
+    if (!result.success) {
+      setPoError(result.message || "保存失败");
+      return;
+    }
+    setPoDialogOpen(false);
+  };
+
   const openBindDialog = () => {
     setBindingTagInput("");
     setBindingError(null);
@@ -379,6 +413,26 @@ export function JobHeader({
 
         <div className="flex flex-wrap items-center gap-2">
           {status === "In Shop" ? null : <TagPill label={status} className={getStatusColor(status)} />}
+          <TagPill
+            label={isOnYard ? "On Yard" : "Off Yard"}
+            variant={isOnYard ? "success" : "neutral"}
+          />
+          {onSaveYardStatus ? (
+            <select
+              aria-label="车辆在场状态"
+              title="默认由交车完毕状态自动判断；这里只用于人工纠正"
+              className="h-8 rounded-[8px] border border-[var(--ds-border)] bg-white px-2 text-xs text-[var(--ds-muted)]"
+              value={yardSource === "automatic" ? "auto" : isOnYard ? "on" : "off"}
+              onChange={(event) => {
+                const value = event.target.value;
+                void onSaveYardStatus(value === "auto" ? null : value === "on");
+              }}
+            >
+              <option value="auto">Yard 自动判断</option>
+              <option value="on">人工设为 On Yard</option>
+              <option value="off">人工设为 Off Yard</option>
+            </select>
+          ) : null}
           {isUrgent ? (
             <TagPill
               label={JOB_DETAIL_TEXT.labels.urgent}
@@ -425,6 +479,16 @@ export function JobHeader({
         </div>
 
         <div className="flex items-center gap-3 ml-auto">
+          {needsPo ? (
+            <Button
+              leftIcon={<Pencil className="h-4 w-4" />}
+              onClick={openPoDialog}
+              disabled={savingPo}
+              title="只保存本地 PO，不同步 Xero、不发送邮件"
+            >
+              {poNumber?.trim() ? `PO: ${poNumber.trim()}` : "填写 PO"}
+            </Button>
+          ) : null}
           {status === "Archived" ? (
             <Button
               leftIcon={<ArchiveRestore className="w-4 h-4" />}
@@ -574,6 +638,44 @@ export function JobHeader({
         </div>
       </div>
     </div>
+    {poDialogOpen ? (
+      <div
+        className="fixed inset-0 z-[90] flex items-center justify-center bg-black/35 px-4"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !savingPo) setPoDialogOpen(false);
+        }}
+      >
+        <form
+          className="w-full max-w-[420px] rounded-[8px] border border-[rgba(0,0,0,0.12)] bg-white p-5 shadow-xl"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void savePoNumber();
+          }}
+        >
+          <div className="text-lg font-semibold text-[var(--ds-text)]">编辑 PO Number</div>
+          <div className="mt-1 text-sm text-[var(--ds-muted)]">
+            仅保存到本地工单，不更新 Xero，也不会发送邮件。
+          </div>
+          <div className="mt-4">
+            <Input
+              autoFocus
+              value={poDraft}
+              onChange={(event) => setPoDraft(event.target.value)}
+              placeholder="输入真实 PO Number"
+            />
+          </div>
+          {poError ? <div className="mt-2 text-sm text-red-600">{poError}</div> : null}
+          <div className="mt-5 flex justify-end gap-2">
+            <Button onClick={() => setPoDialogOpen(false)} disabled={savingPo}>
+              取消
+            </Button>
+            <Button variant="primary" type="submit" disabled={savingPo || !poDraft.trim()}>
+              {savingPo ? "保存中..." : "保存"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    ) : null}
     {bindDialogOpen ? (
       <div
         className="fixed inset-0 z-[90] flex items-center justify-center bg-black/35 px-4"

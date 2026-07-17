@@ -8,6 +8,7 @@ import type { PoDraftState } from "@/features/invoice/hooks/usePoEmailDraftActio
 import { PoDetectionPanel } from "./PoDetectionPanel";
 import { StatusBadge } from "./StatusBadge";
 import type { EmailState, EmailTimelineEvent, MerchantEmailRecipient, PoDetection } from "../../types";
+import { XeroIcon } from "@/components/common/XeroButton";
 
 const DEFAULT_DRAFT_IMAGE_WIDTH = 360;
 const DEFAULT_INVOICE_PREVIEW_IMAGE_WIDTH = Math.round(DEFAULT_DRAFT_IMAGE_WIDTH * 2.5);
@@ -217,6 +218,8 @@ type Props = {
   onRecreateDraft: (payload: { to: string; subject: string; body: string }) => Promise<boolean>;
   onSend: (payload: { to: string; subject: string; body: string }) => Promise<boolean>;
   onPullInvoicePdf?: () => Promise<{ success: boolean; message: string }>;
+  onOpenXero?: () => void;
+  hasXeroInvoice?: boolean;
   onViewDraft: () => Promise<boolean>;
   onOpenSentMailbox: () => boolean | Promise<boolean>;
   onSelectDetection: (id: string) => void;
@@ -251,6 +254,8 @@ export function PoRequestPanel({
   onRecreateDraft,
   onSend,
   onPullInvoicePdf,
+  onOpenXero,
+  hasXeroInvoice,
   onViewDraft,
   onOpenSentMailbox,
   onSelectDetection,
@@ -944,7 +949,8 @@ export function PoRequestPanel({
         </div>
       ) : null}
 
-      <div className={`${readOnly ? "mt-4" : "mt-6"} space-y-3`}>
+      <div className={`${readOnly ? "mt-4" : "mt-6"} flex flex-wrap items-center justify-between gap-3`}>
+        <div className="space-y-3">
         {stateRounds.length === 0 ? (
           <div className="flex items-center gap-2">
             {stateMeta.Draft ?? <MailCheck className="h-4 w-4 text-slate-500" />}
@@ -965,6 +971,16 @@ export function PoRequestPanel({
             ))}
           </div>
         )}
+        </div>
+        <Button
+          className="h-10 px-3"
+          leftIcon={<XeroIcon className="h-5 w-5" />}
+          onClick={onOpenXero}
+          disabled={!onOpenXero || !hasXeroInvoice}
+          title={hasXeroInvoice ? "Open Xero Invoice" : "尚未关联 Xero Invoice"}
+        >
+          Xero
+        </Button>
       </div>
 
       <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">

@@ -34,4 +34,11 @@
     <ProjectReference Include="..\CarjamImporter\CarjamImporter.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Assets/nzat-logo.jpg">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>

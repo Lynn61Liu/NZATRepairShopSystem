@@ -11,7 +11,6 @@ import {
   confirmPoNumber,
   fetchPoTodo,
   manualConfirmPoSent,
-  refreshPoXeroSummaries,
 } from "@/features/poTodo/poTodoApi";
 import type { PoTodoRow, PoTodoTab } from "@/features/poTodo/poTodo.types";
 import {
@@ -79,9 +78,9 @@ export function PoDashboardPreviewPage() {
   const [poInputs, setPoInputs] = useState<Record<number, string>>({});
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [busyJobId, setBusyJobId] = useState<number | null>(null);
+  const [ignoringJobIds, setIgnoringJobIds] = useState<number[]>([]);
   const [confirmingJobIds, setConfirmingJobIds] = useState<number[]>([]);
   const [batchConfirming, setBatchConfirming] = useState(false);
-  const [refreshingSubtotals, setRefreshingSubtotals] = useState(false);
 
   const loadDashboard = useCallback(async (options?: { background?: boolean }) => {
     const background = options?.background === true;
@@ -108,6 +107,19 @@ export function PoDashboardPreviewPage() {
   useEffect(() => {
     void loadDashboard();
   }, [loadDashboard]);
+
+  const hasProcessingConfirmations = useMemo(
+    () => allRows.some((row) => row.confirmationStatus === "processing"),
+    [allRows]
+  );
+
+  useEffect(() => {
+    if (!hasProcessingConfirmations) return;
+    const pollTimer = window.setInterval(() => {
+      void loadDashboard({ background: true });
+    }, 5_000);
+    return () => window.clearInterval(pollTimer);
+  }, [hasProcessingConfirmations, loadDashboard]);
 
   const handleTabChange = (tab: PoTodoTab) => {
     if (tab === activeTab) return;
@@ -160,38 +172,22 @@ export function PoDashboardPreviewPage() {
     const start = (currentPage - 1) * PO_TODO_PAGE_SIZE;
     return filteredRows.slice(start, start + PO_TODO_PAGE_SIZE);
   }, [currentPage, filteredRows]);
-  const xeroRefreshKey = activeTab === "awaitingPo" ? rows.map((row) => row.jobId).join(",") : "";
-
-  useEffect(() => {
-    if (!xeroRefreshKey) return;
-    const jobIds = xeroRefreshKey.split(",").map(Number).filter(Boolean);
-    let cancelled = false;
-    setRefreshingSubtotals(true);
-    void refreshPoXeroSummaries(jobIds)
-      .then((summaries) => {
-        if (cancelled) return;
-        const byJobId = new Map(summaries.map((summary) => [summary.jobId, summary]));
-        setAllRows((prev) => prev.map((row) => {
-          const summary = byJobId.get(row.jobId);
-          return summary ? { ...row, xeroSubtotal: summary.subtotal, reference: summary.reference } : row;
-        }));
-      })
-      .catch(() => {
-        // Cached values remain available and the rest of the page stays usable.
-      })
-      .finally(() => {
-        if (!cancelled) setRefreshingSubtotals(false);
-      });
-    return () => { cancelled = true; };
-  }, [xeroRefreshKey]);
-
   useEffect(() => {
     if (currentPage > totalPages) {
       setCurrentPage(totalPages);
     }
   }, [currentPage, totalPages]);
 
-  const allSelected = useMemo(() => rows.length > 0 && rows.every((row) => selectedIds.includes(row.jobId)), [rows, selectedIds]);
+  const selectableRows = useMemo(
+    () => activeTab === "awaitingPo"
+      ? rows.filter((row) => row.confirmationStatus !== "processing")
+      : rows,
+    [activeTab, rows]
+  );
+  const allSelected = useMemo(
+    () => selectableRows.length > 0 && selectableRows.every((row) => selectedIds.includes(row.jobId)),
+    [selectableRows, selectedIds]
+  );
   const showXeroColumn = shouldShowXeroColumn(activeTab);
   const showPoDraftColumn = shouldShowPoDraftColumn(activeTab);
   const showSentColumn = shouldShowSentColumn(activeTab);
@@ -200,7 +196,7 @@ export function PoDashboardPreviewPage() {
   const tableColSpan = getPoTodoTableColSpan(activeTab);
 
   const toggleAll = () => {
-    setSelectedIds(allSelected ? [] : rows.map((row) => row.jobId));
+    setSelectedIds(allSelected ? [] : selectableRows.map((row) => row.jobId));
   };
 
   const toggleOne = (jobId: number) => {
@@ -225,6 +221,11 @@ export function PoDashboardPreviewPage() {
   );
 
   const handleConfirmPo = async (row: PoTodoRow, sendInvoice: boolean) => {
+    if (row.confirmationStatus === "processing" || confirmingJobIds.includes(row.jobId)) {
+      toast.info(`${row.plate || `Job ${row.jobId}`} 正在处理中，请稍候`);
+      return;
+    }
+
     const value = getPoInput(row);
     if (!value) {
       toast.error("Please enter PO number");
@@ -239,7 +240,7 @@ export function PoDashboardPreviewPage() {
       const result = await confirmPoNumber(row.jobId, value, sendInvoice);
       const warning = Object.values(result.steps).find((step) => step.status === "failed")?.message;
       if (result.success) {
-        toast.success(sendInvoice ? "PO 已确认，Xero Invoice 已发送" : "PO 已确认");
+        toast.success(sendInvoice ? "PO 已确认，Gmail 发票已发送（含 PDF）" : "PO 已确认");
         if (warning) toast.info(warning);
       } else {
         toast.error(warning || "PO 确认未完成");
@@ -255,11 +256,17 @@ export function PoDashboardPreviewPage() {
 
   const handleBatchConfirm = async (sendInvoice: boolean) => {
     const selectedRows = rows.filter((row) => selectedIds.includes(row.jobId));
-    const missing = selectedRows.filter((row) => !getPoInput(row));
     if (selectedRows.length === 0) {
       toast.error("请先选择需要确认的记录");
       return;
     }
+    const processing = selectedRows.filter((row) => row.confirmationStatus === "processing");
+    if (processing.length > 0) {
+      const plates = processing.map((row) => row.plate || `Job ${row.jobId}`).join(", ");
+      toast.info(`${plates} 正在处理中，请等待完成后再重试`);
+      return;
+    }
+    const missing = selectedRows.filter((row) => !getPoInput(row));
     if (missing.length > 0) {
       toast.error(`${missing.length} 条记录没有 PO Number`);
       return;
@@ -273,7 +280,16 @@ export function PoDashboardPreviewPage() {
         sendInvoice
       );
       if (result.failed > 0) {
-        toast.info(`完成 ${result.succeeded} 条，${result.failed} 条需要处理`);
+        const firstFailure = result.results.find((item) => !item.success);
+        const failedStep = firstFailure
+          ? Object.values(firstFailure.steps).find((step) => step.status === "failed")
+          : undefined;
+        const failedRow = firstFailure
+          ? selectedRows.find((row) => row.jobId === firstFailure.jobId)
+          : undefined;
+        const failedLabel = failedRow?.plate || (firstFailure ? `Job ${firstFailure.jobId}` : "首条失败记录");
+        const failedMessage = failedStep?.message || "未提供失败原因";
+        toast.error(`完成 ${result.succeeded} 条，失败 ${result.failed} 条。${failedLabel}: ${failedMessage}`);
       } else {
         toast.success(`已完成 ${result.succeeded} 条`);
       }
@@ -291,34 +307,37 @@ export function PoDashboardPreviewPage() {
   const handleCompleteSelected = async () => {
     if (selectedIds.length === 0) return;
 
-    setBusyJobId(-1);
+    const targetIds = [...selectedIds];
+    setIgnoringJobIds((prev) => [...new Set([...prev, ...targetIds])]);
     try {
-      const result = await completePoJobs(selectedIds);
-      toast.success(`完成 ${result.updated} 个，跳过 ${result.skipped} 个`);
-      setSelectedIds([]);
-      await loadDashboard({ background: true });
+      const result = await completePoJobs(targetIds);
+      if (result.updated > 0 || result.skipped === targetIds.length) {
+        setAllRows((prev) => prev.filter((row) => !targetIds.includes(row.jobId)));
+        setSelectedIds((prev) => prev.filter((id) => !targetIds.includes(id)));
+      }
+      toast.success(`已忽略 ${result.updated} 个，跳过 ${result.skipped} 个`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to complete selected jobs");
     } finally {
-      setBusyJobId(null);
+      setIgnoringJobIds((prev) => prev.filter((id) => !targetIds.includes(id)));
     }
   };
 
   const handleCompleteAction = async (row: PoTodoRow) => {
-    setBusyJobId(row.jobId);
+    setIgnoringJobIds((prev) => [...new Set([...prev, row.jobId])]);
     try {
       const result = await completePoJobs([row.jobId]);
-      if (result.updated > 0) {
+      if (result.updated > 0 || result.skipped > 0) {
         toast.success("已忽略");
         setSelectedIds((prev) => prev.filter((id) => id !== row.jobId));
-        await loadDashboard({ background: true });
+        setAllRows((prev) => prev.filter((item) => item.jobId !== row.jobId));
       } else {
         toast.error("未能忽略该 job");
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to ignore job");
     } finally {
-      setBusyJobId(null);
+      setIgnoringJobIds((prev) => prev.filter((id) => id !== row.jobId));
     }
   };
 
@@ -394,17 +413,30 @@ export function PoDashboardPreviewPage() {
         ) : null}
       </Card>
 
-      {activeTab === "awaitingPo" ? (
+      {activeTab === "pendingSend" ? (
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {refreshingSubtotals ? (
-            <span className="inline-flex items-center gap-1.5 text-sm text-[var(--ds-muted)]">
-              <RefreshCw className="h-4 w-4 animate-spin" /> Refreshing Xero Subtotals…
-            </span>
-          ) : null}
           <Button
             leftIcon={allSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
             onClick={toggleAll}
-            disabled={rows.length === 0 || batchConfirming}
+            disabled={selectableRows.length === 0 || ignoringJobIds.length > 0}
+          >
+            全选
+          </Button>
+          <Button
+            variant="primary"
+            leftIcon={<Ban className="h-4 w-4" />}
+            onClick={() => void handleCompleteSelected()}
+            disabled={selectedIds.length === 0 || ignoringJobIds.length > 0}
+          >
+            批量忽略
+          </Button>
+        </div>
+      ) : activeTab === "awaitingPo" ? (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button
+            leftIcon={allSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+            onClick={toggleAll}
+            disabled={selectableRows.length === 0 || batchConfirming}
           >
             全选
           </Button>
@@ -438,7 +470,7 @@ export function PoDashboardPreviewPage() {
             className="ml-2"
             leftIcon={<Check className="h-4 w-4" />}
             onClick={() => void handleCompleteSelected()}
-            disabled={selectedIds.length === 0 || busyJobId === -1}
+            disabled={selectedIds.length === 0 || ignoringJobIds.length > 0}
           >
             标记完成
           </Button>
@@ -451,7 +483,7 @@ export function PoDashboardPreviewPage() {
           <table className="w-full min-w-[1180px] border-collapse text-sm">
             <thead>
               <tr className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-normal text-[var(--ds-muted)]">
-                {activeTab === "invoiced" || activeTab === "awaitingPo" ? <th className="w-12 px-3 py-3"></th> : null}
+                <th className="w-12 px-3 py-3"></th>
                 <th className="px-3 py-3">创建时间</th>
                 <th className="px-3 py-3">Code</th>
                 <th className="px-3 py-3">车牌</th>
@@ -480,17 +512,35 @@ export function PoDashboardPreviewPage() {
                 const sent = isSent(row);
                 const xeroUrl = xeroInvoiceUrl(row.xeroInvoiceId);
                 const gmailUrl = gmailThreadUrl(row.gmailThreadId);
+                const confirmationProcessing = row.confirmationStatus === "processing"
+                  || confirmingJobIds.includes(row.jobId);
+                const ignoring = ignoringJobIds.includes(row.jobId);
                 return (
                   <tr key={row.jobId} className="border-t border-slate-100 align-top">
-                    {activeTab === "invoiced" || activeTab === "awaitingPo" ? (
-                      <td className="px-3 py-3">
-                        <button type="button" onClick={() => toggleOne(row.jobId)} className="text-slate-500 hover:text-[var(--ds-primary)]">
-                          {selectedIds.includes(row.jobId) ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
-                        </button>
-                      </td>
-                    ) : null}
+                    <td className="px-3 py-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleOne(row.jobId)}
+                        disabled={(activeTab === "awaitingPo" && confirmationProcessing) || ignoring}
+                        className="text-slate-500 hover:text-[var(--ds-primary)] disabled:cursor-not-allowed disabled:text-slate-300"
+                      >
+                        {selectedIds.includes(row.jobId) ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+                      </button>
+                    </td>
                     <td className="whitespace-nowrap px-3 py-3 text-slate-600">{formatPoTodoCreatedAt(row.createdAt)}</td>
-                    <td className="px-3 py-3 font-semibold text-[var(--ds-text)]">{row.code || "-"}</td>
+                    <td className="px-3 py-3 font-semibold text-[var(--ds-text)]">
+                      <span>{row.code || "-"}</span>
+                      {row.confirmedPoNumber ? (
+                        <button
+                          type="button"
+                          className="ml-1 cursor-help"
+                          title={`PO# ${row.confirmedPoNumber}`}
+                          onClick={() => window.alert(`PO# ${row.confirmedPoNumber}`)}
+                        >
+                          🙂
+                        </button>
+                      ) : null}
+                    </td>
                     <td className="px-3 py-3">
                       <Link to={`/jobs/${row.jobId}?tab=PO`} className="font-semibold text-[var(--ds-primary)] hover:underline">
                         {row.plate || `JOB-${row.jobId}`}
@@ -569,24 +619,27 @@ export function PoDashboardPreviewPage() {
                           />
                           <Button
                             variant="primary"
+                            leftIcon={confirmationProcessing ? <RefreshCw className="h-4 w-4 animate-spin" /> : undefined}
                             onClick={() => void handleConfirmPo(row, false)}
-                            disabled={confirmingJobIds.includes(row.jobId)}
+                            disabled={confirmationProcessing}
                           >
-                            {confirmingJobIds.includes(row.jobId) ? "处理中…" : "确认"}
+                            {confirmationProcessing ? "处理中…" : "确认"}
                           </Button>
                           <Button
-                            leftIcon={<Mail className="h-4 w-4" />}
+                            leftIcon={confirmationProcessing
+                              ? <RefreshCw className="h-4 w-4 animate-spin" />
+                              : <Mail className="h-4 w-4" />}
                             onClick={() => void handleConfirmPo(row, true)}
-                            disabled={confirmingJobIds.includes(row.jobId)}
+                            disabled={confirmationProcessing}
                           >
-                            确认并发送
+                            {confirmationProcessing ? "处理中…" : "确认并发送"}
                           </Button>
                         </div>
                       </td>
                     ) : null}
                     {activeTab === "awaitingPo" ? (
                       <td className="max-w-[280px] px-3 py-3">
-                        {confirmingJobIds.includes(row.jobId) || row.confirmationStatus === "processing" ? (
+                        {confirmationProcessing ? (
                           <span className="inline-flex items-center gap-1.5 font-medium text-blue-700">
                             <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Processing…
                           </span>
@@ -613,9 +666,9 @@ export function PoDashboardPreviewPage() {
                         <Button
                           leftIcon={<Ban className="h-4 w-4" />}
                           onClick={() => void handleCompleteAction(row)}
-                          disabled={busyJobId === row.jobId}
+                          disabled={ignoring}
                         >
-                          忽略
+                          {ignoring ? "忽略中…" : "忽略"}
                         </Button>
                       </td>
                     ) : null}

@@ -54,7 +54,13 @@ public sealed class GmailMessageSenderService
         var recipients = NormalizeRecipientAddresses(request.To);
         if (recipients.Length == 0)
             return GmailMessageSendResult.Fail(400, "At least one valid recipient email is required.");
-        var ccRecipients = NormalizeRecipientAddresses(request.Cc);
+        var ccRecipients = NormalizeRecipientAddresses(request.Cc)
+            .Except(recipients, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var bccRecipients = NormalizeRecipientAddresses(request.Bcc)
+            .Except(recipients, StringComparer.OrdinalIgnoreCase)
+            .Except(ccRecipients, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
         var normalizedCorrelationId = request.CorrelationId?.Trim();
         var normalizedSubject = request.Subject.Trim();
@@ -81,7 +87,7 @@ public sealed class GmailMessageSenderService
             {
                 return GmailMessageSendResult.Fail(
                     409,
-                    $"Duplicate PO request blocked. The same email was already sent at {recentDuplicate.CreatedAt:yyyy-MM-dd HH:mm:ss} UTC.");
+                    $"Duplicate email blocked. The same email was already sent at {recentDuplicate.CreatedAt:yyyy-MM-dd HH:mm:ss} UTC.");
             }
         }
 
@@ -98,7 +104,8 @@ public sealed class GmailMessageSenderService
             request.HtmlBodyOverride,
             request.ReplyToRfcMessageId,
             request.ReferencesHeader,
-            request.Attachments);
+            request.Attachments,
+            string.Join(", ", bccRecipients));
 
         var client = _httpClientFactory.CreateClient();
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "https://gmail.googleapis.com/gmail/v1/users/me/messages/send");
@@ -146,6 +153,7 @@ public sealed class GmailMessageSenderService
                 correlationId: normalizedCorrelationId,
                 rfcMessageId: sentRfcMessageId,
                 referencesHeader: sentReferencesHeader,
+                attachments: request.Attachments,
                 isSystemInitiated: true,
                 ct: ct);
 
@@ -183,6 +191,7 @@ public sealed class GmailMessageSenderService
         string? correlationId,
         string? rfcMessageId,
         string? referencesHeader,
+        IReadOnlyList<GmailMessageAttachment>? attachments,
         bool isSystemInitiated,
         CancellationToken ct)
     {
@@ -216,8 +225,21 @@ public sealed class GmailMessageSenderService
         existing.CorrelationId = NullIfBlank(correlationId);
         existing.RfcMessageId = NullIfBlank(rfcMessageId);
         existing.ReferencesHeader = NullIfBlank(referencesHeader);
-        existing.HasAttachments = false;
-        existing.AttachmentsJson = null;
+        var regularAttachments = attachments?
+            .Where(item => string.IsNullOrWhiteSpace(item.ContentId))
+            .ToArray() ?? [];
+        existing.HasAttachments = regularAttachments.Length > 0;
+        existing.AttachmentsJson = existing.HasAttachments
+            ? JsonSerializer.Serialize(
+                regularAttachments.Select(item => new
+                {
+                    fileName = item.FileName,
+                    mimeType = item.ContentType,
+                    size = item.ContentBytes?.Length ?? 0,
+                    attachmentId = (string?)null,
+                }),
+                JsonOptions)
+            : null;
         existing.DetectedPoNumber = ExtractPoNumber(correlationId, subject, body, snippet);
         existing.IsSystemInitiated = isSystemInitiated || existing.IsSystemInitiated;
         if (existing.Id == 0)
@@ -505,7 +527,8 @@ public sealed record GmailMessageSendRequest(
     string? HtmlBodyOverride = null,
     bool BypassDuplicateProtection = false,
     IReadOnlyList<GmailMessageAttachment>? Attachments = null,
-    string? Cc = null);
+    string? Cc = null,
+    string? Bcc = null);
 
 public sealed record GmailMessageSendResult(
     bool Ok,

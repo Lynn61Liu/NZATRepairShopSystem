@@ -2,20 +2,12 @@ import { useEffect, useState } from "react";
 import { Car, User, Building2, Phone, Mail, Link, RefreshCw, Pencil } from "lucide-react";
 import { Button, Card, Input, Select, Textarea } from "@/components/ui";
 import { CustomerUpdateProgressDialog } from "@/components/common/CustomerUpdateProgressDialog";
-import { VehicleNztaSyncDialog } from "@/components/common/VehicleNztaSyncDialog";
 import {
   createInitialCustomerUpdateSteps,
   resolveCustomerUpdateSteps,
   type CustomerUpdateApiSteps,
   type CustomerUpdateSteps,
 } from "@/components/common/CustomerUpdateProgressDialogState";
-import {
-  createInitialVehicleNztaSyncSteps,
-  createSyncingVehicleNztaSyncSteps,
-  resolveVehicleNztaSyncDialogSteps,
-  type VehicleNztaSyncApiSteps,
-  type VehicleNztaSyncDialogSteps,
-} from "@/components/common/VehicleNztaSyncDialogState";
 import { loadBusinessCustomersCacheFirst } from "@/features/lookups/lookupCache";
 import { getCustomerContactHref } from "@/features/jobDetail/contactActions";
 import type { VehicleInfo, CustomerInfo } from "@/types";
@@ -31,7 +23,7 @@ interface SummaryCardProps {
     vin?: string | null;
     nzFirstRegistration?: string | null;
   }) => Promise<{ success: boolean; message?: string }>;
-  onSyncVehicleNzta?: () => Promise<{ success: boolean; message?: string; steps?: VehicleNztaSyncApiSteps }>;
+  onSyncVehicleNzta?: () => Promise<{ success: boolean; message?: string }>;
   onSaveCustomer?: (
     payload:
       | { type: "Business"; customerId: string }
@@ -44,6 +36,24 @@ type BusinessCustomerOption = {
   label: string;
   businessCode?: string;
 };
+
+function WofExpiryNotice({ expiry }: { expiry?: string | null }) {
+  if (!expiry) return null;
+  const match = String(expiry).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const expiryDate = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  const today = new Date();
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const days = Math.floor((expiryDate.getTime() - startOfToday.getTime()) / 86400000);
+  if (days < 0) {
+    return <span className="ml-2 inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">WOF Expired {Math.abs(days)} Days</span>;
+  }
+  const recentlyRenewedThreshold = new Date(startOfToday.getFullYear(), startOfToday.getMonth() + 7, startOfToday.getDate() + 15);
+  if (expiryDate > recentlyRenewedThreshold) {
+    return <span className="ml-2 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">WOF Recently Renewed</span>;
+  }
+  return null;
+}
 
 export function SummaryCard({
   vehicle,
@@ -66,12 +76,8 @@ export function SummaryCard({
   const [customerUpdateProgressError, setCustomerUpdateProgressError] = useState<string | null>(null);
   const [customerUpdateSteps, setCustomerUpdateSteps] = useState<CustomerUpdateSteps>(createInitialCustomerUpdateSteps);
   const [contactActionOpen, setContactActionOpen] = useState(false);
-  const [vehicleNztaSyncOpen, setVehicleNztaSyncOpen] = useState(false);
-  const [vehicleNztaSyncPhase, setVehicleNztaSyncPhase] = useState<"confirm" | "status">("confirm");
   const [vehicleNztaSyncError, setVehicleNztaSyncError] = useState<string | null>(null);
-  const [vehicleNztaSyncSteps, setVehicleNztaSyncSteps] = useState<VehicleNztaSyncDialogSteps>(
-    createInitialVehicleNztaSyncSteps
-  );
+  const [vehicleNztaSyncMessage, setVehicleNztaSyncMessage] = useState<string | null>(null);
   const [syncingVehicleNzta, setSyncingVehicleNzta] = useState(false);
   const [businessCustomers, setBusinessCustomers] = useState<BusinessCustomerOption[]>([]);
   const [selectedBusinessCustomerId, setSelectedBusinessCustomerId] = useState(customer.id ?? "");
@@ -163,33 +169,20 @@ export function SummaryCard({
     }
   };
 
-  const openVehicleNztaSync = () => {
-    setVehicleNztaSyncOpen(true);
-    setVehicleNztaSyncPhase("confirm");
-    setVehicleNztaSyncError(null);
-    setVehicleNztaSyncSteps(createInitialVehicleNztaSyncSteps());
-  };
-
-  const closeVehicleNztaSync = () => {
-    if (syncingVehicleNzta) return;
-    setVehicleNztaSyncOpen(false);
-  };
-
   const handleVehicleNztaSync = async () => {
     if (!onSyncVehicleNzta || syncingVehicleNzta) return;
 
     setSyncingVehicleNzta(true);
-    setVehicleNztaSyncPhase("status");
     setVehicleNztaSyncError(null);
-    setVehicleNztaSyncSteps(createSyncingVehicleNztaSyncSteps());
+    setVehicleNztaSyncMessage("已打开 NZTA Chrome，请完成验证；完成后系统会自动保存结果。");
 
     try {
       const result = await onSyncVehicleNzta();
-      setVehicleNztaSyncSteps(resolveVehicleNztaSyncDialogSteps(result.steps, result.success));
+      setVehicleNztaSyncMessage(result.success ? result.message || "NZTA 同步完成" : null);
       setVehicleNztaSyncError(result.success ? null : result.message || "NZTA 同步失败");
     } catch (err) {
       const message = err instanceof Error ? err.message : "NZTA 同步失败";
-      setVehicleNztaSyncSteps(resolveVehicleNztaSyncDialogSteps(undefined, false));
+      setVehicleNztaSyncMessage(null);
       setVehicleNztaSyncError(message);
     } finally {
       setSyncingVehicleNzta(false);
@@ -383,7 +376,7 @@ export function SummaryCard({
                 <button
                   type="button"
                   className="text-[var(--ds-ghost)] hover:text-[var(--ds-text)] disabled:opacity-50"
-                  onClick={openVehicleNztaSync}
+                  onClick={() => void handleVehicleNztaSync()}
                   aria-label="同步 NZTA 车辆到期信息"
                   disabled={!onSyncVehicleNzta}
                 >
@@ -391,11 +384,16 @@ export function SummaryCard({
                 </button>
               </div>
               <div className="mt-2 space-y-1 text-sm text-[var(--ds-muted)]">
-                <p>WOF Expiry: {renderVehicleValue(vehicle.wofExpiry)}</p>
+                <p>
+                  WOF Expiry: {renderVehicleValue(vehicle.wofExpiry)}
+                  <WofExpiryNotice expiry={vehicle.wofExpiry} />
+                </p>
                 <p>Licence Expiry: {renderVehicleValue(vehicle.licenceExpiry)}</p>
                 <p>RUC Licence Number: {renderVehicleValue(vehicle.rucLicenceNumber)}</p>
                 <p>RUC End Distance: {renderVehicleValue(vehicle.rucEndDistance)}</p>
               </div>
+              {vehicleNztaSyncMessage ? <div className="mt-2 text-xs text-emerald-700">{vehicleNztaSyncMessage}</div> : null}
+              {vehicleNztaSyncError ? <div className="mt-2 text-xs font-semibold text-red-600">{vehicleNztaSyncError}</div> : null}
             </div>
           </div>
         </div>
@@ -640,15 +638,6 @@ export function SummaryCard({
         errorMessage={customerUpdateProgressError}
         steps={customerUpdateSteps}
         onClose={() => setCustomerUpdateProgressOpen(false)}
-      />
-      <VehicleNztaSyncDialog
-        open={vehicleNztaSyncOpen}
-        isSyncing={syncingVehicleNzta}
-        phase={vehicleNztaSyncPhase}
-        errorMessage={vehicleNztaSyncError}
-        steps={vehicleNztaSyncSteps}
-        onConfirm={() => void handleVehicleNztaSync()}
-        onClose={closeVehicleNztaSync}
       />
     </Card>
   );
