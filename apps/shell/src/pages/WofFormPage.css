@@ -6,6 +6,7 @@
   overflow: auto;
   background: rgb(241 245 249);
   padding: 32px 0;
+  font-size: 10px;
 }
 
 .wof-print-controls {
@@ -17,9 +18,9 @@
 
 .wof-print-sheet {
   width: 210mm;
-  min-height: 297mm;
+  height: 297mm;
   box-sizing: border-box;
-  border: 1px solid red;
+  border: 1px solid black;
   background: white;
   padding: 4mm 5mm;
   display: grid;
@@ -29,40 +30,44 @@
 
 .custome-box {
   /* grid-column: 1 / 3; */
-  /* width: 128mm;*/
-  height: 80mm; 
+  width: 128mm;
+  height: 80mm;
   box-sizing: border-box;
-  border: 1px solid rgb(16, 19, 203);
+  border: 1px solid black;
   display: flex;
   flex-direction: column;
   gap: 1mm;
 }
-.organisation{
+
+.organisation {
   width: 100%;
   height: 30mm;
   box-sizing: border-box;
-  border: 1px solid rgb(240, 95, 11);
+  border: 1px solid black;
 }
-.customeDetail{ 
+
+.customeDetail {
   display: flex;
   width: 100%;
   height: 21mm;
   box-sizing: border-box;
-  border: 1px solid rgb(26, 240, 11);
+  border: 1px solid black;
 
 
 }
-.customeTitle{
-  font-size: 12px;
+
+.customeTitle {
+  font-size: 10px;
   text-transform: uppercase;
   width: 10mm;
   height: 100%;
- background-color: rgb(33, 123, 27);
-  
+  /* background-color: rgb(33, 123, 27); */
+
 }
-.customeContent{
-   display: grid;
- grid-template-columns: 1fr 1fr;
+
+.customeContent {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   grid-template-areas:
     "cName cPhone"
     "cEmail cEmail"
@@ -71,29 +76,152 @@
   width: 100%;
   height: 100%;
   box-sizing: border-box;
-  /* border: 1px solid rgb(11, 118, 240); */
+  /* border: 1px solid black; */
 }
- .customeContent *{
-  font-size: 12px;
- height: 7mm;
+
+.customeContent * {
+  font-size: 10px;
+  height: 7mm;
   box-sizing: border-box;
-   border: 1px solid rgb(95, 240, 11);
-} 
-/* .cName{
+  border: 1px solid black;
+}
+
+.cName {
   Width: 82MM;
-} */
-.cEmail{
+}
+
+.cPhone {
+  Width: 35mm;
+}
+
+.cEmail {
   grid-area: cEmail;
 }
-.cAddress{
+
+.cAddress {
   grid-area: cAddress;
 }
 
-.vehicle{
-  width: 100%;
+/* VEHICLE DETAILS */
+.vehicle {
+  width: 128MM;
   height: 28mm;
   box-sizing: border-box;
-  border: 1px solid rgb(11, 118, 240);
+  border: 1px solid black;
+  display: flex;
+}
+
+.vehicleTitle {
+  width: 10mm;
+  height: 28mm;
+  box-sizing: border-box;
+  border: 1px solid black;
+}
+
+.vLine {
+  display: flex;
+  height: 7mm;
+
+}
+
+.vMake {
+  width: 52mm;
+  box-sizing: border-box;
+  border: 1px solid black;
+}
+
+.vModel {
+  width: 41mm;
+  box-sizing: border-box;
+  border: 1px solid black;
+}
+
+.vYear {
+  width: 24mm;
+  box-sizing: border-box;
+  border: 1px solid black;
+}
+
+.vReg {
+  width: 46mm;
+  box-sizing: border-box;
+  border: 1px solid black;
+}
+
+.vexpiry {
+  width: 39mm;
+  box-sizing: border-box;
+  border: 1px solid black;
+}
+
+.vFirstreg {
+  width: 32mm;
+  box-sizing: border-box;
+  border: 1px solid black;
+}
+
+.vOdometer {
+  width: 66mm;
+  box-sizing: border-box;
+  border: 1px solid black;
+}
+
+.vVin {
+
+  width: 118mm;
+  box-sizing: border-box;
+  border: 1px solid black;
+}
+
+.vFuel {
+  display: flex;
+  align-items: center;
+  gap: 3mm;
+  white-space: nowrap;
+}
+
+.vFuel .fuel-label {
+  font-weight: 600;
+}
+
+.fuel-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.2mm;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.fuel-option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.fuel-check-box {
+  display: inline-flex;
+  width: 3.4mm;
+  height: 3.4mm;
+  flex: 0 0 3.4mm;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 1px solid black;
+  background: #fff;
+}
+
+.fuel-option input:checked+.fuel-check-box::after {
+  content: "";
+  width: 1.8mm;
+  height: 1.8mm;
+  background: #111827;
+}
+
+.fuel-option input:focus-visible+.fuel-check-box {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
 }
 
 .list {
@@ -103,26 +231,599 @@
 }
 
 .C1-box {
-  width: 100%;
-  height: 100%;
+  width: 63mm;
+  height: 200mm;
   box-sizing: border-box;
-  border: 1px solid rgb(186, 21, 96);
+  border: 1px solid black;
 }
 
+.instructions {
+  display: inline-block;
+  width: 63mm;
+  height: 30mm;
+  box-sizing: border-box;
+  border: 1px solid black;
+}
+
+.exterTitle {
+  display: inline-block;
+  width: 62.5mm;
+  height: 5mm;
+  box-sizing: border-box;
+  background-color: aquamarine;
+}
+
+.exterList,
+.interList {
+  width: 62.5mm;
+}
+
+.ChassisList {
+  width: 62.5mm;
+  height: 78mm;
+}
+
+.exterRow,
+.interRow,
+.ChassisRow {
+  display: grid;
+  grid-template-columns: 6mm 40mm 6mm 5.5mm 5mm;
+  width: 62.5mm;
+  height: 5mm;
+  box-sizing: border-box;
+}
+
+.exterRow>div,
+.interRow>div,
+.ChassisRow>div {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 5mm;
+  box-sizing: border-box;
+  border: 1px solid black;
+  border-top: 0;
+  color: #1f2937;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.ChassisRowTall,
+.ChassisRowTall>div {
+  height: 7mm;
+}
+
+.exterCode,
+.exterMark,
+.exterPass,
+.exterFail,
+.interCode,
+.interMark,
+.interPass,
+.interFail,
+.ChassisCode,
+.ChassisMark,
+.ChassisPass,
+.ChassisFail {
+  justify-content: center;
+}
+
+.exterName,
+.interName,
+.ChassisName {
+  overflow: hidden;
+  padding: 0 1mm;
+  white-space: nowrap;
+}
+
+.exterMark,
+.interMark,
+.ChassisMark {
+  font-size: 10px;
+}
+
+.ChassisTyreDepth {
+  display: grid;
+  grid-template-columns: 12mm 14mm 19mm 17mm;
+  width: 62mm;
+  box-sizing: border-box;
+}
+
+.ChassisTyreDepth>div {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 5mm;
+  box-sizing: border-box;
+  border: 1px solid black;
+  border-top: 0;
+  color: #1f2937;
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.ChassisTyreDepth span {
+  margin-left: 0.5mm;
+  font-size: 10px;
+}
+
+.roadList {
+    height: 60mm;
+    /* background-color: grey; */
+/*  */
+  }
+
+  .per{
+    width: 8mm;
+     box-sizing: border-box;
+  border: 1px solid black;
+
+  }
+
+  .text{
+    width: 20mm;
+     box-sizing: border-box;
+  border: 1px solid black;
+  }
+
+.value{
+   width: 18mm;
+     box-sizing: border-box;
+  border: 1px solid black;
+}
+.road1Title{
+  height: 7mm;
+}
+
+.breakF ,.breakR{
+   height: 5mm;
+   display: flex;
+}
+
+.box{
+  height: 5mm;
+  display: flex;
+}
+.boxTitle{
+  width: 6mm;
+}
+
+.r3Des{
+  width: 46mm;
+}
+
+.boxDes{
+  width: 40mm;
+}
+
+.naCheck{
+   width: 6mm;
+}
+.pCheck,fCheck{
+  width: 5.5mm;
+}
+                  
+.roadBrakeRearRight {
+  grid-column: 5;
+  grid-row: 3;
+}
+
+.roadBrakeR1 {
+  grid-column: 1;
+  grid-row: 4;
+}
+
+.roadBrakeR1Label {
+  grid-column: 2;
+  grid-row: 4;
+  justify-content: flex-start !important;
+  padding-left: 1mm;
+}
+
+.roadBrakeR1Mark {
+  grid-column: 3;
+  grid-row: 4;
+}
+
+.roadBrakeR1Pass {
+  grid-column: 4;
+  grid-row: 4;
+}
+
+.roadBrakeR1Fail {
+  grid-column: 5;
+  grid-row: 4;
+}
+
+.roadBrakeR2 {
+  grid-column: 1;
+  grid-row: 5;
+}
+
+.roadBrakeR2Label {
+  grid-column: 2;
+  grid-row: 5;
+  justify-content: flex-start !important;
+  padding: 0 1mm;
+}
+
+.roadBrakeR2Mark {
+  grid-column: 3;
+  grid-row: 5;
+}
+
+.roadBrakeR2Pass {
+  grid-column: 4;
+  grid-row: 5;
+}
+
+.roadBrakeR2Fail {
+  grid-column: 5;
+  grid-row: 5;
+}
+
+.roadParkingTitle {
+  grid-column: 1 / 6;
+  grid-row: 6;
+  flex-direction: column;
+  align-items: flex-start !important;
+  padding-left: 1mm;
+}
+
+.roadbrake2 {
+  display: grid;
+  grid-template-columns: 8mm 20mm 18mm 18mm;
+  grid-template-rows: 3mm 5mm 5mm;
+  width: 64mm;
+  box-sizing: border-box;
+}
+
+.roadbrake2>div {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid black;
+  border-top: 0;
+  color: #1f2937;
+  font-size: 10px;
+  line-height: 1;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.roadbrake2Stall {
+  grid-column: 2 / 5;
+  justify-content: flex-start !important;
+  padding-left: 1mm;
+}
+
+.roadRows {
+  width: 62.5mm;
+}
+
+.roadRow {
+  display: grid;
+  grid-template-columns: 6mm 39mm 7mm 5.5mm 5mm;
+  width: 62.5mm;
+  height: 5mm;
+  box-sizing: border-box;
+}
+
+.roadRow>div {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 5mm;
+  box-sizing: border-box;
+  border: 1px solid black;
+  border-top: 0;
+  color: #1f2937;
+  font-size: 10px;
+  line-height: 1;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.roadRow>div:nth-child(2) {
+  justify-content: flex-start;
+  padding-left: 1mm;
+}
+
+.bonneList {
+  width: 62.5mm;
+}
+
+.bonneRow {
+  display: grid;
+  grid-template-columns: 6mm 39mm 7mm 5.5mm 5mm;
+  width: 62.5mm;
+  height: 5mm;
+  box-sizing: border-box;
+}
+
+.bonneRow>div {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 5mm;
+  box-sizing: border-box;
+  border: 1px solid black;
+  border-top: 0;
+  color: #1f2937;
+  font-size: 10px;
+  line-height: 1;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.bonneRow>div:nth-child(2) {
+  justify-content: flex-start;
+  padding-left: 1mm;
+}
+
+.bonneRow>div:nth-child(3) {
+  font-size: 10px;
+}
+
+.bonneRowTall,
+.bonneRowTall>div {
+  height: 6mm;
+}
+
+
+
 .C2-box {
-  width: 100%;
- height: 100%;
+  height: 214mm;
   box-sizing: border-box;
   border: 1px solid black;
 }
 
 .C3-box {
+  margin-top: 10mm;
   width: 70mm;
   height: 100%;
   box-sizing: border-box;
   border: 1px solid black;
+  display: flex;
+  flex-direction: column;
 
 }
+
+.customerCopy {
+  height: 50mm;
+  width: 70mm;
+  box-sizing: border-box;
+  border: 1px solid black;
+  /* background-color: #2563eb; */
+}
+
+.customerCopyRow {
+  display: grid;
+  grid-template-columns: 30mm 1fr;
+  width: 100%;
+  height: 7mm;
+  box-sizing: border-box;
+}
+
+.customerCopyRow > div {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+  box-sizing: border-box;
+  border: 1px solid black;
+  border-top: 0;
+  color: #1f2937;
+  font-size: 10px;
+  line-height: 1;
+  overflow: hidden;
+}
+
+.customerCopyRow > div:first-child {
+  padding: 0 1mm;
+}
+
+.customerCopyRowTall,
+.customerCopyRowTall > div {
+  height: 14mm;
+}
+
+
+.initial{
+  margin-top: 1mm;
+  height: 31mm;
+  width: 70mm;
+  display: flex;
+  /* background-color: aqua; */
+  display: flex;
+
+  flex-direction: column;
+  
+}
+.initalBox{
+   display: flex;
+  height: 5mm;
+}
+
+
+.initialinspection{
+      box-sizing: border-box;
+    border: 1px solid black;
+  width: 54mm;
+  height: 5mm;
+}
+.inspectionPass ,.inspectionFalse{
+      box-sizing: border-box;
+    border: 1px solid black;
+  width: 8mm;
+
+}
+.dataIns{
+   height: 7mm;
+
+  display: flex;
+   
+}
+.dataText{ box-sizing: border-box;
+    border: 1px solid black;
+  width: 27mm;
+
+}
+
+
+.initialInsTitle{
+  height: 5mm;
+}
+.initialInsBox{
+  display: flex;
+}
+.initialInsBox >div:first-of-type{
+  width: 18mm;
+  height: 7mm;
+      box-sizing: border-box;
+    border: 1px solid black;
+}
+.recheckTitle{
+
+  display: flex;
+  height: 5mm;
+}
+.recheckText {
+     box-sizing: border-box;
+    border: 1px solid black;
+  width: 54mm;
+}
+.recheckPass ,.recheckFalse{
+     box-sizing: border-box;
+    border: 1px solid black;
+  width: 8mm;
+}
+
+.recheckDetail{ height: 7mm; display: flex;}
+.recheckDetailText{width: 40mm;
+ box-sizing: border-box;
+    border: 1px solid black;}
+
+.recheckDateText {
+  width: 22mm;
+  box-sizing: border-box;
+    border: 1px solid black;
+}
+.odoText{
+  width: 25mm;
+  box-sizing: border-box;
+    border: 1px solid black;
+}
+.tyreTitle{
+  width: 35mm;
+  height: 14mm;
+  box-sizing: border-box;
+    border: 1px solid black;
+}
+
+.tyreBox .tyreValueBox .tyreF,.tyreBox .tyreValueBox .tyreR{
+  display: flex;
+  height: 7mm;
+  
+}
+
+.tryeUnit{
+  width: 5m;
+   box-sizing: border-box;
+    border: 1px solid black;
+}
+.tryeValue{
+  width: 12.5mm;
+   box-sizing: border-box;
+    border: 1px solid black;
+}
+
+.recheck > div {
+  height: 7mm;
+  display: flex;
+ box-sizing: border-box;
+    border: 1px solid black;
+}
+
+.recheck > .recheckTitle,
+.recheck > .initialInsTitle {
+  height: 5mm;
+}
+
+.recheck .tyreBox{
+   height: 14mm;
+}
+
+.reason{
+  height: 103mm;
+}
+.titleUnit{
+  height: 5mm;
+   box-sizing: border-box;
+    border: 1px solid black;
+}
+
+.comments{
+  height: 40mm;
+}
+
+.brakeText{
+  height: 7mm;
+  width: 35mm;
+   box-sizing: border-box;
+    border: 1px solid black;
+}
+
+
+.recheck{
+  margin-top: 1mm;
+  height: 66mm;
+  width: 70mm;
+  display: inline-block;
+  /* background-color: rgb(255, 238, 0); */
+
+}
+.reason{
+  margin-top: 1mm;
+  height: 103mm;
+  width: 70mm;
+  display: inline-block;
+  /* background-color: rgb(170, 53, 96); */
+  border: 1px solid black;
+}
+.comments{
+  margin-top: 0;
+  height: 40mm;
+  width: 70mm;
+  display: inline-block;
+  /* background-color: rgb(79, 190, 24); */
+  border: 1px solid black;
+}
+
+.amountBox {
+  margin-top: 1mm;
+    height: 12mm;
+    box-sizing: border-box;
+    border: 1px solid black;
+
+
+  }
+  .amount {
+    box-sizing: border-box;
+    border: 1px solid black;
+    display: flex;
+  }
+
+  .amountT {
+    height: 7mm;
+    width: 31.5mm;
+  }
 
 @page {
   size: A4;
@@ -130,6 +831,7 @@
 }
 
 @media print {
+
   html,
   body {
     width: 210mm;
@@ -165,8 +867,13 @@
     top: 0;
     left: 0;
     width: 210mm !important;
-    min-height: 297mm !important;
+    height: 297mm !important;
+    border: 0 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+
+
+
+  
 }
