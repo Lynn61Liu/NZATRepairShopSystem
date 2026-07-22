@@ -66,3 +66,7 @@ export function deleteWofRecord(jobId: string, recordId: string) {
 export function fetchWofFailReasons() {
   return requestJson<any>("/api/wof-fail-reasons");
 }
+
+export function fetchWofFormData(recordId: string) {
+  return requestJson<any>(`/api/wof-records/${encodeURIComponent(recordId)}/form`);
+}

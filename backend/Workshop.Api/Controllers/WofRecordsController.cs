@@ -1,5 +1,7 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Workshop.Api.Data;
 using Workshop.Api.Services;
 
 namespace Workshop.Api.Controllers;
@@ -15,12 +17,18 @@ public class WofRecordsController : ControllerBase
     private const string WofScheduleCacheKey = "jobs:wof-schedule:v1";
 
     private readonly IAppCache _cache;
+    private readonly AppDbContext _db;
     private readonly WofRecordsService _wofService;
     private readonly WofPrintService _wofPrintService;
 
-    public WofRecordsController(IAppCache cache, WofRecordsService wofService, WofPrintService wofPrintService)
+    public WofRecordsController(
+        IAppCache cache,
+        AppDbContext db,
+        WofRecordsService wofService,
+        WofPrintService wofPrintService)
     {
         _cache = cache;
+        _db = db;
         _wofService = wofService;
         _wofPrintService = wofPrintService;
     }
@@ -99,6 +107,89 @@ public class WofRecordsController : ControllerBase
         return StatusCode(result.StatusCode, new { error = result.Error });
     }
 
+    [HttpGet("~/api/wof-records/{recordId:long}/form")]
+    public async Task<IActionResult> GetWofFormData(long recordId, CancellationToken ct)
+    {
+        var row = await (
+                from record in _db.JobWofRecords.AsNoTracking()
+                join job in _db.Jobs.AsNoTracking() on record.JobId equals job.Id
+                join vehicle in _db.Vehicles.AsNoTracking() on job.VehicleId equals vehicle.Id
+                join customer in _db.Customers.AsNoTracking() on job.CustomerId equals customer.Id
+                where record.Id == recordId
+                select new
+                {
+                    Job = job,
+                    Vehicle = vehicle,
+                    Customer = customer,
+                    Record = record,
+                }
+            )
+            .FirstOrDefaultAsync(ct);
+
+        if (row is null)
+            return NotFound(new { error = "WOF record not found." });
+
+        return Ok(new
+        {
+            job = new
+            {
+                id = row.Job.Id.ToString(CultureInfo.InvariantCulture),
+                invoiceReference = row.Job.InvoiceReference,
+                poNumber = row.Job.PoNumber,
+            },
+            customer = new
+            {
+                id = row.Customer.Id.ToString(CultureInfo.InvariantCulture),
+                type = row.Customer.Type,
+                name = row.Customer.Name,
+                phone = row.Customer.Phone,
+                email = row.Customer.Email,
+                address = row.Customer.Address,
+                businessCode = row.Customer.BusinessCode,
+                notes = row.Customer.Notes,
+            },
+            vehicle = new
+            {
+                plate = row.Vehicle.Plate,
+                make = row.Vehicle.Make,
+                model = row.Vehicle.Model,
+                year = row.Vehicle.Year,
+                vin = row.Vehicle.Vin,
+                chassis = row.Vehicle.Chassis,
+                fuelType = row.Vehicle.FuelType,
+                regoExpiry = FormatDate(row.Vehicle.RegoExpiry),
+                licenceExpiry = FormatDate(row.Vehicle.LicenceExpiry),
+                wofExpiry = FormatDate(row.Vehicle.WofExpiry),
+                odometer = row.Vehicle.Odometer,
+                nzFirstRegistration = FormatDate(row.Vehicle.NzFirstRegistration),
+            },
+            wof = new
+            {
+                id = row.Record.Id.ToString(CultureInfo.InvariantCulture),
+                jobId = row.Record.JobId.ToString(CultureInfo.InvariantCulture),
+                occurredAt = FormatDateTime(row.Record.OccurredAt),
+                rego = row.Record.Rego,
+                makeModel = row.Record.MakeModel,
+                odo = row.Record.Odo,
+                recordState = row.Record.RecordState.ToString(),
+                isNewWof = row.Record.IsNewWof,
+                newWofDate = FormatDate(row.Record.NewWofDate),
+                authCode = row.Record.AuthCode,
+                checkSheet = row.Record.CheckSheet,
+                csNo = row.Record.CsNo,
+                wofLabel = row.Record.WofLabel,
+                labelNo = row.Record.LabelNo,
+                failReasons = row.Record.FailReasons,
+                previousExpiryDate = FormatDate(row.Record.PreviousExpiryDate),
+                organisationName = row.Record.OrganisationName,
+                note = row.Record.Note,
+                wofUiState = row.Record.WofUiState.ToString(),
+                importedAt = FormatDateTime(row.Record.ImportedAt),
+                updatedAt = FormatDateTime(row.Record.UpdatedAt),
+            },
+        });
+    }
+
     [HttpPost("wof-server")]
     public async Task<IActionResult> CreateWofRecord(long id, CancellationToken ct)
     {
@@ -159,6 +250,12 @@ public class WofRecordsController : ControllerBase
 
     private static string GetJobDetailCacheKey(long jobId)
         => $"job:detail:{jobId}:v1";
+
+    private static string? FormatDate(DateOnly? value)
+        => value?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    private static string FormatDateTime(DateTime value)
+        => value.ToString("yyyy-MM-ddTHH:mm:ssK", CultureInfo.InvariantCulture);
 
     private IActionResult ToActionResult(WofServiceResult result)
     {
