@@ -101,6 +101,23 @@ export type CustomerInfo = {
 };
 
 export type WofRecordStatus = "Pass" | "Fail" | "Recheck";
+export type WofItemStatus = "Pass" | "Fail" | "NA";
+export type WofRecordItemType = "status" | "number";
+
+export type WofRecordItem = {
+  id: string;
+  jobWofRecordId: string;
+  code: string;
+  label: string;
+  itemType?: WofRecordItemType;
+  status: WofItemStatus;
+  failReasonId?: string | null;
+  sortOrder?: number;
+  numericValue?: number | string | null;
+  inputValue?: string | null;
+  note?: string | null;
+  updatedAt?: string;
+};
 
 export type WofRecord = {
   id: string;
@@ -127,6 +144,7 @@ export type WofRecord = {
   importedAt?: string;
   updatedAt?: string;
   source?: string;
+  items?: WofRecordItem[];
 };
 
 export type WofCheckItem = {
@@ -153,6 +171,7 @@ export type WofCheckItem = {
   source?: string;
   sourceRow?: string;
   updatedAt?: string;
+  items?: WofRecordItem[];
 };
 
 export type WofRecordUpdatePayload = {
@@ -180,6 +199,7 @@ export type WofRecordUpdatePayload = {
 
 export type WofFailReason = {
   id: string;
+  code?: string | null;
   label: string;
   isActive?: boolean;
 };

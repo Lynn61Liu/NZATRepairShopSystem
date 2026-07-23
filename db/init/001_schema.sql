@@ -3,6 +3,7 @@
 -- Enums
 CREATE TYPE wof_record_state AS ENUM ('pass', 'fail', 'recheck');
 CREATE TYPE wof_ui_state AS ENUM ('pass', 'fail', 'recheck', 'printed');
+CREATE TYPE wof_item_status AS ENUM ('pass', 'fail', 'na');
 CREATE TYPE parts_service_status AS ENUM (
   'pending_order',
   'needs_pt',
@@ -234,6 +235,28 @@ CREATE TABLE job_wof_records (
   imported_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Job WOF Record Items
+CREATE TABLE job_wof_record_items (
+  id BIGSERIAL PRIMARY KEY,
+  job_wof_record_id BIGINT NOT NULL REFERENCES job_wof_records(id) ON DELETE CASCADE,
+  code TEXT NOT NULL,
+  label TEXT NOT NULL,
+  item_type TEXT NOT NULL DEFAULT 'status',
+  status wof_item_status NOT NULL DEFAULT 'pass',
+  fail_reason_id BIGINT REFERENCES wof_fail_reasons(id) ON DELETE SET NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  numeric_value NUMERIC,
+  input_value TEXT,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT ck_job_wof_record_items_item_type CHECK (item_type IN ('status', 'number')),
+  CONSTRAINT ux_job_wof_record_items_record_code UNIQUE (job_wof_record_id, code)
+);
+
+CREATE INDEX ix_job_wof_record_items_record_id ON job_wof_record_items(job_wof_record_id);
+CREATE INDEX ix_job_wof_record_items_fail_reason_id ON job_wof_record_items(fail_reason_id);
 
 -- Parts Services
 CREATE TABLE job_parts_services (

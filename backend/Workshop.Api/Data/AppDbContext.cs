@@ -38,6 +38,7 @@ public class AppDbContext : DbContext
     public DbSet<WofResult> WofResults => Set<WofResult>();
     public DbSet<WofFailReason> WofFailReasons => Set<WofFailReason>();
     public DbSet<JobWofRecord> JobWofRecords => Set<JobWofRecord>();
+    public DbSet<JobWofRecordItem> JobWofRecordItems => Set<JobWofRecordItem>();
     public DbSet<JobPartsService> JobPartsServices => Set<JobPartsService>();
     public DbSet<JobPartsNote> JobPartsNotes => Set<JobPartsNote>();
     public DbSet<JobMechService> JobMechServices => Set<JobMechService>();
@@ -73,6 +74,7 @@ public class AppDbContext : DbContext
     {
         modelBuilder.HasPostgresEnum<WofRecordState>("public", "wof_record_state");
         modelBuilder.HasPostgresEnum<WofUiState>("public", "wof_ui_state");
+        modelBuilder.HasPostgresEnum<WofItemStatus>("public", "wof_item_status");
         modelBuilder.HasPostgresEnum<PartsServiceStatus>("public", "parts_service_status");
         modelBuilder.HasPostgresEnum<WorklogServiceType>("public", "worklog_service_type");
 
@@ -653,6 +655,28 @@ public class AppDbContext : DbContext
         jwr.Property(x => x.WofUiState).HasColumnName("wof_ui_state").HasColumnType("wof_ui_state").IsRequired();
         jwr.Property(x => x.ImportedAt).HasColumnName("imported_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
         jwr.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+
+        var jwri = modelBuilder.Entity<JobWofRecordItem>();
+        jwri.ToTable("job_wof_record_items");
+        jwri.HasKey(x => x.Id);
+        jwri.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        jwri.Property(x => x.JobWofRecordId).HasColumnName("job_wof_record_id").IsRequired();
+        jwri.Property(x => x.Code).HasColumnName("code").IsRequired();
+        jwri.Property(x => x.Label).HasColumnName("label").IsRequired();
+        jwri.Property(x => x.ItemType).HasColumnName("item_type").HasDefaultValue(WofRecordItemTypes.Status).IsRequired();
+        jwri.Property(x => x.Status).HasColumnName("status").HasColumnType("wof_item_status").HasDefaultValue(WofItemStatus.Pass).IsRequired();
+        jwri.Property(x => x.FailReasonId).HasColumnName("fail_reason_id");
+        jwri.Property(x => x.SortOrder).HasColumnName("sort_order");
+        jwri.Property(x => x.NumericValue).HasColumnName("numeric_value").HasColumnType("numeric");
+        jwri.Property(x => x.InputValue).HasColumnName("input_value");
+        jwri.Property(x => x.Note).HasColumnName("note");
+        jwri.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        jwri.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        jwri.HasIndex(x => x.JobWofRecordId).HasDatabaseName("ix_job_wof_record_items_record_id");
+        jwri.HasIndex(x => x.FailReasonId).HasDatabaseName("ix_job_wof_record_items_fail_reason_id");
+        jwri.HasIndex(x => new { x.JobWofRecordId, x.Code }).IsUnique().HasDatabaseName("ux_job_wof_record_items_record_code");
+        jwri.HasOne<JobWofRecord>().WithMany(x => x.Items).HasForeignKey(x => x.JobWofRecordId).OnDelete(DeleteBehavior.Cascade);
+        jwri.HasOne<WofFailReason>().WithMany().HasForeignKey(x => x.FailReasonId).OnDelete(DeleteBehavior.SetNull);
 
         var jps = modelBuilder.Entity<JobPartsService>();
         jps.ToTable("job_parts_services");

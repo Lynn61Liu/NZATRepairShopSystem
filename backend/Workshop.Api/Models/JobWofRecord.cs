@@ -27,6 +27,7 @@ public class JobWofRecord
     public WofUiState WofUiState { get; set; }
     public DateTime ImportedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public List<JobWofRecordItem> Items { get; set; } = [];
 }
 
 public enum WofRecordState

@@ -123,6 +123,7 @@ if (string.IsNullOrWhiteSpace(connString))
 var dataSourceBuilder = new NpgsqlDataSourceBuilder(connString);
 dataSourceBuilder.MapEnum<WofRecordState>("wof_record_state");
 dataSourceBuilder.MapEnum<WofUiState>("wof_ui_state");
+dataSourceBuilder.MapEnum<WofItemStatus>("wof_item_status");
 dataSourceBuilder.MapEnum<PartsServiceStatus>("parts_service_status");
 dataSourceBuilder.MapEnum<WorklogServiceType>("worklog_service_type");
 var dataSource = dataSourceBuilder.Build();

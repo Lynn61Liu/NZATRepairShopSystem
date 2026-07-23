@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Workshop.Api.Data;
+using Workshop.Api.Models;
 using Workshop.Api.Services;
 
 namespace Workshop.Api.Controllers;
@@ -129,6 +130,27 @@ public class WofRecordsController : ControllerBase
         if (row is null)
             return NotFound(new { error = "WOF record not found." });
 
+        var items = await _db.JobWofRecordItems.AsNoTracking()
+            .Where(x => x.JobWofRecordId == recordId)
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Code)
+            .Select(x => new
+            {
+                id = x.Id.ToString(CultureInfo.InvariantCulture),
+                jobWofRecordId = x.JobWofRecordId.ToString(CultureInfo.InvariantCulture),
+                code = x.Code,
+                label = x.Label,
+                itemType = x.ItemType,
+                status = ToItemStatusLabel(x.Status),
+                failReasonId = x.FailReasonId.HasValue ? x.FailReasonId.Value.ToString(CultureInfo.InvariantCulture) : null,
+                sortOrder = x.SortOrder,
+                numericValue = x.NumericValue,
+                inputValue = x.InputValue,
+                note = x.Note,
+                updatedAt = FormatDateTime(x.UpdatedAt),
+            })
+            .ToListAsync(ct);
+
         return Ok(new
         {
             job = new
@@ -186,6 +208,7 @@ public class WofRecordsController : ControllerBase
                 wofUiState = row.Record.WofUiState.ToString(),
                 importedAt = FormatDateTime(row.Record.ImportedAt),
                 updatedAt = FormatDateTime(row.Record.UpdatedAt),
+                items,
             },
         });
     }
@@ -256,6 +279,14 @@ public class WofRecordsController : ControllerBase
 
     private static string FormatDateTime(DateTime value)
         => value.ToString("yyyy-MM-ddTHH:mm:ssK", CultureInfo.InvariantCulture);
+
+    private static string ToItemStatusLabel(WofItemStatus status)
+        => status switch
+        {
+            WofItemStatus.Fail => "Fail",
+            WofItemStatus.NA => "NA",
+            _ => "Pass"
+        };
 
     private IActionResult ToActionResult(WofServiceResult result)
     {

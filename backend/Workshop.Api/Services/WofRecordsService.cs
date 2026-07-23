@@ -69,6 +69,48 @@ public class WofRecordsService
                 return WofServiceResult.NotFound("Job not found.");
         }
 
+        var recordIds = rows.Select(x => x.Id).ToArray();
+        var itemRows = await _db.JobWofRecordItems.AsNoTracking()
+            .Where(x => recordIds.Contains(x.JobWofRecordId))
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Code)
+            .Select(x => new
+            {
+                x.Id,
+                x.JobWofRecordId,
+                x.Code,
+                x.Label,
+                x.ItemType,
+                x.Status,
+                x.FailReasonId,
+                x.SortOrder,
+                x.NumericValue,
+                x.InputValue,
+                x.Note,
+                x.UpdatedAt
+            })
+            .ToListAsync(ct);
+
+        var itemsByRecordId = itemRows
+            .GroupBy(x => x.JobWofRecordId)
+            .ToDictionary(
+                x => x.Key,
+                x => x.Select(item => new
+                {
+                    id = item.Id.ToString(CultureInfo.InvariantCulture),
+                    jobWofRecordId = item.JobWofRecordId.ToString(CultureInfo.InvariantCulture),
+                    code = item.Code,
+                    label = item.Label,
+                    itemType = item.ItemType,
+                    status = ToItemStatusLabel(item.Status),
+                    failReasonId = item.FailReasonId?.ToString(CultureInfo.InvariantCulture),
+                    sortOrder = item.SortOrder,
+                    numericValue = item.NumericValue,
+                    inputValue = item.InputValue,
+                    note = item.Note,
+                    updatedAt = FormatDateTime(item.UpdatedAt)
+                }).ToList());
+
         var checkItems = rows.Select(x => new
             {
                 id = x.Id.ToString(CultureInfo.InvariantCulture),
@@ -93,7 +135,8 @@ public class WofRecordsService
                 importedAt = FormatDateTime(x.ImportedAt),
                 source = x.SourceFile ?? "excel",
                 sourceRow = x.ExcelRowNo.ToString(CultureInfo.InvariantCulture),
-                updatedAt = FormatDateTime(x.UpdatedAt)
+                updatedAt = FormatDateTime(x.UpdatedAt),
+                items = itemsByRecordId.TryGetValue(x.Id, out var recordItems) ? recordItems : []
             })
             .ToList();
 
@@ -260,7 +303,7 @@ public class WofRecordsService
                 continue;
             }
 
-            _db.JobWofRecords.Add(new JobWofRecord
+            var record = new JobWofRecord
             {
                 JobId = jobId,
                 OccurredAt = occurredAt,
@@ -284,7 +327,9 @@ public class WofRecordsService
                 WofUiState = uiState,
                 ImportedAt = now,
                 UpdatedAt = now,
-            });
+            };
+            AddMissingDefaultItems(record, now);
+            _db.JobWofRecords.Add(record);
             inserted++;
         }
 
@@ -690,6 +735,7 @@ public class WofRecordsService
             };
             Console.WriteLine($"================================================Inserting WOF Record: JobId={record.JobId}, Rego={record.Rego}, OccurredAt={record.OccurredAt}, RecordState={record.RecordState}, ExcelRowNo={record.ExcelRowNo}"); 
 
+            AddMissingDefaultItems(record, now);
             _db.JobWofRecords.Add(record);
             inserted++;
         }
@@ -981,6 +1027,7 @@ public class WofRecordsService
             UpdatedAt = now
         };
 
+        AddMissingDefaultItems(record, now);
         _db.JobWofRecords.Add(record);
         await _db.SaveChangesAsync(ct);
         if (_jobLifecycleService is not null)
@@ -1070,6 +1117,7 @@ public class WofRecordsService
             UpdatedAt = now
         };
 
+        AddMissingDefaultItems(record, now);
         _db.JobWofRecords.Add(record);
         await _db.SaveChangesAsync(ct);
         if (_jobLifecycleService is not null)
@@ -1270,6 +1318,37 @@ public class WofRecordsService
         WofUiState.Fail => "Fail",
         WofUiState.Recheck => "Recheck",
         WofUiState.Printed => "Printed",
+        _ => "Pass"
+    };
+
+    private static void AddMissingDefaultItems(JobWofRecord record, DateTime now)
+    {
+        var existingCodes = record.Items
+            .Select(x => x.Code)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var definition in WofRecordItemCatalog.All)
+        {
+            if (!existingCodes.Add(definition.Code))
+                continue;
+
+            record.Items.Add(new JobWofRecordItem
+            {
+                Code = definition.Code,
+                Label = definition.Label,
+                ItemType = definition.ItemType,
+                Status = WofItemStatus.Pass,
+                SortOrder = definition.SortOrder,
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+        }
+    }
+
+    private static string ToItemStatusLabel(WofItemStatus state) => state switch
+    {
+        WofItemStatus.Fail => "Fail",
+        WofItemStatus.NA => "NA",
         _ => "Pass"
     };
 

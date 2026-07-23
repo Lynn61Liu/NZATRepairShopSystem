@@ -491,29 +491,29 @@ export function WofFormPage() {
           </div>
           <div className="initial">
             <div className="initalBox">
-              <div className="initialinspection ">initialinspection</div>
+              <div className="initialinspection "></div>
               <div className="inspectionPass ">{initialPass}</div>
               <div className="inspectionFalse ">{initialFail}</div>
             </div>
             <div className="dataIns">
-              <div className="dataText">Date of</div>
+              <div className="dataText"></div>
               <div className="dataVa">{formatDate(wof?.occurredAt)}</div>
             </div>
-            <div className="initialInsTitle ">Inital INSPECTION</div>
+            <div className="initialInsTitle "></div>
             <div className="initialInsBox">
-              <div className="SignatureText">signature</div>
+              <div className="SignatureText"></div>
               <div className="signatureVa"></div>
             </div>
             <div className="initialInsBox">
-              <div className="NumberText">Number</div>
-              <div className="NumberVa">{text(wof?.csNo || wof?.checkSheet)}</div>
+              <div className="NumberText"></div>
+              <div className="NumberVa">A21350</div>
             </div>
           </div>
           <div className="recheck">
             <div className="recheckTitle">
-              <div className="recheckText ">Reckeck inspection</div>
-              <div className="recheckPass ">√</div>
-              <div className="recheckFalse "></div>
+              <div className="recheckText"></div>
+              <div className="recheckPass">√</div>
+              <div className="recheckFalse"></div>
             </div>
             <div className="recheckDetail">
               <div className="recheckDetailText">{text(wof?.failReasons)}</div>
@@ -522,15 +522,15 @@ export function WofFormPage() {
 
             </div>
             <div className="recheckDateBoc">
-              <div className="recheckDateText">date </div>
+              <div className="recheckDateText"></div>
               <div className="recheckDateVe">{formatDate(wof?.occurredAt)}</div>
             </div>
             <div className="odoBox">
-              <div className="odoText">odometer </div>
-              <div className="odoVa">{odometer}</div>
+              <div className="odoText"> </div>
+              <div className="odoVa"></div>
             </div>
             <div className="tyreBox">
-              <div className="tyreTitle">Tyre recheck</div>
+              <div className="tyreTitle"></div>
               <div className="tyreValueBox">
                 <div className="tyreF">
                   <div className="LFText tryeUnit">LF</div>
@@ -553,18 +553,18 @@ export function WofFormPage() {
               <div></div>
             </div>
             <div className="brakeBox">
-              <div className="brakeText">brake recheck</div>
+              <div className="brakeText"></div>
               <div className="brakaVa"></div>
             </div>
 
-            <div className="initialInsTitle ">Recheck INSPECTION</div>
+            <div className="initialInsTitle "></div>
             <div className="initialInsBox">
-              <div className="SignatureText">signature</div>
-              <div className="signatureVa"></div>
+              <div className="SignatureText"></div>
+              <div className="signatureVa">signature</div>
             </div>
             <div className="initialInsBox">
-              <div className="NumberText">Number</div>
-              <div className="NumberVa">{text(wof?.csNo || wof?.checkSheet)}</div>
+              <div className="NumberText"></div>
+              <div className="NumberVa">A21350</div>
             </div>
 
 
