@@ -80,11 +80,9 @@ public class WofRecordsService
                 x.JobWofRecordId,
                 x.Code,
                 x.Label,
-                x.ItemType,
                 x.Status,
                 x.FailReasonId,
                 x.SortOrder,
-                x.NumericValue,
                 x.InputValue,
                 x.Note,
                 x.UpdatedAt
@@ -101,11 +99,9 @@ public class WofRecordsService
                     jobWofRecordId = item.JobWofRecordId.ToString(CultureInfo.InvariantCulture),
                     code = item.Code,
                     label = item.Label,
-                    itemType = item.ItemType,
                     status = ToItemStatusLabel(item.Status),
                     failReasonId = item.FailReasonId?.ToString(CultureInfo.InvariantCulture),
                     sortOrder = item.SortOrder,
-                    numericValue = item.NumericValue,
                     inputValue = item.InputValue,
                     note = item.Note,
                     updatedAt = FormatDateTime(item.UpdatedAt)
@@ -303,7 +299,7 @@ public class WofRecordsService
                 continue;
             }
 
-            var record = new JobWofRecord
+            _db.JobWofRecords.Add(new JobWofRecord
             {
                 JobId = jobId,
                 OccurredAt = occurredAt,
@@ -327,9 +323,7 @@ public class WofRecordsService
                 WofUiState = uiState,
                 ImportedAt = now,
                 UpdatedAt = now,
-            };
-            AddMissingDefaultItems(record, now);
-            _db.JobWofRecords.Add(record);
+            });
             inserted++;
         }
 
@@ -735,7 +729,6 @@ public class WofRecordsService
             };
             Console.WriteLine($"================================================Inserting WOF Record: JobId={record.JobId}, Rego={record.Rego}, OccurredAt={record.OccurredAt}, RecordState={record.RecordState}, ExcelRowNo={record.ExcelRowNo}"); 
 
-            AddMissingDefaultItems(record, now);
             _db.JobWofRecords.Add(record);
             inserted++;
         }
@@ -1027,7 +1020,6 @@ public class WofRecordsService
             UpdatedAt = now
         };
 
-        AddMissingDefaultItems(record, now);
         _db.JobWofRecords.Add(record);
         await _db.SaveChangesAsync(ct);
         if (_jobLifecycleService is not null)
@@ -1117,7 +1109,6 @@ public class WofRecordsService
             UpdatedAt = now
         };
 
-        AddMissingDefaultItems(record, now);
         _db.JobWofRecords.Add(record);
         await _db.SaveChangesAsync(ct);
         if (_jobLifecycleService is not null)
@@ -1320,30 +1311,6 @@ public class WofRecordsService
         WofUiState.Printed => "Printed",
         _ => "Pass"
     };
-
-    private static void AddMissingDefaultItems(JobWofRecord record, DateTime now)
-    {
-        var existingCodes = record.Items
-            .Select(x => x.Code)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var definition in WofRecordItemCatalog.All)
-        {
-            if (!existingCodes.Add(definition.Code))
-                continue;
-
-            record.Items.Add(new JobWofRecordItem
-            {
-                Code = definition.Code,
-                Label = definition.Label,
-                ItemType = definition.ItemType,
-                Status = WofItemStatus.Pass,
-                SortOrder = definition.SortOrder,
-                CreatedAt = now,
-                UpdatedAt = now
-            });
-        }
-    }
 
     private static string ToItemStatusLabel(WofItemStatus state) => state switch
     {

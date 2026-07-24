@@ -73,6 +73,13 @@ const underBonnetInspectionItems = [
   { code: "U9", label: "000000000", mark: "★" },
 ];
 
+type InspectionItem = {
+  code: string;
+  label: string;
+  mark?: string;
+  sortOrder?: number;
+};
+
 type WofFormBackendData = {
   job?: {
     id?: string;
@@ -119,6 +126,78 @@ type WofFormBackendData = {
     previousExpiryDate?: string | null;
     note?: string | null;
     wofUiState?: string | null;
+    e1?: string | null;
+    e2?: string | null;
+    e3?: string | null;
+    e5?: string | null;
+    e6?: string | null;
+    e7?: string | null;
+    e8?: string | null;
+    e9?: string | null;
+    e10?: string | null;
+    e11?: string | null;
+    e12?: string | null;
+    e13?: string | null;
+    e14?: string | null;
+    e15?: string | null;
+    e16?: string | null;
+    e17?: string | null;
+    e18?: string | null;
+    e19?: string | null;
+    e20?: string | null;
+    i1?: string | null;
+    i2?: string | null;
+    i3?: string | null;
+    i4?: string | null;
+    i5?: string | null;
+    i6?: string | null;
+    i7?: string | null;
+    i8?: string | null;
+    i9?: string | null;
+    i10?: string | null;
+    i11?: string | null;
+    i12?: string | null;
+    i13?: string | null;
+    c1?: string | null;
+    c2?: string | null;
+    c3?: string | null;
+    c4?: string | null;
+    c5?: string | null;
+    c6?: string | null;
+    c7?: string | null;
+    c8?: string | null;
+    c9?: string | null;
+    c10?: string | null;
+    c11?: string | null;
+    c12?: string | null;
+    r1?: string | null;
+    r2?: string | null;
+    r3?: string | null;
+    r4?: string | null;
+    r5?: string | null;
+    u1?: string | null;
+    u2?: string | null;
+    u3?: string | null;
+    u4?: string | null;
+    u5?: string | null;
+    u6?: string | null;
+    u7?: string | null;
+    u8?: string | null;
+    cfl?: number | string | null;
+    cfr?: number | string | null;
+    crl?: number | string | null;
+    crr?: number | string | null;
+    pbrl?: number | string | null;
+    pbrr?: number | string | null;
+    items?: Array<{
+      code?: string | null;
+      label?: string | null;
+      status?: string | null;
+      itemType?: string | null;
+      sortOrder?: number | null;
+      numericValue?: number | string | null;
+      inputValue?: string | null;
+    }>;
   };
 };
 
@@ -141,6 +220,36 @@ function isFuelType(fuelType: string | undefined, option: "petrol" | "diesel" | 
   if (option === "petrol") return isPetrol;
   if (option === "diesel") return isDiesel;
   return Boolean(normalized) && !isPetrol && !isDiesel;
+}
+
+function normalizeItemStatus(status?: string | null): "pass" | "fail" | "na" {
+  const normalized = status?.trim().toLowerCase() ?? "";
+  if (normalized === "fail" || normalized === "failed") return "fail";
+  if (normalized === "na" || normalized === "n/a") return "na";
+  return "pass";
+}
+
+function StatusCell({ code, target, className, getStatus }: {
+  code: string;
+  target: "pass" | "fail";
+  className?: string;
+  getStatus: (code: string) => "pass" | "fail" | "na";
+}) {
+  const status = getStatus(code);
+  if (status === "na") {
+    return (
+      <div className={className}>
+        <span className="wof-na-line" aria-hidden="true" />
+      </div>
+    );
+  }
+
+  return <div className={className}>{status === target ? (target === "pass" ? "√" : "X") : ""}</div>;
+}
+
+function inspectionSortValue(code: string): number {
+  const match = code.match(/^[A-Z]+(\d+)$/i);
+  return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
 }
 
 export function WofFormPage() {
@@ -181,11 +290,73 @@ export function WofFormPage() {
   const customer = formData?.customer;
   const vehicle = formData?.vehicle;
   const wof = formData?.wof;
-  const job = formData?.job;
   const fuelType = text(vehicle?.fuelType);
-  const plate = text(vehicle?.plate || wof?.rego);
   const odometer = text(wof?.odo || vehicle?.odometer);
   const vin = text(vehicle?.vin || vehicle?.chassis);
+  const vehicleModelMake = [vehicle?.year, vehicle?.make, vehicle?.model]
+    .map((value) => text(value).trim())
+    .filter(Boolean)
+    .join(" ");
+  const isElectric = fuelType.trim().toLowerCase() === "electric";
+  const wofItemStatus = new Map(
+    (wof?.items ?? [])
+      .filter((item) => item.code)
+      .map((item) => [String(item.code).toUpperCase(), normalizeItemStatus(item.status)])
+  );
+  const wofFlatFields = wof as Record<string, unknown> | undefined;
+  const buildInspectionRows = (staticItems: InspectionItem[], prefix: string) => {
+    const staticByCode = new Map(staticItems.map((item) => [item.code, item]));
+    const rowsFromDb = (wof?.items ?? [])
+      .filter((item) => {
+        const code = text(item.code).toUpperCase();
+        return code.startsWith(prefix) && new RegExp(`^${prefix}\\d+$`).test(code);
+      })
+      .map((item) => {
+        const code = text(item.code).toUpperCase();
+        const fallback = staticByCode.get(code);
+        return {
+          code,
+          label: text(item.label || fallback?.label),
+          mark: fallback?.mark,
+          sortOrder: item.sortOrder ?? fallback?.sortOrder ?? inspectionSortValue(code),
+        };
+      });
+    const rowCodes = new Set(rowsFromDb.map((item) => item.code));
+    const missingStaticRows = staticItems
+      .filter((item) => !rowCodes.has(item.code))
+      .map((item) => ({
+        ...item,
+        sortOrder: item.sortOrder ?? inspectionSortValue(item.code),
+      }));
+
+    return [...rowsFromDb, ...missingStaticRows].sort((a, b) => a.sortOrder - b.sortOrder);
+  };
+  const externalRows = buildInspectionRows(externalInspectionItems, "E");
+  const internalRows = buildInspectionRows(internalInspectionItems, "I");
+  const chassisRows = buildInspectionRows(chassisInspectionItems, "C");
+  const underBonnetRows = buildInspectionRows(underBonnetInspectionItems, "U");
+  const getItemStatus = (code: string) => {
+    if (isElectric && (code === "C4" || code === "U8")) return "na";
+    const flatValue = wofFlatFields?.[code.toLowerCase()];
+    if (flatValue !== null && flatValue !== undefined && String(flatValue).trim()) {
+      return normalizeItemStatus(String(flatValue));
+    }
+    return wofItemStatus.get(code) ?? "pass";
+  };
+  const getNumericValue = (code: string) => {
+    const flatValue = wofFlatFields?.[code.toLowerCase()];
+    if (flatValue !== null && flatValue !== undefined && String(flatValue).trim()) {
+      return text(flatValue);
+    }
+
+    const item = (wof?.items ?? []).find((row) => text(row.code).toUpperCase() === code);
+    return text(item?.numericValue ?? item?.inputValue);
+  };
+  const naMark = (code: string) => {
+    const status = getItemStatus(code);
+    return status === "na" ? "#" : "";
+  };
+  const itemMarker = (code: string, fallback?: string) => naMark(code) || fallback || "";
   const wofStatus = text(wof?.recordState || wof?.wofUiState || "Pass").toLowerCase();
   const initialPass = wofStatus === "fail" ? "" : "√";
   const initialFail = wofStatus === "fail" ? "X" : "";
@@ -233,23 +404,15 @@ export function WofFormPage() {
               <div className="vehicleTitle empty-cell"></div>
               <div className="vehicleContent">
                 <div className="vLine">
-                  <div className="vMake">
-                    <span className="fill empty-cell"></span> <span>{text(vehicle?.make)}</span>
-                  </div>
-                  <div className="vModel">
-                    <span></span> <span>{text(vehicle?.model || wof?.makeModel)}</span>
-                  </div>
-                  <div className="vYear">
-                    <span></span> <span>{text(vehicle?.year)}</span>
-                  </div>
+                 <span className="VehicleModelMake">{vehicleModelMake}</span>
                 </div>
 
                 <div className="vLine">
                   <div className="vReg">
-                    <span></span> <span>{plate}</span>
+                    <span></span> <span> </span>
                   </div>
                   <div className="vexpiry">
-                    <span></span> <span>{formatDate(vehicle?.regoExpiry || vehicle?.licenceExpiry)}</span>
+                    <span></span> <span>{formatDate(wof?.previousExpiryDate)}</span>
                   </div>
                   <div className="vFirstreg">
                     <span></span> <span>{formatDate(vehicle?.nzFirstRegistration)}</span>
@@ -292,25 +455,25 @@ export function WofFormPage() {
               <div className="instructions"></div>
               <div className="exterTitle"></div>
               <div className="exterList">
-                {externalInspectionItems.map((item) => (
+                {externalRows.map((item) => (
                   <div className="exterRow" key={item.code}>
                     <div className="exterCode">{item.code}</div>
                     <div className="exterName">{item.label}</div>
-                    <div className="exterMark">{item.mark ?? ""}</div>
-                    <div className="exterPass">√</div>
-                    <div className="exterFail"></div>
+                    <div className="exterMark">{itemMarker(item.code, item.mark)}</div>
+                    <StatusCell code={item.code} target="pass" className="exterPass" getStatus={getItemStatus} />
+                    <StatusCell code={item.code} target="fail" className="exterFail" getStatus={getItemStatus} />
                   </div>
                 ))}
               </div>
               <div className="interTitle exterTitle"></div>
               <div className="interList">
-                {internalInspectionItems.map((item) => (
+                {internalRows.map((item) => (
                   <div className="interRow" key={item.code}>
                     <div className="interCode">{item.code}</div>
                     <div className="interName">{item.label}</div>
-                    <div className="interMark">{item.mark ?? ""}</div>
-                    <div className="interPass">√</div>
-                    <div className="interFail"></div>
+                    <div className="interMark">{itemMarker(item.code, item.mark)}</div>
+                    <StatusCell code={item.code} target="pass" className="interPass" getStatus={getItemStatus} />
+                    <StatusCell code={item.code} target="fail" className="interFail" getStatus={getItemStatus} />
                   </div>
                 ))}
               </div>
@@ -319,7 +482,7 @@ export function WofFormPage() {
               <div className="C1-box">
                 <div className="Chassis exterTitle"></div>
                 <div className="ChassisList">
-                  {chassisInspectionItems.map((item) => (
+                  {chassisRows.map((item) => (
                     <Fragment key={item.code}>
                       <div
                         className={`ChassisRow ${item.code === "C11" ? "ChassisRowTall" : ""
@@ -327,9 +490,9 @@ export function WofFormPage() {
                       >
                         <div className="ChassisCode">{item.code}</div>
                         <div className="ChassisName">{item.label}</div>
-                        <div className="ChassisMark">{item.mark ?? ""}</div>
-                        <div className="ChassisPass">√</div>
-                        <div className="ChassisFail"></div>
+                        <div className="ChassisMark">{itemMarker(item.code, item.mark)}</div>
+                        <StatusCell code={item.code} target="pass" className="ChassisPass" getStatus={getItemStatus} />
+                        <StatusCell code={item.code} target="fail" className="ChassisFail" getStatus={getItemStatus} />
                       </div>
                       {item.code === "C8" ? (
                         <div className="ChassisTyreDepth">
@@ -343,12 +506,12 @@ export function WofFormPage() {
                           </div>
                           <div></div>
                           <div>FRONT</div>
-                          <div className="FrontL"></div>
-                          <div className="FrontR"></div>
+                          <div className="FrontL">{getNumericValue("CFL")}</div>
+                          <div className="FrontR">{getNumericValue("CFR")}</div>
                           <div></div>
                           <div>REAR</div>
-                          <div className="RealLeft"></div>
-                          <div className="RealLeft"></div>
+                          <div className="RealLeft">{getNumericValue("CRL")}</div>
+                          <div className="RealLeft">{getNumericValue("CRR")}</div>
                         </div>
                       ) : null}
                     </Fragment>
@@ -379,22 +542,22 @@ export function WofFormPage() {
                     
                     <div className="r1Num boxTitle">R1</div>
                     <div className="r1Des boxDes"></div>
-                    <div className="r1NA naCheck">#</div>
-                    <div className="r1pass pCheck">√</div>
-                    <div className="r1false fCheck"></div>
+                    <div className="r1NA naCheck">{naMark("R1")}</div>
+                    <StatusCell code="R1" target="pass" className="r1pass pCheck" getStatus={getItemStatus} />
+                    <StatusCell code="R1" target="fail" className="r1false fCheck" getStatus={getItemStatus} />
                   </div>
                   <div className="R2Box box">
                      <div className="r2Num boxTitle">R1</div>
                     <div className="r2Des boxDes"></div>
-                    <div className="r2NA naCheck">#</div>
-                    <div className="r2pass pCheck">√</div>
-                    <div className="r2false fCheck"></div>
+                    <div className="r2NA naCheck">{naMark("R2")}</div>
+                    <StatusCell code="R2" target="pass" className="r2pass pCheck" getStatus={getItemStatus} />
+                    <StatusCell code="R2" target="fail" className="r2false fCheck" getStatus={getItemStatus} />
                   </div>
                   <div className="R3Box box">
                     <div className="r3Des ">parking brake reading</div>
-                    <div className="r3NA naCheck">#</div>
-                    <div className="r3pass pCheck">√</div>
-                    <div className="r3false fCheck"></div>
+                    <div className="r3NA naCheck">{naMark("PBR")}</div>
+                    <StatusCell code="PBR" target="pass" className="r3pass pCheck" getStatus={getItemStatus} />
+                    <StatusCell code="PBR" target="fail" className="r3false fCheck" getStatus={getItemStatus} />
                   </div>
 
                   <div className="roadbrake2">
@@ -404,8 +567,8 @@ export function WofFormPage() {
                     <div>RIGHT</div>
                     <div>√</div>
                     <div>OR</div>
-                    <div className="breakLValue"> R</div>
-                    <div className="breakRValue"> l</div>
+                    <div className="breakLValue">{getNumericValue("PBRL")}</div>
+                    <div className="breakRValue">{getNumericValue("PBRR")}</div>
                     <div className="breakPerValue">√</div>
                     <div className="roadbrake2Stall">OR STALL TEST (TICK)</div>
                   </div>
@@ -413,30 +576,30 @@ export function WofFormPage() {
                     <div className="roadRow">
                       <div>R3</div>
                       <div>PARKING BRAKE PERFORMANCE</div>
-                      <div>#</div>
-                      <div>√</div>
-                      <div></div>
+                      <div>{naMark("R3")}</div>
+                      <StatusCell code="R3" target="pass" getStatus={getItemStatus} />
+                      <StatusCell code="R3" target="fail" getStatus={getItemStatus} />
                     </div>
                     <div className="roadRow">
                       <div>R4</div>
                       <div>TRAILER BREAKAWAY BRAKE</div>
-                      <div>#</div>
-                      <div>√</div>
-                      <div></div>
+                      <div>{naMark("R4")}</div>
+                      <StatusCell code="R4" target="pass" getStatus={getItemStatus} />
+                      <StatusCell code="R4" target="fail" getStatus={getItemStatus} />
                     </div>
                     <div className="roadRow">
                       <div>R5</div>
                       <div>SPEEDOMETER</div>
-                      <div>★</div>
-                      <div>√</div>
-                      <div></div>
+                      <div>{itemMarker("R5", "★")}</div>
+                      <StatusCell code="R5" target="pass" getStatus={getItemStatus} />
+                      <StatusCell code="R5" target="fail" getStatus={getItemStatus} />
                     </div>
                   </div>
                 </div>
 
                 <div className="bonne exterTitle">UNDER BONNET </div>
                 <div className="bonneList">
-                  {underBonnetInspectionItems.map((item) => (
+                  {underBonnetRows.map((item) => (
                     <div
                       className={`bonneRow ${item.code === "U5" || item.code === "U6" ? "bonneRowTall" : ""
                         }`}
@@ -444,9 +607,9 @@ export function WofFormPage() {
                     >
                       <div>{item.code}</div>
                       <div>{item.label}</div>
-                      <div>{item.mark ?? ""}</div>
-                      <div>√</div>
-                      <div></div>
+                      <div>{itemMarker(item.code, item.mark)}</div>
+                      <StatusCell code={item.code} target="pass" getStatus={getItemStatus} />
+                      <StatusCell code={item.code} target="fail" getStatus={getItemStatus} />
                     </div>
                   ))}
                 </div>
@@ -466,7 +629,7 @@ export function WofFormPage() {
           <div className="customerCopy">
             <div className="customerCopyRow ">
               <div></div>
-              <div  className="invoiceNum">rys908</div>
+              <div  className="invoiceNum">{text(wof?.rego)}</div>
             </div>
             <div className="customerCopyRow">
               <div></div>
