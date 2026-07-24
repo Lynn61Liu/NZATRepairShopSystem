@@ -17,11 +17,13 @@ public class MechServicesController : ControllerBase
 
     private readonly IAppCache _cache;
     private readonly AppDbContext _db;
+    private readonly InvoiceOutboxService _invoiceOutboxService;
 
-    public MechServicesController(IAppCache cache, AppDbContext db)
+    public MechServicesController(IAppCache cache, AppDbContext db, InvoiceOutboxService invoiceOutboxService)
     {
         _cache = cache;
         _db = db;
+        _invoiceOutboxService = invoiceOutboxService;
     }
 
     public record MechServiceRequest(string? Description, decimal? Cost);
@@ -78,6 +80,7 @@ public class MechServicesController : ControllerBase
 
         _db.JobMechServices.Add(service);
         await _db.SaveChangesAsync(ct);
+        await _invoiceOutboxService.EnqueueSyncJobContentDraftAsync(id, null, ct);
         await InvalidateMechCachesAsync(id, ct);
 
         return Ok(new
@@ -110,6 +113,7 @@ public class MechServicesController : ControllerBase
             service.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync(ct);
+        await _invoiceOutboxService.EnqueueSyncJobContentDraftAsync(id, null, ct);
         await InvalidateMechCachesAsync(id, ct);
 
         return Ok(new
@@ -131,6 +135,7 @@ public class MechServicesController : ControllerBase
             .ExecuteDeleteAsync(ct);
         if (deleted == 0)
             return NotFound(new { error = "Mech service not found." });
+        await _invoiceOutboxService.EnqueueSyncJobContentDraftAsync(id, null, ct);
         await InvalidateMechCachesAsync(id, ct);
 
         return Ok(new { success = true });

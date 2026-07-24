@@ -15,6 +15,7 @@ public sealed class PoController : ControllerBase
     }
 
     [HttpGet("todo")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<IActionResult> GetTodo(
         [FromQuery] string? status,
         [FromQuery] int page = 1,

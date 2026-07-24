@@ -12,11 +12,16 @@ public class PartsServicesController : ControllerBase
 
     private readonly IAppCache _cache;
     private readonly PartsServicesService _partsService;
+    private readonly InvoiceOutboxService _invoiceOutboxService;
 
-    public PartsServicesController(IAppCache cache, PartsServicesService partsService)
+    public PartsServicesController(
+        IAppCache cache,
+        PartsServicesService partsService,
+        InvoiceOutboxService invoiceOutboxService)
     {
         _cache = cache;
         _partsService = partsService;
+        _invoiceOutboxService = invoiceOutboxService;
     }
 
     [HttpGet]
@@ -83,6 +88,8 @@ public class PartsServicesController : ControllerBase
             return BadRequest(new { error = "Missing payload." });
 
         var result = await _partsService.CreateService(id, request, ct);
+        if (result.StatusCode == 200)
+            await _invoiceOutboxService.EnqueueSyncJobContentDraftAsync(id, null, ct);
         await InvalidatePartsCachesAsync(id, result, ct);
         return ToActionResult(result);
     }
@@ -94,6 +101,8 @@ public class PartsServicesController : ControllerBase
             return BadRequest(new { error = "Missing payload." });
 
         var result = await _partsService.UpdateService(id, serviceId, request, ct);
+        if (result.StatusCode == 200 && !string.IsNullOrWhiteSpace(request.Description))
+            await _invoiceOutboxService.EnqueueSyncJobContentDraftAsync(id, null, ct);
         await InvalidatePartsCachesAsync(id, result, ct);
         return ToActionResult(result);
     }
@@ -102,6 +111,8 @@ public class PartsServicesController : ControllerBase
     public async Task<IActionResult> DeleteService(long id, long serviceId, CancellationToken ct)
     {
         var result = await _partsService.DeleteService(id, serviceId, ct);
+        if (result.StatusCode == 200)
+            await _invoiceOutboxService.EnqueueSyncJobContentDraftAsync(id, null, ct);
         await InvalidatePartsCachesAsync(id, result, ct);
         return ToActionResult(result);
     }

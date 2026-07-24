@@ -13,7 +13,9 @@ public sealed class CarjamBrowser
     public async Task<string> FetchHtmlAsync(string plate, CancellationToken ct)
     {
         var url = $"https://www.carjam.co.nz/car/?plate={Uri.EscapeDataString(plate)}";
-        const float timeoutMs = 120_000;
+        // A healthy CarJam response normally arrives within a few seconds. Fail fast so the
+        // background compensating import can retry instead of leaving a job blank for minutes.
+        const float timeoutMs = 30_000;
 
         using var playwright = await Microsoft.Playwright.Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions

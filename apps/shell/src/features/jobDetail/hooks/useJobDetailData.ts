@@ -332,7 +332,12 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
       setPaintService(res.data ?? null);
       toast.success("喷漆服务已创建");
       notifyPaintBoardRefresh();
-      return { success: true, message: "喷漆服务已创建" };
+      const createdPanels = Number(res.data?.panels);
+      return {
+        success: true,
+        message: "喷漆服务已创建",
+        panels: Number.isFinite(createdPanels) && createdPanels > 0 ? createdPanels : panels ?? 1,
+      };
     },
     [jobId, toast]
   );
@@ -839,6 +844,38 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
     };
   }, [jobData?.invoiceProcessing?.status, refreshInvoiceProcessing]);
 
+  useEffect(() => {
+    if (!jobId || !jobData) return;
+    if (jobData.vehicle?.make?.trim() && jobData.vehicle?.model?.trim()) return;
+
+    let cancelled = false;
+    let attempts = 0;
+    let timer: number | undefined;
+    const pollVehicle = async () => {
+      attempts += 1;
+      const res = await fetchJob(jobId);
+      if (cancelled) return;
+
+      if (res.ok) {
+        const data = res.data as any;
+        const refreshedJob = data?.job ?? data;
+        if (refreshedJob) {
+          setJobData(refreshedJob);
+          if (refreshedJob.vehicle?.make?.trim() && refreshedJob.vehicle?.model?.trim()) return;
+        }
+      }
+
+      if (attempts < 20)
+        timer = window.setTimeout(() => void pollVehicle(), 3000);
+    };
+
+    timer = window.setTimeout(() => void pollVehicle(), 3000);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [jobId, jobData?.vehicle?.make, jobData?.vehicle?.model]);
+
   const createJobXeroDraftInvoice = useCallback(async () => {
     if (!jobId || !jobData) {
       return { success: false, message: "缺少工单数据" };
@@ -983,17 +1020,28 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
       return { success: false, message: importRes.error || "抓取失败，请稍后重试" };
     }
 
-    const jobRes = await fetchJob(jobId);
-    if (!jobRes.ok) {
-      toast.error(jobRes.error || "刷新车辆信息失败");
-      return { success: false, message: jobRes.error || "刷新车辆信息失败" };
+    const vehicle = (importRes.data as any)?.vehicle;
+    if (vehicle) {
+      setJobData((prev) =>
+        prev
+          ? {
+              ...prev,
+              vehicle: {
+                ...prev.vehicle,
+                plate: vehicle.plate ?? prev.vehicle.plate,
+                make: vehicle.make ?? prev.vehicle.make,
+                model: vehicle.model ?? prev.vehicle.model,
+                year: vehicle.year ?? prev.vehicle.year,
+                vin: vehicle.vin ?? prev.vehicle.vin,
+                fuelType: vehicle.fuelType ?? prev.vehicle.fuelType,
+                nzFirstRegistration: vehicle.nzFirstRegistration ?? prev.vehicle.nzFirstRegistration,
+                odometer: vehicle.odometer ?? prev.vehicle.odometer,
+              },
+            }
+          : prev
+      );
     }
 
-    const data = jobRes.data as any;
-    const job = data?.job ?? data;
-    setJobData(job ?? null);
-
-    const vehicle = job?.vehicle;
     const label = [vehicle?.year, vehicle?.make, vehicle?.model].filter(Boolean).join(" ");
     toast.success(label ? `抓取成功：${label}` : "抓取成功");
     return { success: true, message: label ? `抓取成功：${label}` : "抓取成功" };
@@ -1281,9 +1329,9 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
   }, [activeTab, mechInitialized, mechLoading, refreshMechServices]);
 
   useEffect(() => {
-    if ((activeTab !== "Paint" && activeTab !== "Worklog") || paintInitialized || paintLoading) return;
+    if (!jobId || paintInitialized || paintLoading) return;
     void refreshPaintService();
-  }, [activeTab, paintInitialized, paintLoading, refreshPaintService]);
+  }, [jobId, paintInitialized, paintLoading, refreshPaintService]);
 
   return {
     jobData,
@@ -1307,6 +1355,7 @@ export function useJobDetailData({ jobId, activeTab }: UseJobDetailDataArgs) {
     mechLoading,
     paintService,
     paintLoading,
+    paintInitialized,
     tagOptions,
     setLoadError,
     setDeleteError,

@@ -324,7 +324,7 @@ export function CustomerSelfServiceNewJobPage() {
     };
 
     const timer = window.setInterval(() => {
-      if (attempts >= 8) {
+      if (attempts >= 20) {
         window.clearInterval(timer);
         return;
       }

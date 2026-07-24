@@ -11,4 +11,5 @@ public sealed class UpdateJobInvoiceXeroStateRequest
     public string? Reference { get; set; }
     public decimal? Amount { get; set; }
     public DateOnly? PaymentDate { get; set; }
+    public bool RequireExactAmountMatch { get; set; }
 }

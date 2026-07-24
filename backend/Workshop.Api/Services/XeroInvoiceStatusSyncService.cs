@@ -5,6 +5,8 @@ namespace Workshop.Api.Services;
 
 public sealed class XeroInvoiceStatusSyncService
 {
+    private const int XeroInvoiceBatchSize = 20;
+
     private readonly AppDbContext _db;
     private readonly JobInvoiceService _jobInvoiceService;
     private readonly InvoiceOutboxService _invoiceOutboxService;
@@ -32,7 +34,14 @@ public sealed class XeroInvoiceStatusSyncService
             where invoice.Provider.ToLower() == "xero"
                   && invoice.ExternalInvoiceId != null
                   && invoice.ExternalInvoiceId != ""
-            select new { invoice.JobId, invoice.ExternalStatus, JobStatus = job.Status };
+            select new
+            {
+                invoice.JobId,
+                JobInvoiceId = invoice.Id,
+                ExternalInvoiceId = invoice.ExternalInvoiceId!,
+                invoice.ExternalStatus,
+                JobStatus = job.Status,
+            };
 
         if (requestedJobIds is { Count: > 0 })
         {
@@ -49,23 +58,49 @@ public sealed class XeroInvoiceStatusSyncService
                         && x.ExternalStatus.ToUpper() != "DELETED")));
         }
 
-        var jobIds = await invoiceQuery
-            .Select(x => x.JobId)
-            .Distinct()
-            .OrderBy(x => x)
+        var targets = await invoiceQuery
+            .OrderBy(x => x.JobId)
+            .Select(x => new JobInvoiceXeroSyncTarget(
+                x.JobId,
+                x.JobInvoiceId,
+                x.ExternalInvoiceId))
             .ToListAsync(ct);
 
+        var jobIds = targets.Select(x => x.JobId).ToList();
+
         var items = new List<XeroInvoiceStatusSyncItem>(jobIds.Count);
-        foreach (var jobId in jobIds)
+        foreach (var targetBatch in targets.Chunk(XeroInvoiceBatchSize))
         {
             try
             {
-                var result = await _jobInvoiceService.SyncFromXeroAsync(jobId, ct);
-                items.Add(new XeroInvoiceStatusSyncItem(
-                    jobId,
-                    result.Ok,
-                    result.Invoice?.ExternalStatus,
-                    result.Ok ? null : result.Error));
+                var result = await _jobInvoiceService.SyncFromXeroAsync(targetBatch, ct);
+                if (!result.Ok)
+                {
+                    items.AddRange(targetBatch.Select(target => new XeroInvoiceStatusSyncItem(
+                        target.JobId,
+                        false,
+                        null,
+                        result.Error)));
+                    continue;
+                }
+
+                var syncedJobIds = result.SyncedJobIds.ToHashSet();
+                var batchJobIds = targetBatch.Select(x => x.JobId).ToArray();
+                var statuses = await _db.JobInvoices.AsNoTracking()
+                    .Where(x => batchJobIds.Contains(x.JobId))
+                    .Select(x => new { x.JobId, x.ExternalStatus })
+                    .ToDictionaryAsync(x => x.JobId, x => x.ExternalStatus, ct);
+
+                items.AddRange(targetBatch.Select(target =>
+                {
+                    var synced = syncedJobIds.Contains(target.JobId);
+                    statuses.TryGetValue(target.JobId, out var status);
+                    return new XeroInvoiceStatusSyncItem(
+                        target.JobId,
+                        synced,
+                        status,
+                        synced ? null : "Xero did not return this invoice in the batch response.");
+                }));
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -73,8 +108,13 @@ public sealed class XeroInvoiceStatusSyncService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to sync Xero invoice status for job {JobId}.", jobId);
-                items.Add(new XeroInvoiceStatusSyncItem(jobId, false, null, ex.Message));
+                var batchJobIds = targetBatch.Select(x => x.JobId).ToArray();
+                _logger.LogWarning(
+                    ex,
+                    "Failed to sync Xero invoice status batch for jobs {JobIds}.",
+                    batchJobIds);
+                items.AddRange(batchJobIds.Select(jobId =>
+                    new XeroInvoiceStatusSyncItem(jobId, false, null, ex.Message)));
             }
         }
 

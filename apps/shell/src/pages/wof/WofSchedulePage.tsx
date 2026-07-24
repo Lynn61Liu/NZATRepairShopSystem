@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { ChevronLeft, ChevronRight, Clock3, ExternalLink, GripVertical, RefreshCcw } from "lucide-react";
@@ -8,7 +8,6 @@ import { Button, Card, useToast } from "@/components/ui";
 import { withApiBase } from "@/utils/api";
 import { formatNzDateTime, parseTimestamp } from "@/utils/date";
 import { notifyPaintBoardRefresh, notifyWofScheduleRefresh, subscribeWofScheduleRefresh } from "@/utils/refreshSignals";
-import { useRef } from "react";
 import { updateWofStatus as apiUpdateWofStatus } from "@/features/wof/api/wofApi";
 
 const STORAGE_KEY = "wof:schedule:placements:v1";
@@ -16,9 +15,40 @@ const PLACEHOLDER_STORAGE_KEY = "wof:schedule:placeholders:v1";
 const DRAG_TYPE = "wof-job-card";
 const PLACEHOLDER_PLACEMENT_PREFIX = "placeholder:";
 const LOCAL_SAVE_DEBOUNCE_MS = 700;
-const DAY_START_HOUR = 8;
-const DAY_END_HOUR = 18;
+const AUTO_GOOGLE_SHEET_SYNC_COOLDOWN_MS = 60_000;
+const DAY_START_HOUR = 9;
+const DAY_END_HOUR = 19;
+const DISPLAY_DAY_COUNT = 5;
 const SLOT_HOURS = Array.from({ length: DAY_END_HOUR - DAY_START_HOUR }, (_, index) => DAY_START_HOUR + index);
+
+type GoogleSheetSyncResult = {
+  inserted?: number;
+  updated?: number;
+  skipped?: number;
+};
+
+let googleSheetSyncInFlight: Promise<GoogleSheetSyncResult> | null = null;
+let lastAutoGoogleSheetSyncAt = 0;
+
+function requestGoogleSheetSync() {
+  if (googleSheetSyncInFlight) return googleSheetSyncInFlight;
+
+  lastAutoGoogleSheetSyncAt = Date.now();
+  googleSheetSyncInFlight = (async () => {
+    const res = await fetch(withApiBase("/api/wof-records/sync"), {
+      method: "POST",
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error(data?.error || "Failed to sync WOF records from Google Sheet.");
+    }
+    return (data ?? {}) as GoogleSheetSyncResult;
+  })().finally(() => {
+    googleSheetSyncInFlight = null;
+  });
+
+  return googleSheetSyncInFlight;
+}
 
 type WofScheduleJob = {
   jobId: string;
@@ -30,7 +60,20 @@ type WofScheduleJob = {
   wofExpiry: string;
   inShopDateTime: string;
   status: string;
+  customerCode?: string | null;
   wofStatus?: "Todo" | "Checked" | "Recorded" | null;
+};
+
+type CompletedWofRecord = {
+  id: string;
+  jobId?: string | null;
+  occurredAt: string;
+  plate: string;
+  makeModel: string;
+  systemYear?: number | null;
+  systemMake?: string | null;
+  systemModel?: string | null;
+  result: "Pass" | "Fail" | "Recheck";
 };
 
 type WofSchedulePlaceholder = {
@@ -308,6 +351,27 @@ function getNzCalendarDateParts(value: Date) {
   };
 }
 
+function getNzCalendarDateTimeParts(value: string) {
+  const date = parseTimestamp(value);
+  if (!date) return null;
+  const parts = new Intl.DateTimeFormat("en-NZ", {
+    timeZone: "Pacific/Auckland",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return {
+    dateKey: `${map.year}-${map.month}-${map.day}`,
+    hour: Number(map.hour),
+    minute: Number(map.minute),
+    timeLabel: `${map.hour}:${map.minute}`,
+  };
+}
+
 function buildWorkingDays(weekOffset: number): WorkingDay[] {
   const formatter = new Intl.DateTimeFormat("en-NZ", {
     timeZone: "Pacific/Auckland",
@@ -318,15 +382,13 @@ function buildWorkingDays(weekOffset: number): WorkingDay[] {
 
   const nowParts = getNzCalendarDateParts(new Date());
   const todayUtc = new Date(Date.UTC(nowParts.year, nowParts.month - 1, nowParts.day));
-  const currentWeekday = todayUtc.getUTCDay();
-  const diffToMonday = currentWeekday === 0 ? -6 : 1 - currentWeekday;
-  const weekStart = new Date(todayUtc);
-  weekStart.setUTCDate(todayUtc.getUTCDate() + diffToMonday + weekOffset * 7);
+  const rangeStart = new Date(todayUtc);
+  rangeStart.setUTCDate(todayUtc.getUTCDate() - 1 + weekOffset * DISPLAY_DAY_COUNT);
 
   const results: WorkingDay[] = [];
-  for (let index = 0; index < 7; index += 1) {
-    const cursor = new Date(weekStart);
-    cursor.setUTCDate(weekStart.getUTCDate() + index);
+  for (let index = 0; index < DISPLAY_DAY_COUNT; index += 1) {
+    const cursor = new Date(rangeStart);
+    cursor.setUTCDate(rangeStart.getUTCDate() + index);
     const key = [
       cursor.getUTCFullYear(),
       String(cursor.getUTCMonth() + 1).padStart(2, "0"),
@@ -413,7 +475,7 @@ function WofStatusBadge({ status }: { status?: WofScheduleJob["wofStatus"] }) {
   return (
     <span
       className={[
-        "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+        "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs font-semibold",
         config.bg,
         config.bd,
         config.tx,
@@ -459,7 +521,7 @@ function WofStatusSelect({
 }) {
   return (
     <select
-      className="pointer-events-auto h-7 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-medium text-slate-700 shadow-sm outline-none transition focus:border-[var(--ds-primary)]"
+      className="pointer-events-auto h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-medium text-slate-700 shadow-sm outline-none transition focus:border-[var(--ds-primary)]"
       value={value === "Checked" ? "Checked" : "Todo"}
       onChange={(e) => onChange(e.target.value as "Todo" | "Checked")}
       onMouseDown={(e) => e.stopPropagation()}
@@ -489,27 +551,27 @@ function WofDetailedCardContent({
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
-              <div className="truncate text-base font-semibold text-slate-900">{job.plate}</div>
+              <div className="truncate text-lg font-semibold text-slate-900">{job.plate}</div>
               <Link
                 to={`/jobs/${job.jobId}?tab=WOF`}
-                className="shrink-0 text-xs font-medium text-[var(--ds-primary)] underline-offset-2 hover:underline"
+                className="shrink-0 text-sm font-medium text-[var(--ds-primary)] underline-offset-2 hover:underline"
               >
                 #{job.jobId}
               </Link>
               <WofStatusBadge status={job.wofStatus} />
             </div>
-            <div className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+            <div className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
               {getInShopDaysLabel(job.inShopDateTime)}
             </div>
           </div>
-          <div className="text-xs text-slate-500">{formatVehicleLabel(job)}</div>
+          <div className="text-sm text-slate-500">{formatVehicleLabel(job)}</div>
         </div>
         <GripVertical className="mt-0.5 h-4 w-4 text-slate-400" />
       </div>
-      <dl className="grid gap-2 text-xs text-slate-600">
+      <dl className="grid gap-2 text-sm text-slate-600">
         <div className="flex items-start justify-between gap-3">
           <dt className="font-medium text-slate-500">VIN</dt>
-          <dd className="max-w-[180px] text-right font-mono text-[11px] text-slate-800">{job.vin || "—"}</dd>
+          <dd className="max-w-[210px] text-right font-mono text-xs text-slate-800">{job.vin || "—"}</dd>
         </div>
         <div className="flex items-start justify-between gap-3">
           <dt className="font-medium text-slate-500">WOF Expiry</dt>
@@ -517,13 +579,16 @@ function WofDetailedCardContent({
         </div>
       </dl>
       <div className="flex items-center justify-end gap-2 pt-1">
+        <span className="inline-flex h-8 shrink-0 items-center rounded-md border border-indigo-200 bg-indigo-50 px-2.5 text-xs font-semibold text-indigo-700">
+          {job.customerCode || "WI"}
+        </span>
         {onStatusChange ? (
           <WofStatusSelect value={job.wofStatus} onChange={onStatusChange} disabled={statusUpdating} />
         ) : null}
         {onNzta ? (
           <Button
             variant="ghost"
-            className="h-8 border-slate-200 px-2 text-xs"
+            className="h-9 border-slate-200 px-2 text-sm"
             leftIcon={<ExternalLink className="h-3.5 w-3.5" />}
             onClick={onNzta}
           >
@@ -645,7 +710,7 @@ function WofJobCard({
             ].join(" ")}
           >
             <span className={["h-3 w-3 shrink-0 rounded-full", compactTone.dot].join(" ")} />
-            <div className="min-w-0 flex-1 truncate text-[14px] font-medium leading-5 text-slate-900">{job.plate}</div>
+            <div className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-5 text-slate-900">{job.plate}</div>
             <div className="flex shrink-0 items-center gap-1.5">
               <GripVertical className="h-3 w-3 text-slate-400" />
             </div>
@@ -946,10 +1011,10 @@ function DropLane({
       <div className="border-b border-slate-200 bg-slate-50/80 px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-sm font-semibold text-slate-900">{title}</div>
-            <div className="text-xs text-slate-500">{subtitle}</div>
+            <div className="text-base font-semibold text-slate-900">{title}</div>
+            <div className="text-sm text-slate-500">{subtitle}</div>
           </div>
-          <div className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
+          <div className="rounded-full bg-white px-2.5 py-1 text-sm font-semibold text-slate-600 ring-1 ring-slate-200">
             {itemCount}
           </div>
         </div>
@@ -972,11 +1037,80 @@ function DropLane({
   );
 }
 
+function CompletedWofRow({ record }: { record: CompletedWofRecord }) {
+  const dateTime = getNzCalendarDateTimeParts(record.occurredAt);
+  const unmatched = !record.jobId;
+  const systemVehicleLabel = [record.systemYear, record.systemMake, record.systemModel]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+  const vehicleLabel = systemVehicleLabel || record.makeModel;
+  const tone = unmatched
+    ? "border-amber-500 bg-amber-100 text-amber-950"
+    : record.result === "Pass"
+      ? "border-emerald-500 bg-emerald-50 text-emerald-950"
+      : record.result === "Fail"
+        ? "border-red-500 bg-red-50 text-red-950"
+        : "border-violet-600 bg-violet-50 text-violet-950";
+  const resultTone = record.result === "Pass"
+    ? "text-emerald-700"
+    : record.result === "Fail"
+      ? "text-red-700"
+      : "text-violet-700";
+  const recoveryNotes = [
+    "⚠️ 系统辅助补单：该工单根据 WOF Google Sheet 完成记录创建。",
+    "⚠️ 请核对客户类型（WI / Dealership）、客户信息及车辆信息。",
+    `WOF 时间：${formatNzDateTime(record.occurredAt)}`,
+    `WOF 结果：${record.result}`,
+    `Google Sheet 原始车型：${record.makeModel || "—"}`,
+  ].join("\n");
+  const recoveryParams = new URLSearchParams({
+    source: "wof-sheet-recovery",
+    rego: record.plate,
+    notes: recoveryNotes,
+  });
+
+  const content = (
+    <>
+      <div className="whitespace-normal break-words text-xs font-semibold leading-4">
+        <span>{unmatched ? "⚠️ " : ""}{record.plate} {vehicleLabel}</span>
+      </div>
+      <div className="mt-1 flex items-center justify-between gap-2 text-[11px] opacity-80">
+        <span className="flex min-w-0 items-center gap-2">
+          <span>完成 {dateTime?.timeLabel ?? "—"}</span>
+          <span className={`shrink-0 font-bold ${resultTone}`}>{record.result}</span>
+        </span>
+        {unmatched ? (
+          <Link
+            to={`/jobs/new?${recoveryParams.toString()}`}
+            className="rounded-md border border-amber-600 bg-white px-2 py-0.5 font-bold text-amber-800 opacity-100 hover:bg-amber-50"
+          >
+            补建工单
+          </Link>
+        ) : null}
+      </div>
+    </>
+  );
+  const className = `block rounded-md border-2 px-2 py-1.5 shadow-sm transition ${tone}`;
+  const title = `${record.plate} ${record.makeModel} · ${record.result} · ${dateTime?.timeLabel ?? ""}`;
+
+  return record.jobId ? (
+    <Link to={`/jobs/${record.jobId}?tab=WOF`} className={`${className} hover:brightness-95`} title={title}>
+      {content}
+    </Link>
+  ) : (
+    <div className={className} title={`${title} · 未匹配系统工单`}>
+      {content}
+    </div>
+  );
+}
+
 function ScheduleSlot({
   slotKey,
   hour,
   jobs,
   placeholders,
+  completedRecords,
   onDropItem,
   showCurrentLine,
   currentLineOffsetPct,
@@ -991,6 +1125,7 @@ function ScheduleSlot({
   hour: number;
   jobs: WofScheduleJob[];
   placeholders: WofSchedulePlaceholder[];
+  completedRecords: CompletedWofRecord[];
   onDropItem: (item: DragItem, slotKey: string) => void;
   showCurrentLine: boolean;
   currentLineOffsetPct: number;
@@ -1018,14 +1153,17 @@ function ScheduleSlot({
     <div
       ref={attachDropRef}
       className={[
-        "relative h-full min-h-0 border-t border-slate-200 px-2 py-2 transition",
+        "relative min-h-[93px] border-t border-slate-200 px-2 py-2 transition",
         isOver ? "bg-rose-50" : "bg-white",
       ].join(" ")}
     >
-      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
         {getSlotLabel(hour)}
       </div>
-      <div className="h-[calc(100%-24px)] space-y-1 overflow-x-visible overflow-y-auto pr-1">
+      <div className="space-y-1 overflow-visible pr-1">
+        {completedRecords.map((record) => (
+          <CompletedWofRow key={record.id} record={record} />
+        ))}
         {placeholders.map((placeholder) => (
           <WofPlaceholderCard
             key={placeholder.placeholderId}
@@ -1070,7 +1208,9 @@ function ScheduleSlot({
 export function WofSchedulePage() {
   const toast = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
   const [jobs, setJobs] = useState<WofScheduleJob[]>([]);
+  const [completedWofRecords, setCompletedWofRecords] = useState<CompletedWofRecord[]>([]);
   const [placeholders, setPlaceholders] = useState<WofSchedulePlaceholder[]>(() => loadPlaceholders());
   const [placeholderTemplate, setPlaceholderTemplate] = useState<PlaceholderDraft>({
     rego: "",
@@ -1095,6 +1235,7 @@ export function WofSchedulePage() {
     placements: PlacementMap;
     placeholders: WofSchedulePlaceholder[];
   } | null>(null);
+  const completedRecordsRequestRef = useRef(0);
 
   const saveRemoteSnapshot = useCallback(async (snapshot: {
     placements: PlacementMap;
@@ -1215,9 +1356,30 @@ export function WofSchedulePage() {
     [workingDays]
   );
 
-  const loadJobs = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const loadCompletedWofRecords = useCallback(async () => {
+    const firstDay = workingDays[0]?.key;
+    const lastDay = workingDays[workingDays.length - 1]?.key;
+    if (!firstDay || !lastDay) return;
+
+    const requestId = completedRecordsRequestRef.current + 1;
+    completedRecordsRequestRef.current = requestId;
+    try {
+      const params = new URLSearchParams({ from: firstDay, to: lastDay });
+      const res = await fetch(withApiBase(`/api/wof-records/calendar?${params.toString()}`));
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || "Failed to load completed WOF records.");
+      if (completedRecordsRequestRef.current !== requestId) return;
+      setCompletedWofRecords(Array.isArray(data?.records) ? data.records : []);
+    } catch {
+      if (completedRecordsRequestRef.current === requestId) setCompletedWofRecords([]);
+    }
+  }, [workingDays]);
+
+  const loadJobs = useCallback(async (background = false) => {
+    if (!background) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const res = await fetch(withApiBase("/api/jobs/wof-schedule"));
       const data = await res.json().catch(() => null);
@@ -1248,16 +1410,41 @@ export function WofSchedulePage() {
         });
       }
     } catch (err) {
-      setJobs([]);
-      setError(err instanceof Error ? err.message : "Failed to load WOF schedule.");
+      if (!background) {
+        setJobs([]);
+        setError(err instanceof Error ? err.message : "Failed to load WOF schedule.");
+      }
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
   }, [schedulePlacementsSave, schedulePlaceholdersSave]);
 
   useEffect(() => {
     loadJobs();
   }, [loadJobs]);
+
+  useEffect(() => {
+    if (loading) return;
+    void loadCompletedWofRecords();
+  }, [loading, loadCompletedWofRecords]);
+
+  useEffect(() => {
+    if (loading) return;
+
+    const timer = window.setTimeout(() => {
+      const now = Date.now();
+      if (now - lastAutoGoogleSheetSyncAt < AUTO_GOOGLE_SHEET_SYNC_COOLDOWN_MS) return;
+
+      void requestGoogleSheetSync()
+        .then(() => Promise.all([loadJobs(true), loadCompletedWofRecords()]))
+        .catch(() => {
+          // Automatic sync is deliberately quiet so it never interrupts opening the board.
+          // The manual sync button remains available when the user wants visible feedback.
+        });
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loading, loadCompletedWofRecords, loadJobs, location.key]);
 
   useEffect(() => {
     const unsubscribe = subscribeWofScheduleRefresh(() => {
@@ -1293,15 +1480,8 @@ export function WofSchedulePage() {
   const syncGoogleSheet = useCallback(async () => {
     setSyncing(true);
     try {
-      const res = await fetch(withApiBase("/api/wof-records/sync"), {
-        method: "POST",
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(data?.error || "Failed to sync WOF records from Google Sheet.");
-      }
-
-      await loadJobs();
+      const data = await requestGoogleSheetSync();
+      await Promise.all([loadJobs(true), loadCompletedWofRecords()]);
       toast.success(
         `同步完成：新增 ${Number(data?.inserted ?? 0)} 条，更新 ${Number(data?.updated ?? 0)} 条，跳过 ${Number(data?.skipped ?? 0)} 条`
       );
@@ -1310,7 +1490,7 @@ export function WofSchedulePage() {
     } finally {
       setSyncing(false);
     }
-  }, [loadJobs, toast]);
+  }, [loadCompletedWofRecords, loadJobs, toast]);
 
   const handleStatusChange = useCallback(async (jobId: string, next: "Todo" | "Checked") => {
     setStatusUpdatingId(jobId);
@@ -1463,6 +1643,7 @@ export function WofSchedulePage() {
   const backlogJobs = useMemo(
     () =>
       jobs.filter((job) => {
+        if (job.wofStatus === "Checked" || job.wofStatus === "Recorded") return false;
         const placement = placements[job.jobId];
         return (
           !placement ||
@@ -1532,6 +1713,61 @@ export function WofSchedulePage() {
     return map;
   }, [placeholderMap, placements, visibleSlotKeys]);
 
+  const completedRecordsBySlot = useMemo(() => {
+    const map = new Map<string, CompletedWofRecord[]>();
+    for (const record of completedWofRecords) {
+      const dateTime = getNzCalendarDateTimeParts(record.occurredAt);
+      if (!dateTime) continue;
+      const displayHour = Math.min(DAY_END_HOUR - 1, Math.max(DAY_START_HOUR, dateTime.hour));
+      const slotKey = `${dateTime.dateKey}-${displayHour}`;
+      if (!visibleSlotKeys.has(slotKey)) continue;
+      const list = map.get(slotKey) ?? [];
+      list.push(record);
+      map.set(slotKey, list);
+    }
+
+    for (const list of map.values()) {
+      list.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+    }
+    return map;
+  }, [completedWofRecords, visibleSlotKeys]);
+
+  const completedVehicleCountByDay = useMemo(() => {
+    const platesByDay = new Map<string, Set<string>>();
+    for (const record of completedWofRecords) {
+      const dateTime = getNzCalendarDateTimeParts(record.occurredAt);
+      if (!dateTime) continue;
+      const plates = platesByDay.get(dateTime.dateKey) ?? new Set<string>();
+      plates.add(record.plate.trim().toUpperCase());
+      platesByDay.set(dateTime.dateKey, plates);
+    }
+    return new Map(Array.from(platesByDay, ([dateKey, plates]) => [dateKey, plates.size]));
+  }, [completedWofRecords]);
+
+  const pendingVehicleCountByDay = useMemo(() => {
+    const pendingByDay = new Map<string, Set<string>>();
+    for (const [placementKey, placement] of Object.entries(placements)) {
+      if (placement.kind !== "slot") continue;
+      const dateKey = placement.slotKey.slice(0, 10);
+      const placeholderId = getPlaceholderIdFromPlacementKey(placementKey);
+      if (placeholderId) {
+        if (!placeholderMap.has(placeholderId)) continue;
+        const pending = pendingByDay.get(dateKey) ?? new Set<string>();
+        pending.add(`placeholder:${placeholderId}`);
+        pendingByDay.set(dateKey, pending);
+        continue;
+      }
+
+      const job = jobMap.get(placementKey);
+      if (!job || job.wofStatus === "Checked" || job.wofStatus === "Recorded") continue;
+      const pending = pendingByDay.get(dateKey) ?? new Set<string>();
+      pending.add(`job:${job.jobId}`);
+      pendingByDay.set(dateKey, pending);
+    }
+
+    return new Map(Array.from(pendingByDay, ([dateKey, pending]) => [dateKey, pending.size]));
+  }, [jobMap, placeholderMap, placements]);
+
   const currentDayKey = useMemo(() => {
     const parts = new Intl.DateTimeFormat("en-NZ", {
       timeZone: "Pacific/Auckland",
@@ -1544,13 +1780,17 @@ export function WofSchedulePage() {
   }, [now]);
 
   const currentHours = now.getHours() + now.getMinutes() / 60;
+  const backlogPendingVehicleCount = backlogJobs.length + backlogPlaceholders.length;
+  const getPendingVehicleCount = (dateKey: string) =>
+    (pendingVehicleCountByDay.get(dateKey) ?? 0)
+    + (dateKey === currentDayKey ? backlogPendingVehicleCount : 0);
 
   if (loading) {
     return (
       <div className="space-y-6 p-6">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">WOF 排班表</h1>
-          <p className="mt-1 text-sm text-slate-500">Loading schedule board…</p>
+          <h1 className="text-3xl font-semibold text-slate-900">WOF 排班表</h1>
+          <p className="mt-1 text-base text-slate-500">Loading schedule board…</p>
         </div>
       </div>
     );
@@ -1558,11 +1798,11 @@ export function WofSchedulePage() {
 
   return (
     <DndProvider backend={HTML5Backend}>
-      <div className="mx-auto flex max-h-[1200px] max-w-[2000px] flex-col space-y-6 p-6">
-        <div className="flex items-start justify-between gap-4">
+      <div className="flex h-full min-h-0 w-full max-w-none flex-col space-y-6 overflow-y-auto p-6 pb-24">
+        <div className="flex shrink-0 items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">WOF 排班表</h1>
-            <p className="mt-1 text-sm text-slate-500">
+            <h1 className="text-3xl font-semibold text-slate-900">WOF 排班表</h1>
+            <p className="mt-1 text-base text-slate-500">
               Drag WOF jobs from the backlog into the next 7 working days and update their inspection status as they move.
             </p>
           </div>
@@ -1586,7 +1826,7 @@ export function WofSchedulePage() {
           </Card>
         ) : null}
 
-        <div className="grid min-h-[820px] grid-cols-[320px_minmax(0,1fr)] gap-6">
+        <div className="grid min-h-[820px] shrink-0 grid-cols-[360px_minmax(0,1fr)] gap-5">
             <DropLane
               title="WOF 待办栏"
               subtitle=""
@@ -1622,14 +1862,14 @@ export function WofSchedulePage() {
               ))}
             </DropLane>
 
-            <Card className="overflow-hidden max-w-[2000px]">
+            <Card className="overflow-hidden max-w-none">
               <div className="border-b border-slate-200 bg-slate-50/80 px-5 py-4">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <div className="text-sm font-semibold text-slate-900">7 个工作日</div>
-                    <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                    <div className="text-base font-semibold text-slate-900">5 天排班</div>
+                    <div className="mt-1 flex items-center gap-2 text-sm text-slate-500">
                       <Clock3 className="h-3.5 w-3.5" />
-                      08:00 - 18:00, one-hour scheduling blocks
+                      09:00 - 19:00, one-hour scheduling blocks
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1643,7 +1883,7 @@ export function WofSchedulePage() {
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
-                    <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
+                    <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-medium text-slate-600">
                       {formatWeekRange(workingDays)}
                     </div>
                     <Button
@@ -1656,7 +1896,7 @@ export function WofSchedulePage() {
                     >
                       <ChevronRight className="h-4 w-4" />
                     </Button>
-                    <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
+                    <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-medium text-slate-600">
                       Current time: {formatNzDateTime(now)}
                     </div>
                   </div>
@@ -1664,16 +1904,36 @@ export function WofSchedulePage() {
               </div>
 
               <div className="overflow-x-auto">
-                <div className="grid min-w-[980px] grid-cols-7">
+                <div className="grid min-w-[1000px] grid-cols-5">
                   {workingDays.map((day) => (
                     <div key={day.key} className="border-r border-slate-200 last:border-r-0">
                       <div className="border-b border-slate-200 bg-white px-3 py-3">
-                        <div className="text-sm font-semibold text-slate-900">{day.label}</div>
-                        <div className="mt-1 text-xs text-slate-500">{day.shortDate}</div>
+                        <div className="text-base font-semibold text-slate-900">{day.label}</div>
+                        <div className="mt-2 flex items-center gap-2 whitespace-nowrap rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-bold shadow-sm">
+                          <span
+                            className={
+                              (completedVehicleCountByDay.get(day.key) ?? 0) > 0
+                                ? "text-emerald-700"
+                                : "text-slate-500"
+                            }
+                          >
+                            已完成 {completedVehicleCountByDay.get(day.key) ?? 0} 台 WOF
+                          </span>
+                          <span className="text-slate-300">·</span>
+                          <span
+                            className={
+                              getPendingVehicleCount(day.key) > 0
+                                ? "text-amber-700"
+                                : "text-slate-500"
+                            }
+                          >
+                            待检 {getPendingVehicleCount(day.key)} 台
+                          </span>
+                        </div>
                       </div>
                       <div
                         className="grid"
-                        style={{ gridTemplateRows: `repeat(${SLOT_HOURS.length}, minmax(0, 1fr))`, height: "930px" }}
+                        style={{ gridTemplateRows: `repeat(${SLOT_HOURS.length}, minmax(93px, auto))` }}
                       >
                         {SLOT_HOURS.map((hour) => {
                           const slotKey = `${day.key}-${hour}`;
@@ -1688,6 +1948,7 @@ export function WofSchedulePage() {
                               hour={hour}
                               jobs={jobsBySlot.get(slotKey) ?? []}
                             placeholders={placeholdersBySlot.get(slotKey) ?? []}
+                            completedRecords={completedRecordsBySlot.get(slotKey) ?? []}
                             onDropItem={moveToSlot}
                             showCurrentLine={showCurrentLine}
                             currentLineOffsetPct={(currentHours - hour) * 100}
@@ -1700,6 +1961,9 @@ export function WofSchedulePage() {
                           />
                           );
                         })}
+                      </div>
+                      <div className="border-t-2 border-slate-400 bg-slate-100 px-2 py-3 text-sm font-bold text-slate-800">
+                        19:00
                       </div>
                     </div>
                   ))}

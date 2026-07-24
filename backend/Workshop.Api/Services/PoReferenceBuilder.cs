@@ -8,13 +8,13 @@ public static class PoReferenceBuilder
         @"^(?:(?:po\s*#?\s*)?pending|\[po\])(?:\s+|$)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex LabelledPoPrefixRegex = new(
-        @"^po\s*#?\s*\d+(?:\s*--+\s*|\s+|$)",
+        @"^po\s*#?\s*[a-z0-9]+(?:-[a-z0-9]+)*(?:\s*--+\s*|\s+|$)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex PoLabelPrefixRegex = new(
         @"^po\s*#?(?:\s+|$)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex ConfirmedPoPrefixRegex = new(
-        @"^po\s*#?\s*(?<po>\d+)(?:\s+|$)",
+        @"^po\s*#?\s*(?<po>[a-z0-9]+(?:-[a-z0-9]+)*)(?=\s|--+|$)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex WhitespaceRegex = new(@"\s+", RegexOptions.Compiled);
 
@@ -39,7 +39,13 @@ public static class PoReferenceBuilder
             return null;
 
         var match = ConfirmedPoPrefixRegex.Match(normalizedReference);
-        return match.Success ? match.Groups["po"].Value : null;
+        if (!match.Success)
+            return null;
+
+        var value = match.Groups["po"].Value;
+        return string.Equals(value, "pending", StringComparison.OrdinalIgnoreCase) || !value.Any(char.IsDigit)
+            ? null
+            : value;
     }
 
     private static string StripExistingPoPrefix(string reference, string normalizedPo)

@@ -34,8 +34,10 @@ namespace Workshop.Api.Controllers
                     p.Code,
                     p.Name,
                     p.Specification,
+                    p.Location,
                     p.Unit,
                     p.CurrentStock,
+                    p.InTransitStock,
                     p.MinStockAlert,
                     p.ImageUrl,
                     p.PurchasePrice,
@@ -84,6 +86,7 @@ namespace Workshop.Api.Controllers
                 Name = dto.Name,
                 CategoryId = categoryId, // 👈 [引入新代码功能]：✅ 绑定分类
                 Specification = dto.Specification,
+                Location = dto.Location,
                 Unit = string.IsNullOrWhiteSpace(dto.Unit) ? "个" : dto.Unit,
                 CurrentStock = dto.CurrentStock,
                 MinStockAlert = dto.MinStockAlert,
@@ -95,6 +98,13 @@ namespace Workshop.Api.Controllers
             };
 
             _context.WorkshopMaterials.Add(newMaterial);
+            RecordInventoryMovement(
+                newMaterial,
+                0,
+                newMaterial.CurrentStock,
+                InventoryMovementType.InitialStock,
+                source: "product-create",
+                note: "新建商品初始库存");
             await _context.SaveChangesAsync();
 
             return Ok(new { Message = "添加成功", Product = newMaterial });
@@ -105,7 +115,9 @@ namespace Workshop.Api.Controllers
         public async Task<IActionResult> UpdateProduct(int id, [FromBody] ProductEditDto dto)
         {
             var material = await _context.WorkshopMaterials.FindAsync(id);
-            if (material == null) return NotFound("找不到该物料");
+            if (material == null || !material.IsActive) return NotFound("找不到该物料");
+
+            var previousStock = material.CurrentStock;
 
             // 👇 [引入新代码功能]：自动处理并更新分类
             int? categoryId = material.CategoryId;
@@ -126,12 +138,21 @@ namespace Workshop.Api.Controllers
             material.Name = dto.Name;
             material.CategoryId = categoryId; // 👈 [引入新代码功能]：✅ 更新分类
             material.Specification = dto.Specification;
+            material.Location = dto.Location;
             material.Unit = string.IsNullOrWhiteSpace(dto.Unit) ? "个" : dto.Unit;
             material.CurrentStock = dto.CurrentStock;
             material.MinStockAlert = dto.MinStockAlert;
             material.ImageUrl = dto.ImageUrl;
             material.PurchasePrice = dto.PurchasePrice;
             material.SupplierId = dto.SupplierId;
+
+            RecordInventoryMovement(
+                material,
+                previousStock,
+                material.CurrentStock,
+                InventoryMovementType.ProductEdit,
+                source: "product-edit",
+                note: "商品编辑调整库存");
 
             await _context.SaveChangesAsync();
 
@@ -203,10 +224,23 @@ namespace Workshop.Api.Controllers
                 
             if (request == null) return NotFound("单据不存在");
 
+            if (action != "approve" && action != "reject")
+                return BadRequest("未知的操作");
+
+            if (!string.Equals(request.Status, "Pending", StringComparison.OrdinalIgnoreCase))
+                return Conflict(new { Message = "该申请已处理，请勿重复操作。" });
+
             if (action == "reject") 
             {
                 _context.StaffRequests.Remove(request); 
-                await _context.SaveChangesAsync();
+                try
+                {
+                    await _context.SaveChangesAsync();
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    return Conflict(new { Message = "该申请已被其他操作处理，请刷新后查看。" });
+                }
                 return Ok(new { Message = "单据已彻底删除" });
             }
             else if (action == "approve") 
@@ -244,7 +278,14 @@ namespace Workshop.Api.Controllers
                     orderCount++;
                 }
 
-                await _context.SaveChangesAsync();
+                try
+                {
+                    await _context.SaveChangesAsync();
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    return Conflict(new { Message = "该申请或相关商品已被其他操作更新，本次审批未生效，请刷新后重试。" });
+                }
                 return Ok(new { Message = $"已批准！系统已自动拆分为 {orderCount} 张独立的采购单！" });
             }
 
@@ -299,14 +340,24 @@ namespace Workshop.Api.Controllers
                 if (item != null && dto.Quantity > 0)
                 {
                     // 确保不会超量收货（最多收剩下的数量）
-                    int actualReceive = Math.Min(dto.Quantity, item.Quantity - item.ReceivedQuantity);
+                    int remainingQuantity = Math.Max(0, item.Quantity - item.ReceivedQuantity);
+                    int actualReceive = Math.Min(dto.Quantity, remainingQuantity);
+                    if (actualReceive == 0) continue;
                     
                     item.ReceivedQuantity += actualReceive;
                     
                     if (item.Material != null)
                     {
+                        var previousStock = item.Material.CurrentStock;
                         item.Material.CurrentStock += actualReceive; // 增加实际库存
                         item.Material.InTransitStock = Math.Max(0, item.Material.InTransitStock - actualReceive); // 扣除在途
+                        RecordInventoryMovement(
+                            item.Material,
+                            previousStock,
+                            item.Material.CurrentStock,
+                            InventoryMovementType.RestockReceipt,
+                            source: order.OrderNumber,
+                            note: "采购单收货入库");
                     }
                 }
             }
@@ -372,6 +423,7 @@ namespace Workshop.Api.Controllers
 
             int updatedCount = 0; 
             int addedCount = 0; 
+            var sourceFile = Path.GetFileName(file.FileName);
             var existingCategories = await _context.Categories.ToDictionaryAsync(c => c.Name);
             var existingSuppliers = await _context.Suppliers.ToDictionaryAsync(s => s.Name); 
 
@@ -412,14 +464,25 @@ namespace Workshop.Api.Controllers
 
                 if (existingMaterial != null)
                 {
+                    var previousStock = existingMaterial.CurrentStock;
                     existingMaterial.Code = string.IsNullOrWhiteSpace(record.Code) ? existingMaterial.Code : record.Code;
                     if (category != null) existingMaterial.CategoryId = category.Id;
                     if (supplier != null) existingMaterial.SupplierId = supplier.Id;
                     existingMaterial.Specification = string.IsNullOrWhiteSpace(record.Specification) ? existingMaterial.Specification : record.Specification;
+                    if (!string.IsNullOrWhiteSpace(record.Location)) existingMaterial.Location = record.Location;
                     if (record.PurchasePrice.HasValue) existingMaterial.PurchasePrice = record.PurchasePrice.Value;
                     if (!string.IsNullOrWhiteSpace(record.Unit)) existingMaterial.Unit = record.Unit;
                     if (record.CurrentStock.HasValue) existingMaterial.CurrentStock = record.CurrentStock.Value;
                     if (record.MinStockAlert.HasValue) existingMaterial.MinStockAlert = record.MinStockAlert.Value;
+
+                    RecordInventoryMovement(
+                        existingMaterial,
+                        previousStock,
+                        existingMaterial.CurrentStock,
+                        InventoryMovementType.BulkImport,
+                        source: "product-csv-import",
+                        sourceFile: sourceFile,
+                        note: "批量导入调整库存");
                     
                     updatedCount++;
                 }
@@ -432,6 +495,7 @@ namespace Workshop.Api.Controllers
                         CategoryId = category?.Id, 
                         SupplierId = supplier?.Id,
                         Specification = record.Specification,
+                        Location = record.Location,
                         PurchasePrice = record.PurchasePrice ?? 0,
                         Unit = string.IsNullOrWhiteSpace(record.Unit) ? "个" : record.Unit, 
                         CurrentStock = record.CurrentStock ?? 0,
@@ -440,6 +504,14 @@ namespace Workshop.Api.Controllers
                         CreatedAt = DateTime.UtcNow
                     };
                     _context.WorkshopMaterials.Add(newMaterial); 
+                    RecordInventoryMovement(
+                        newMaterial,
+                        0,
+                        newMaterial.CurrentStock,
+                        InventoryMovementType.InitialStock,
+                        source: "product-csv-import",
+                        sourceFile: sourceFile,
+                        note: "批量导入创建商品的初始库存");
                     addedCount++;
                 }
             }
@@ -453,12 +525,12 @@ namespace Workshop.Api.Controllers
         public async Task<IActionResult> DeleteProduct(int id)
         {
             var material = await _context.WorkshopMaterials.FindAsync(id);
-            if (material == null) return NotFound("找不到该物料");
+            if (material == null || !material.IsActive) return NotFound("找不到该物料");
             
-            _context.WorkshopMaterials.Remove(material);
+            material.IsActive = false;
             await _context.SaveChangesAsync();
             
-            return Ok(new { Message = "删除成功！" });
+            return Ok(new { Message = "删除成功！历史库存流水已保留。" });
         }
 
         // ==========================================
@@ -524,6 +596,307 @@ namespace Workshop.Api.Controllers
             return Ok(new { Message = "一键智能采购申请已生成！快去看板点击同意吧！", RequestId = newRequest.Id });
         }
 
+        // 批量盘点：先验证整批数据，再在同一事务内更新库存与流水。
+        [HttpPost("stocktake")]
+        public async Task<IActionResult> ApplyStocktake(
+            [FromBody] StocktakeRequest request,
+            CancellationToken cancellationToken)
+        {
+            if (request.Items == null || request.Items.Count == 0)
+                return BadRequest(new { Message = "盘点数据不能为空。" });
+
+            if (request.Items.Count > 10_000)
+                return BadRequest(new { Message = "单次盘点最多支持 10000 条数据。" });
+
+            if (string.IsNullOrWhiteSpace(request.Source))
+                return BadRequest(new { Message = "请提供盘点来源 source。" });
+
+            if (request.Source.Trim().Length > 64)
+                return BadRequest(new { Message = "盘点来源 source 不能超过 64 个字符。" });
+
+            if (!string.IsNullOrWhiteSpace(request.SourceFile) && request.SourceFile.Trim().Length > 255)
+                return BadRequest(new { Message = "盘点文件名不能超过 255 个字符。" });
+
+            var duplicateProductIds = request.Items
+                .GroupBy(item => item.ProductId)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key)
+                .OrderBy(id => id)
+                .ToArray();
+
+            if (duplicateProductIds.Length > 0)
+            {
+                return BadRequest(new
+                {
+                    Message = "盘点数据包含重复商品。",
+                    DuplicateProductIds = duplicateProductIds
+                });
+            }
+
+            var invalidItems = request.Items
+                .Where(item => item.ProductId <= 0
+                    || item.ExpectedStock < 0
+                    || item.CountedStock < 0
+                    || (item.Note?.Length ?? 0) > 1000)
+                .Select(item => new
+                {
+                    item.ProductId,
+                    item.ExpectedStock,
+                    item.CountedStock,
+                    Message = item.ProductId <= 0
+                        ? "商品 ID 无效。"
+                        : item.ExpectedStock < 0
+                            ? "账面库存不能为负数。"
+                            : item.CountedStock < 0
+                                ? "盘点数量不能为负数。"
+                                : "备注不能超过 1000 个字符。"
+                })
+                .ToArray();
+
+            if (invalidItems.Length > 0)
+                return BadRequest(new { Message = "盘点数据格式有误。", Errors = invalidItems });
+
+            await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+            var productIds = request.Items.Select(item => item.ProductId).ToArray();
+            var materials = await _context.WorkshopMaterials
+                .FromSqlInterpolated($@"
+                    SELECT *
+                    FROM workshop_materials
+                    WHERE id = ANY ({productIds})
+                    ORDER BY id
+                    FOR UPDATE")
+                .ToDictionaryAsync(material => material.Id, cancellationToken);
+
+            var missingProductIds = productIds
+                .Where(productId => !materials.ContainsKey(productId))
+                .OrderBy(productId => productId)
+                .ToArray();
+            var inactiveProducts = materials.Values
+                .Where(material => !material.IsActive)
+                .Select(material => new { material.Id, material.Name })
+                .OrderBy(material => material.Id)
+                .ToArray();
+
+            if (missingProductIds.Length > 0 || inactiveProducts.Length > 0)
+            {
+                return BadRequest(new
+                {
+                    Message = "盘点数据包含不存在或已删除的商品。",
+                    MissingProductIds = missingProductIds,
+                    InactiveProducts = inactiveProducts
+                });
+            }
+
+            var conflicts = request.Items
+                .Where(item => materials[item.ProductId].CurrentStock != item.ExpectedStock)
+                .Select(item => new
+                {
+                    item.ProductId,
+                    materials[item.ProductId].Name,
+                    item.ExpectedStock,
+                    CurrentStock = materials[item.ProductId].CurrentStock
+                })
+                .ToArray();
+
+            if (conflicts.Length > 0)
+            {
+                return Conflict(new
+                {
+                    Message = "部分商品在导出后库存已发生变化，本次盘点未写入。请重新导出后再试。",
+                    Conflicts = conflicts
+                });
+            }
+
+            var source = request.Source.Trim();
+            var sourceFile = string.IsNullOrWhiteSpace(request.SourceFile)
+                ? null
+                : Path.GetFileName(request.SourceFile.Trim());
+            var updatedCount = 0;
+
+            foreach (var item in request.Items)
+            {
+                var material = materials[item.ProductId];
+                if (material.CurrentStock == item.CountedStock)
+                    continue;
+
+                var previousStock = material.CurrentStock;
+                material.CurrentStock = item.CountedStock;
+                RecordInventoryMovement(
+                    material,
+                    previousStock,
+                    item.CountedStock,
+                    InventoryMovementType.Stocktake,
+                    source,
+                    sourceFile,
+                    item.Note);
+                updatedCount++;
+            }
+
+            try
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                _context.ChangeTracker.Clear();
+
+                var latestStocks = await _context.WorkshopMaterials
+                    .AsNoTracking()
+                    .Where(material => productIds.Contains(material.Id))
+                    .Select(material => new { material.Id, material.Name, material.CurrentStock })
+                    .ToDictionaryAsync(material => material.Id, cancellationToken);
+                var latestConflicts = request.Items
+                    .Where(item => latestStocks.TryGetValue(item.ProductId, out var material)
+                        && material.CurrentStock != item.ExpectedStock)
+                    .Select(item => new
+                    {
+                        item.ProductId,
+                        latestStocks[item.ProductId].Name,
+                        item.ExpectedStock,
+                        CurrentStock = latestStocks[item.ProductId].CurrentStock
+                    })
+                    .ToArray();
+
+                return Conflict(new
+                {
+                    Message = "盘点提交时库存发生了变化，本次盘点已全部回滚。请刷新后再试。",
+                    Conflicts = latestConflicts
+                });
+            }
+
+            return Ok(new
+            {
+                Message = "盘点完成。",
+                TotalCount = request.Items.Count,
+                UpdatedCount = updatedCount,
+                UnchangedCount = request.Items.Count - updatedCount
+            });
+        }
+
+        [HttpGet("products/{id:int}/stock-movements")]
+        public async Task<IActionResult> GetStockMovements(
+            int id,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 50,
+            CancellationToken cancellationToken = default)
+        {
+            page = Math.Max(1, page);
+            pageSize = Math.Clamp(pageSize, 1, 100);
+
+            var product = await _context.WorkshopMaterials
+                .AsNoTracking()
+                .Where(material => material.Id == id)
+                .Select(material => new
+                {
+                    material.Id,
+                    material.Code,
+                    material.Name,
+                    material.Location,
+                    material.Unit,
+                    material.CurrentStock,
+                    material.InTransitStock,
+                    material.IsActive
+                })
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (product == null)
+                return NotFound(new { Message = "找不到该物料。" });
+
+            var query = _context.InventoryMovements
+                .AsNoTracking()
+                .Where(movement => movement.MaterialId == id);
+            var total = await query.CountAsync(cancellationToken);
+            var items = await query
+                .OrderByDescending(movement => movement.OccurredAt)
+                .ThenByDescending(movement => movement.Id)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(movement => new
+                {
+                    movement.Id,
+                    movement.PreviousStock,
+                    movement.NewStock,
+                    movement.QuantityDelta,
+                    movement.MovementType,
+                    movement.Source,
+                    movement.SourceFile,
+                    movement.Note,
+                    movement.OccurredAt
+                })
+                .ToListAsync(cancellationToken);
+
+            return Ok(new { Product = product, Total = total, Page = page, PageSize = pageSize, Items = items });
+        }
+
+        [HttpGet("products/usage-ranking")]
+        public async Task<IActionResult> GetUsageRanking(
+            [FromQuery] int days = 90,
+            [FromQuery] int limit = 20,
+            CancellationToken cancellationToken = default)
+        {
+            days = Math.Clamp(days, 1, 3650);
+            limit = Math.Clamp(limit, 1, 100);
+            var periodStart = DateTime.UtcNow.AddDays(-days);
+
+            var rows = await _context.InventoryMovements
+                .AsNoTracking()
+                .Where(movement => movement.MovementType == InventoryMovementType.Stocktake
+                    && movement.QuantityDelta < 0
+                    && movement.OccurredAt >= periodStart
+                    && movement.Material.IsActive)
+                .GroupBy(movement => new
+                {
+                    movement.MaterialId,
+                    movement.Material.Code,
+                    movement.Material.Name,
+                    movement.Material.Location,
+                    movement.Material.Unit,
+                    movement.Material.CurrentStock,
+                    movement.Material.InTransitStock,
+                    CategoryName = movement.Material.Category != null
+                        ? movement.Material.Category.Name
+                        : "未分类"
+                })
+                .Select(group => new
+                {
+                    ProductId = group.Key.MaterialId,
+                    group.Key.Code,
+                    group.Key.Name,
+                    group.Key.Location,
+                    group.Key.Unit,
+                    group.Key.CurrentStock,
+                    group.Key.InTransitStock,
+                    group.Key.CategoryName,
+                    ConsumedQuantity = -group.Sum(movement => movement.QuantityDelta),
+                    UsageCount = group.Count()
+                })
+                .OrderByDescending(row => row.ConsumedQuantity)
+                .ThenBy(row => row.Name)
+                .Take(limit)
+                .ToListAsync(cancellationToken);
+
+            var monthlyFactor = 365.25d / 12d / days;
+            var result = rows.Select(row => new
+            {
+                row.ProductId,
+                row.Code,
+                row.Name,
+                row.Location,
+                row.Unit,
+                row.CurrentStock,
+                row.InTransitStock,
+                row.CategoryName,
+                row.ConsumedQuantity,
+                row.UsageCount,
+                AvgMonthlyConsumption = Math.Round(row.ConsumedQuantity * monthlyFactor, 2)
+            });
+
+            return Ok(new { Days = days, PeriodStart = periodStart, Items = result });
+        }
+
         // ==========================================
         // 🔥 王炸功能 2：采购单微信一键分享 (后端支持)
         // ==========================================
@@ -564,6 +937,41 @@ namespace Workshop.Api.Controllers
             // 返回格式化好的文本，前端直接调 Clipboard API 复制
             return Ok(new { Text = sb.ToString() });
         }
+
+        private void RecordInventoryMovement(
+            WorkshopMaterial material,
+            int previousStock,
+            int newStock,
+            string movementType,
+            string? source = null,
+            string? sourceFile = null,
+            string? note = null)
+        {
+            if (previousStock == newStock)
+                return;
+
+            _context.InventoryMovements.Add(new InventoryMovement
+            {
+                Material = material,
+                PreviousStock = previousStock,
+                NewStock = newStock,
+                QuantityDelta = newStock - previousStock,
+                MovementType = movementType,
+                Source = TrimToLength(source, 64),
+                SourceFile = TrimToLength(sourceFile, 255),
+                Note = TrimToLength(note, 1000),
+                OccurredAt = DateTime.UtcNow
+            });
+        }
+
+        private static string? TrimToLength(string? value, int maxLength)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return null;
+
+            var trimmed = value.Trim();
+            return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength];
+        }
     }
 
     // ================= DTOs (数据传输对象) =================
@@ -587,12 +995,28 @@ namespace Workshop.Api.Controllers
         public int Quantity { get; set; } 
     }
 
+    public class StocktakeRequest
+    {
+        public string Source { get; set; } = string.Empty;
+        public string? SourceFile { get; set; }
+        public List<StocktakeItemDto> Items { get; set; } = new();
+    }
+
+    public class StocktakeItemDto
+    {
+        public int ProductId { get; set; }
+        public int ExpectedStock { get; set; }
+        public int CountedStock { get; set; }
+        public string? Note { get; set; }
+    }
+
     public class ProductCsvRecord 
     { 
         public string Name { get; set; } = string.Empty; 
         public string? Code { get; set; } 
         public string? CategoryName { get; set; } 
         public string? Specification { get; set; } 
+        public string? Location { get; set; }
         public string? SupplierName { get; set; } 
         public decimal? PurchasePrice { get; set; } 
         public string? Unit { get; set; } 
@@ -606,11 +1030,21 @@ namespace Workshop.Api.Controllers
         public string Name { get; set; } = ""; 
         public string? CategoryName { get; set; } // 👈 [引入新代码功能]：✅ 修复：必须有这个字段，否则后端不知道是工具还是耗材
         public string? Specification { get; set; } 
+        public string? Location { get; set; }
         public string? Unit { get; set; } 
         public int CurrentStock { get; set; } 
         public int MinStockAlert { get; set; } 
         public string? ImageUrl { get; set; } 
         public decimal PurchasePrice { get; set; } 
         public int? SupplierId { get; set; } 
+    }
+
+    internal static class InventoryMovementType
+    {
+        public const string InitialStock = "InitialStock";
+        public const string ProductEdit = "ProductEdit";
+        public const string BulkImport = "BulkImport";
+        public const string RestockReceipt = "RestockReceipt";
+        public const string Stocktake = "Stocktake";
     }
 }

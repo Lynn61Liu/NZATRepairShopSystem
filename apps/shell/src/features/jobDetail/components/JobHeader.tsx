@@ -42,6 +42,7 @@ interface JobHeaderProps {
   vin?: string | null;
   nzFirstRegistration?: string | null;
   paintPanels?: number | null;
+  paintServiceReady?: boolean;
   hasPaintService?: boolean;
   hasWofService?: boolean;
   onCreateXeroInvoice?: () => Promise<{ success: boolean; message?: string }>;
@@ -59,7 +60,10 @@ interface JobHeaderProps {
   onSaveNotes?: (notes: string) => Promise<{ success: boolean; message?: string }>;
   onSavePrivateNotes?: (privateNotes: string) => Promise<{ success: boolean; message?: string }>;
   onSavePoNumber?: (poNumber: string) => Promise<{ success: boolean; message?: string; poNumber?: string }>;
-  onCreatePaintService?: (status?: string, panels?: number) => Promise<{ success: boolean; message?: string }>;
+  onCreatePaintService?: (
+    status?: string,
+    panels?: number
+  ) => Promise<{ success: boolean; message?: string; panels?: number }>;
 }
 
 export function JobHeader({
@@ -80,6 +84,7 @@ export function JobHeader({
   vin,
   nzFirstRegistration,
   paintPanels,
+  paintServiceReady = true,
   hasPaintService,
   hasWofService,
   onArchive,
@@ -256,14 +261,14 @@ export function JobHeader({
     return { label: `${days}天在店`, variant };
   }, [createdAt]);
 
-  const handlePrint = (type: "mech" | "paint") => {
+  const handlePrint = (type: "mech" | "paint", panelsOverride?: number | null) => {
     const row = {
       plate: vehiclePlate,
       vehicleModel,
       customerCode,
       customerName,
       createdAt,
-      panels: paintPanels ?? null,
+      panels: panelsOverride ?? paintPanels ?? null,
       nzFirstRegistration: nzFirstRegistration ?? "",
       vin: vin ?? "",
     };
@@ -273,9 +278,12 @@ export function JobHeader({
 
   const handlePaintClick = async () => {
     if (!hasPaintService && onCreatePaintService) {
-      await onCreatePaintService("not_started");
+      const result = await onCreatePaintService("not_started");
+      if (!result.success) return;
+      handlePrint("paint", result.panels ?? 1);
+      return;
     }
-    handlePrint("paint");
+    handlePrint("paint", paintPanels ?? 1);
   };
 
   const openXero = () => {
@@ -623,7 +631,7 @@ export function JobHeader({
         </div>
 
         <div className="flex flex-col items-center gap-2 ml-40">
-          <Button variant="primary" onClick={handlePaintClick}>
+          <Button variant="primary" onClick={handlePaintClick} disabled={!paintServiceReady}>
             喷漆打印
           </Button>
           <Button variant="primary" onClick={() => handlePrint("mech")}>

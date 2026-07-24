@@ -16,6 +16,12 @@ export function buildDateRange(filters: JobsFilters): { start: Date; end: Date }
   const end = new Date(today);
 
   switch (filters.timeRange) {
+    case "today": {
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      return { start, end };
+    }
+
     case "week": {
       // 本周：周一~周日
       const day = today.getDay() || 7; // 周日=0 -> 7

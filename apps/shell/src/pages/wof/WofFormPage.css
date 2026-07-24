@@ -29,7 +29,8 @@
 }
 
 .wof-print-sheet {
-  width: 210mm;
+  width: 214mm;
+  /* width:230mm; */
   height: 297mm;
   box-sizing: border-box;
   border: 1px solid black;
@@ -38,6 +39,8 @@
   display: grid;
   grid-template-columns: 2fr 1fr;
   gap: 2mm;
+  padding-top: 20mm;
+  padding-left:9mm;
 }
 
 .custome-box {
@@ -52,7 +55,6 @@
 }
 
 .organisation {
-
   width: 100%;
   height: 30mm;
   box-sizing: border-box;
@@ -165,7 +167,6 @@
   border: 1px solid black;
 }
 
-
 .vLine {
   display: flex;
   height: 7mm;
@@ -177,7 +178,6 @@
   box-sizing: border-box;
   border: 1px solid black;
 }
-
 
 .vMake > span:first-of-type,
 /* .vModel > span:first-of-type, */
@@ -227,12 +227,6 @@ font-size: 20px;
 .vYear > span:last-of-type{
   padding-left: 7mm;
 }
-
-
-
-
-
-
 .vModel {
   width: 41mm;
   box-sizing: border-box;

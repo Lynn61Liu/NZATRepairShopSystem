@@ -21,6 +21,7 @@ public sealed class NewJobCreationService
     private readonly InvoiceOutboxService _invoiceOutboxService;
     private readonly InvoiceOutboxKickService _invoiceOutboxKickService;
     private readonly NztaAutoSyncQueue _nztaAutoSyncQueue;
+    private readonly CarjamAsyncImportService _carjamAsyncImportService;
     private readonly ILogger<NewJobCreationService> _logger;
 
     public NewJobCreationService(
@@ -30,6 +31,7 @@ public sealed class NewJobCreationService
         InvoiceOutboxService invoiceOutboxService,
         InvoiceOutboxKickService invoiceOutboxKickService,
         NztaAutoSyncQueue nztaAutoSyncQueue,
+        CarjamAsyncImportService carjamAsyncImportService,
         ILogger<NewJobCreationService> logger)
     {
         _db = db;
@@ -38,6 +40,7 @@ public sealed class NewJobCreationService
         _invoiceOutboxService = invoiceOutboxService;
         _invoiceOutboxKickService = invoiceOutboxKickService;
         _nztaAutoSyncQueue = nztaAutoSyncQueue;
+        _carjamAsyncImportService = carjamAsyncImportService;
         _logger = logger;
     }
 
@@ -293,6 +296,11 @@ public sealed class NewJobCreationService
         jobCustomerId = job.CustomerId;
 
         await tx.CommitAsync(ct);
+        if (string.IsNullOrWhiteSpace(vehicle.Make) ||
+            string.IsNullOrWhiteSpace(vehicle.Model) ||
+            !vehicle.Year.HasValue ||
+            vehicle.Year.Value <= 0)
+            _carjamAsyncImportService.Dispatch(vehicle.Plate);
         if (isBusiness && wofCreated && vehicle.Id > 0)
             await _nztaAutoSyncQueue.EnqueueAsync(new NztaAutoSyncRequest(job.Id, vehicle.Id, vehicle.Plate), ct);
         await InvalidateJobsOverviewCachesAsync(hasPaint, wofCreated, job.NeedsPo, ct);

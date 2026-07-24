@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, Archive, CarFront, Clock3, ExternalLink, RefreshCw, Save, SearchX, Settings2 } from "lucide-react";
+import { AlertTriangle, Archive, CarFront, Clock3, ExternalLink, LogOut, RefreshCw, Save, SearchX, Settings2 } from "lucide-react";
 import { getXeroInvoiceUrl, XeroIcon } from "@/components/common/XeroButton";
 import { GmailIcon } from "@/components/common/GmailSearchButton";
 import { getGmailPlateSearchUrl } from "@/components/common/gmailSearch";
 import { useToast } from "@/components/ui";
-import { updateJobStatus } from "@/features/jobDetail/api/jobDetailApi";
+import { updateJobStatus, updateJobYardStatus, updateJobYardStatusBatch } from "@/features/jobDetail/api/jobDetailApi";
 import { requestJson } from "@/utils/api";
 import { formatNzDateTime, parseTimestamp } from "@/utils/date";
 import type { JobRow } from "@/types/JobType";
@@ -145,6 +145,9 @@ export function CarOnYardPage({ standalone = false }: { standalone?: boolean }) 
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [archivingIds, setArchivingIds] = useState<Set<string>>(() => new Set());
+  const [offYardIds, setOffYardIds] = useState<Set<string>>(() => new Set());
+  const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(() => new Set());
+  const [bulkOffYardBusy, setBulkOffYardBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -237,6 +240,16 @@ export function CarOnYardPage({ standalone = false }: { standalone?: boolean }) 
     return [...source].sort((a, b) => getAgeDays(b.createdAt) - getAgeDays(a.createdAt));
   }, [rows, selectedDealer]);
 
+  useEffect(() => {
+    const visibleIds = new Set(tableRows.map((row) => row.id));
+    setSelectedJobIds((prev) => {
+      const next = new Set([...prev].filter((id) => visibleIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [tableRows]);
+
+  const allVisibleSelected = tableRows.length > 0 && tableRows.every((row) => selectedJobIds.has(row.id));
+
   const shellClass = standalone
     ? "min-h-full bg-[var(--ds-bg)] p-5"
     : "min-h-full";
@@ -249,8 +262,9 @@ export function CarOnYardPage({ standalone = false }: { standalone?: boolean }) 
   const tableScrollClass = standalone
     ? "min-h-0 flex-1 overflow-auto"
     : "overflow-x-auto";
-  const tableGridClass =
-    "grid min-w-[1120px] grid-cols-[116px_82px_76px_162px_minmax(170px,0.7fr)_minmax(320px,1.4fr)_116px]";
+  const tableGridClass = standalone
+    ? "grid min-w-[1120px] grid-cols-[116px_82px_76px_162px_minmax(170px,0.7fr)_minmax(320px,1.4fr)_116px]"
+    : "grid min-w-[1210px] grid-cols-[36px_116px_82px_76px_162px_minmax(170px,0.7fr)_minmax(320px,1.4fr)_154px]";
 
   const handleArchive = useCallback(
     async (jobId: string) => {
@@ -272,6 +286,50 @@ export function CarOnYardPage({ standalone = false }: { standalone?: boolean }) 
     },
     [toast]
   );
+
+  const handleOffYard = useCallback(
+    async (jobId: string) => {
+      setOffYardIds((prev) => new Set(prev).add(jobId));
+      const res = await updateJobYardStatus(jobId, false);
+      setOffYardIds((prev) => {
+        const next = new Set(prev);
+        next.delete(jobId);
+        return next;
+      });
+
+      if (!res.ok) {
+        toast.error(res.error || "标记 Off Yard 失败");
+        return;
+      }
+
+      setRows((prev) => prev.filter((row) => row.id !== jobId));
+      setSelectedJobIds((prev) => {
+        const next = new Set(prev);
+        next.delete(jobId);
+        return next;
+      });
+      toast.success("已标记为 Off Yard");
+    },
+    [toast]
+  );
+
+  const handleBulkOffYard = useCallback(async () => {
+    const jobIds = [...selectedJobIds];
+    if (jobIds.length === 0 || bulkOffYardBusy) return;
+
+    setBulkOffYardBusy(true);
+    const res = await updateJobYardStatusBatch(jobIds, false);
+    setBulkOffYardBusy(false);
+    if (!res.ok) {
+      toast.error(res.error || "批量标记 Off Yard 失败");
+      return;
+    }
+
+    const selected = new Set(jobIds);
+    setRows((prev) => prev.filter((row) => !selected.has(row.id)));
+    setSelectedJobIds(new Set());
+    toast.success(`已将 ${Number(res.data?.updated ?? jobIds.length)} 个工单标记为 Off Yard`);
+  }, [bulkOffYardBusy, selectedJobIds, toast]);
 
   const saveReportSettings = useCallback(async () => {
     setSettingsSaving(true);
@@ -428,19 +486,50 @@ export function CarOnYardPage({ standalone = false }: { standalone?: boolean }) 
                 {selectedDealer ? "Click another dealer tile to switch the list." : "Dealer tiles with old jobs are highlighted in red."}
               </p>
             </div>
-            {selectedDealer ? (
-              <button
-                type="button"
-                className="h-8 rounded-[8px] border border-[var(--ds-border)] px-3 text-sm font-medium text-[var(--ds-text)] hover:bg-slate-50"
-                onClick={() => setSelectedDealer(null)}
-              >
-                Show all overdue
-              </button>
-            ) : null}
+            <div className="flex items-center gap-2">
+              {!standalone ? (
+                <button
+                  type="button"
+                  className="inline-flex h-8 items-center gap-2 rounded-[8px] border border-amber-300 bg-amber-50 px-3 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={selectedJobIds.size === 0 || bulkOffYardBusy}
+                  onClick={() => void handleBulkOffYard()}
+                  title="将选中的车辆批量标记为 Off Yard"
+                >
+                  <LogOut className="h-4 w-4" />
+                  {bulkOffYardBusy ? "处理中..." : `批量 Off Yard${selectedJobIds.size ? ` (${selectedJobIds.size})` : ""}`}
+                </button>
+              ) : null}
+              {selectedDealer ? (
+                <button
+                  type="button"
+                  className="h-8 rounded-[8px] border border-[var(--ds-border)] px-3 text-sm font-medium text-[var(--ds-text)] hover:bg-slate-50"
+                  onClick={() => setSelectedDealer(null)}
+                >
+                  Show all overdue
+                </button>
+              ) : null}
+            </div>
           </div>
 
           <div className={tableScrollClass}>
             <div className={`${tableGridClass} gap-3 border-b border-[var(--ds-border)] bg-slate-50 px-4 py-3 text-center text-xs font-semibold text-[rgba(0,0,0,0.55)]`}>
+              {!standalone ? (
+                <div className="flex items-center justify-center">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-amber-600"
+                    checked={allVisibleSelected}
+                    aria-label="选择当前列表全部工单"
+                    onChange={(event) => {
+                      if (event.target.checked) {
+                        setSelectedJobIds(new Set(tableRows.map((row) => row.id)));
+                      } else {
+                        setSelectedJobIds(new Set());
+                      }
+                    }}
+                  />
+                </div>
+              ) : null}
               <div>创建时间</div>
               <div>在店时间</div>
               <div>code</div>
@@ -478,6 +567,7 @@ export function CarOnYardPage({ standalone = false }: { standalone?: boolean }) 
                       ? "font-semibold text-orange-700"
                       : "text-[rgba(0,0,0,0.62)]";
                 const archiving = archivingIds.has(row.id);
+                const movingOffYard = offYardIds.has(row.id);
                 return (
                   <div
                     key={row.id}
@@ -486,6 +576,24 @@ export function CarOnYardPage({ standalone = false }: { standalone?: boolean }) 
                       rowTone,
                     ].join(" ")}
                   >
+                    {!standalone ? (
+                      <div className="flex items-center justify-center">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-amber-600"
+                          checked={selectedJobIds.has(row.id)}
+                          aria-label={`选择工单 ${row.plate || row.id}`}
+                          onChange={(event) => {
+                            setSelectedJobIds((prev) => {
+                              const next = new Set(prev);
+                              if (event.target.checked) next.add(row.id);
+                              else next.delete(row.id);
+                              return next;
+                            });
+                          }}
+                        />
+                      </div>
+                    ) : null}
                     <div className="text-xs text-[rgba(0,0,0,0.62)]">{formatNzDateTime(row.createdAt)}</div>
                     <div className={ageTone}>
                       {getAgeLabel(row.createdAt)}
@@ -529,6 +637,17 @@ export function CarOnYardPage({ standalone = false }: { standalone?: boolean }) 
                         >
                           <GmailIcon className="h-4 w-4" />
                         </a>
+                      ) : null}
+                      {!standalone ? (
+                        <button
+                          type="button"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-amber-300 bg-white text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          title="Off Yard"
+                          disabled={movingOffYard || archiving}
+                          onClick={() => void handleOffYard(row.id)}
+                        >
+                          <LogOut className="h-4 w-4" />
+                        </button>
                       ) : null}
                       <button
                         type="button"

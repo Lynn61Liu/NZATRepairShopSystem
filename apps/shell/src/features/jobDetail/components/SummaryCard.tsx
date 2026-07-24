@@ -15,6 +15,7 @@ import type { VehicleInfo, CustomerInfo } from "@/types";
 interface SummaryCardProps {
   vehicle: VehicleInfo;
   customer: CustomerInfo;
+  hasWofService?: boolean;
   onRefreshVehicle?: () => Promise<{ success: boolean; message?: string }>;
   onSaveVehicle?: (payload: {
     year?: number | null;
@@ -58,6 +59,7 @@ function WofExpiryNotice({ expiry }: { expiry?: string | null }) {
 export function SummaryCard({
   vehicle,
   customer,
+  hasWofService = false,
   onRefreshVehicle,
   onSaveVehicle,
   onSyncVehicleNzta,
@@ -386,7 +388,7 @@ export function SummaryCard({
               <div className="mt-2 space-y-1 text-sm text-[var(--ds-muted)]">
                 <p>
                   WOF Expiry: {renderVehicleValue(vehicle.wofExpiry)}
-                  <WofExpiryNotice expiry={vehicle.wofExpiry} />
+                  {hasWofService ? <WofExpiryNotice expiry={vehicle.wofExpiry} /> : null}
                 </p>
                 <p>Licence Expiry: {renderVehicleValue(vehicle.licenceExpiry)}</p>
                 <p>RUC Licence Number: {renderVehicleValue(vehicle.rucLicenceNumber)}</p>

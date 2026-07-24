@@ -91,6 +91,7 @@ export function JobsFiltersCard({ value, onChange, onReset, tagOptions }: Props)
               onChange={(e) => onChange({ ...value, timeRange: e.target.value as JobsFilters["timeRange"] })}
             >
               <option value="">全部</option>
+              <option value="today">今天</option>
               <option value="week">本周</option>
               <option value="lastWeek">上周</option>
               <option value="month">本月</option>

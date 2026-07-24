@@ -36,6 +36,7 @@ public class JobsController : ControllerBase
     private readonly IAppCache _appCache;
     private readonly JobPoStateService _jobPoStateService;
     private readonly JobInvoiceService _jobInvoiceService;
+    private readonly InvoiceOutboxService _invoiceOutboxService;
     private readonly WofQueryService _wofQueryService;
     private readonly NztaExpiryLookupService _nztaExpiryLookupService;
     private readonly XeroInvoiceStatusSyncService? _xeroInvoiceStatusSyncService;
@@ -47,6 +48,7 @@ public class JobsController : ControllerBase
         IAppCache appCache,
         JobPoStateService jobPoStateService,
         JobInvoiceService jobInvoiceService,
+        InvoiceOutboxService invoiceOutboxService,
         WofQueryService wofQueryService,
         NztaExpiryLookupService nztaExpiryLookupService,
         JobLifecycleService jobLifecycleService,
@@ -57,6 +59,7 @@ public class JobsController : ControllerBase
         _appCache = appCache;
         _jobPoStateService = jobPoStateService;
         _jobInvoiceService = jobInvoiceService;
+        _invoiceOutboxService = invoiceOutboxService;
         _wofQueryService = wofQueryService;
         _nztaExpiryLookupService = nztaExpiryLookupService;
         _jobLifecycleService = jobLifecycleService;
@@ -497,6 +500,12 @@ public class JobsController : ControllerBase
 
         switch (range)
         {
+            case "today":
+            {
+                startUtc = DateTime.SpecifyKind(now, DateTimeKind.Local).ToUniversalTime();
+                endUtcExclusive = DateTime.SpecifyKind(now.AddDays(1), DateTimeKind.Local).ToUniversalTime();
+                break;
+            }
             case "week":
             {
                 var day = now.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)now.DayOfWeek;
@@ -1349,6 +1358,7 @@ public class JobsController : ControllerBase
                     v.Year,
                     v.Vin,
                     v.WofExpiry,
+                    CustomerCode = j.Customer != null ? j.Customer.BusinessCode : null,
                     snapshot.HasWofService,
                     snapshot.HasWofRecord,
                     snapshot.ManualStatus,
@@ -1374,6 +1384,7 @@ public class JobsController : ControllerBase
                 wofExpiry = FormatDate(row.WofExpiry),
                 inShopDateTime = FormatDateTime(row.CreatedAt),
                 status = MapDetailStatus(row.Status),
+                customerCode = string.IsNullOrWhiteSpace(row.CustomerCode) ? "WI" : row.CustomerCode,
                 wofStatus = WofQueryService.DeriveWofStatus(row.HasWofService, row.HasWofRecord, row.ManualStatus),
             });
 
@@ -1586,6 +1597,7 @@ public class JobsController : ControllerBase
             {
                 existing.UpdatedAt = DateTime.UtcNow;
                 await _db.SaveChangesAsync(ct);
+                await _invoiceOutboxService.EnqueueSyncJobContentDraftAsync(id, null, ct);
                 await InvalidateJobDetailCachesAsync(id, ct);
                 await InvalidatePaintBoardCacheAsync(ct);
             }
@@ -1624,6 +1636,7 @@ public class JobsController : ControllerBase
 
         _db.JobPaintServices.Add(service);
         await _db.SaveChangesAsync(ct);
+        await _invoiceOutboxService.EnqueueSyncJobContentDraftAsync(id, null, ct);
         await InvalidateJobDetailCachesAsync(id, ct);
         await InvalidatePaintBoardCacheAsync(ct);
 
@@ -1680,6 +1693,7 @@ public class JobsController : ControllerBase
         service.Panels = req.Panels.Value;
         service.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        await _invoiceOutboxService.EnqueueSyncJobContentDraftAsync(id, null, ct);
         await InvalidateJobDetailCachesAsync(id, ct);
         await InvalidatePaintBoardCacheAsync(ct);
 
@@ -1692,6 +1706,7 @@ public class JobsController : ControllerBase
         var deleted = await _db.JobPaintServices.Where(x => x.JobId == id).ExecuteDeleteAsync(ct);
         if (deleted == 0)
             return NotFound(new { error = "Paint service not found." });
+        await _invoiceOutboxService.EnqueueSyncJobContentDraftAsync(id, null, ct);
         await InvalidateJobDetailCachesAsync(id, ct);
         await InvalidatePaintBoardCacheAsync(ct);
 
@@ -1810,15 +1825,36 @@ public class JobsController : ControllerBase
             nzFirstRegistration = parsed;
         }
 
+        var normalizedMake = string.IsNullOrWhiteSpace(req.Make) ? null : req.Make.Trim();
+        var referenceFieldsChanged = vehicle.Year != req.Year ||
+                                     !string.Equals(vehicle.Make, normalizedMake, StringComparison.Ordinal);
+
         vehicle.Year = req.Year;
-        vehicle.Make = string.IsNullOrWhiteSpace(req.Make) ? null : req.Make.Trim();
+        vehicle.Make = normalizedMake;
         vehicle.FuelType = string.IsNullOrWhiteSpace(req.FuelType) ? null : req.FuelType.Trim();
         vehicle.Vin = string.IsNullOrWhiteSpace(req.Vin) ? null : req.Vin.Trim();
         vehicle.NzFirstRegistration = nzFirstRegistration;
         vehicle.UpdatedAt = DateTime.UtcNow;
 
-        await _db.SaveChangesAsync(ct);
-        await InvalidateJobDetailCachesAsync(id, ct);
+        var affectedJobIds = new List<long> { id };
+        if (referenceFieldsChanged)
+        {
+            await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+            await _db.SaveChangesAsync(ct);
+            affectedJobIds = await _db.Jobs.AsNoTracking()
+                .Where(x => x.VehicleId == vehicle.Id)
+                .Select(x => x.Id)
+                .ToListAsync(ct);
+            foreach (var affectedJobId in affectedJobIds)
+                await _invoiceOutboxService.EnqueueSyncVehicleReferenceAsync(affectedJobId, ct);
+            await transaction.CommitAsync(ct);
+        }
+        else
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        foreach (var affectedJobId in affectedJobIds.Distinct())
+            await InvalidateJobDetailCachesAsync(affectedJobId, ct);
         await InvalidatePaintBoardCacheAsync(ct);
         await InvalidateWofScheduleCacheAsync(ct);
 
@@ -1851,9 +1887,11 @@ public class JobsController : ControllerBase
         if (job is null)
             return NotFound(new { error = "Job not found." });
 
+        var previousNotes = job.Notes;
         job.Notes = req.Notes?.Trim();
         job.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        await _invoiceOutboxService.EnqueueSyncJobContentDraftAsync(id, [previousNotes], ct);
         await InvalidateJobDetailCachesAsync(id, ct);
         await InvalidatePaintBoardCacheAsync(ct);
 
@@ -1870,6 +1908,7 @@ public class JobsController : ControllerBase
         job.PrivateNotes = req.PrivateNotes?.Trim();
         job.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        await _invoiceOutboxService.EnqueueSyncJobContentDraftAsync(id, null, ct);
         await InvalidateJobDetailCachesAsync(id, ct);
         await TouchJobsListVersionAsync(ct);
 

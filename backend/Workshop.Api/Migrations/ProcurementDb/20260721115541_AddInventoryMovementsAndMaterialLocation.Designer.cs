@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Workshop.Api.Procurement;
@@ -11,9 +12,11 @@ using Workshop.Api.Procurement;
 namespace Workshop.Api.Migrations.ProcurementDb
 {
     [DbContext(typeof(ProcurementDbContext))]
-    partial class ProcurementDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260721115541_AddInventoryMovementsAndMaterialLocation")]
+    partial class AddInventoryMovementsAndMaterialLocation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

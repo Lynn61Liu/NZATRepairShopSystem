@@ -14,13 +14,16 @@ public class InvoicePaymentsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly EftposXeroBatchPaymentService _eftposXeroBatchPaymentService;
+    private readonly JobInvoiceService _jobInvoiceService;
 
     public InvoicePaymentsController(
         AppDbContext db,
-        EftposXeroBatchPaymentService eftposXeroBatchPaymentService)
+        EftposXeroBatchPaymentService eftposXeroBatchPaymentService,
+        JobInvoiceService jobInvoiceService)
     {
         _db = db;
         _eftposXeroBatchPaymentService = eftposXeroBatchPaymentService;
+        _jobInvoiceService = jobInvoiceService;
     }
 
     [HttpGet]
@@ -67,6 +70,43 @@ public class InvoicePaymentsController : ControllerBase
         {
             return NotFound(new { error = "Invoice payment not found." });
         }
+
+        return Ok(new
+        {
+            payment = MapPaymentRow(row),
+        });
+    }
+
+    [HttpPost("{id:long}/refresh-xero")]
+    public async Task<IActionResult> RefreshFromXero(long id, CancellationToken ct)
+    {
+        var target = await (
+                from payment in _db.JobPayments.AsNoTracking()
+                join invoice in _db.JobInvoices.AsNoTracking() on payment.JobInvoiceId equals invoice.Id
+                where payment.Id == id
+                select new
+                {
+                    invoice.JobId,
+                    invoice.Provider,
+                })
+            .FirstOrDefaultAsync(ct);
+        if (target is null)
+            return NotFound(new { error = "Invoice payment not found." });
+        if (!string.Equals(target.Provider, "xero", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { error = "Only Xero invoices can be refreshed." });
+
+        var syncResult = await _jobInvoiceService.SyncFromXeroAsync(target.JobId, ct);
+        if (!syncResult.Ok)
+        {
+            return StatusCode(syncResult.StatusCode, new
+            {
+                error = syncResult.Error ?? "Failed to refresh invoice from Xero.",
+            });
+        }
+
+        var row = await QueryPayments().FirstOrDefaultAsync(payment => payment.Id == id, ct);
+        if (row is null)
+            return NotFound(new { error = "Invoice payment not found." });
 
         return Ok(new
         {

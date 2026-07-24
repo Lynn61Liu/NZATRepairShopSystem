@@ -188,6 +188,7 @@ public sealed class JobInvoiceService
                 new XeroInvoiceCreateOptions
                 {
                     SummarizeErrors = true,
+                    IdempotencyKey = $"nzat-job-{jobId}-draft",
                 },
                 ct);
             xeroCreateStopwatch.Stop();
@@ -1251,7 +1252,13 @@ public sealed class JobInvoiceService
             requestBody: request);
     }
 
-    public async Task<JobInvoiceCreateResult> SyncFromXeroAsync(long jobId, CancellationToken ct)
+    public Task<JobInvoiceCreateResult> SyncFromXeroAsync(long jobId, CancellationToken ct)
+        => SyncFromXeroAsync(jobId, true, ct);
+
+    private async Task<JobInvoiceCreateResult> SyncFromXeroAsync(
+        long jobId,
+        bool evaluateLifecycle,
+        CancellationToken ct)
     {
         await EnsureJobInvoicePdfColumnsAsync(ct);
         var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
@@ -1261,10 +1268,16 @@ public sealed class JobInvoiceService
         if (string.IsNullOrWhiteSpace(jobInvoice.ExternalInvoiceId) || !Guid.TryParse(jobInvoice.ExternalInvoiceId, out var invoiceId))
             return JobInvoiceCreateResult.Fail(400, "Missing Xero invoice id.");
 
-        return await SyncFromXeroInvoiceIdAsync(invoiceId, ct);
+        return await SyncFromXeroInvoiceIdAsync(invoiceId, evaluateLifecycle, ct);
     }
 
-    public async Task<JobInvoiceCreateResult> SyncFromXeroInvoiceIdAsync(Guid invoiceId, CancellationToken ct)
+    public Task<JobInvoiceCreateResult> SyncFromXeroInvoiceIdAsync(Guid invoiceId, CancellationToken ct)
+        => SyncFromXeroInvoiceIdAsync(invoiceId, true, ct);
+
+    private async Task<JobInvoiceCreateResult> SyncFromXeroInvoiceIdAsync(
+        Guid invoiceId,
+        bool evaluateLifecycle,
+        CancellationToken ct)
     {
         await EnsureJobInvoicePdfColumnsAsync(ct);
         var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.ExternalInvoiceId == invoiceId.ToString(), ct);
@@ -1289,7 +1302,8 @@ public sealed class JobInvoiceService
         job.InvoiceReference = jobInvoice.Reference;
         job.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
-        await _jobLifecycleService.EvaluateAsync(job.Id, ct);
+        if (evaluateLifecycle)
+            await _jobLifecycleService.EvaluateAsync(job.Id, ct);
 
         return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true, payload: xeroResult.Payload, requestBody: request);
     }
@@ -1336,6 +1350,7 @@ public sealed class JobInvoiceService
             return JobInvoiceBulkSyncResult.Success(targets.Count, 0, xeroResult.Payload);
 
         var synced = 0;
+        var syncedJobIds = new HashSet<long>();
         var now = DateTime.UtcNow;
         foreach (var (jobInvoice, invoiceId) in syncTargets)
         {
@@ -1350,16 +1365,21 @@ public sealed class JobInvoiceService
             job.UpdatedAt = now;
 
             synced++;
+            syncedJobIds.Add(jobInvoice.JobId);
         }
 
         if (synced > 0)
         {
             await _db.SaveChangesAsync(ct);
-            foreach (var jobId in syncTargets.Select(x => x.Invoice.JobId).Distinct())
+            foreach (var jobId in syncedJobIds)
                 await _jobLifecycleService.EvaluateAsync(jobId, ct);
         }
 
-        return JobInvoiceBulkSyncResult.Success(targets.Count, synced, xeroResult.Payload);
+        return JobInvoiceBulkSyncResult.Success(
+            targets.Count,
+            synced,
+            xeroResult.Payload,
+            syncedJobIds.ToArray());
     }
 
     private JobInvoice GetOrAttachJobInvoice(long jobInvoiceId, long jobId, string externalInvoiceId)
@@ -1540,6 +1560,316 @@ public sealed class JobInvoiceService
             expiresIn: syncResult.ExpiresIn);
     }
 
+    public async Task<JobInvoiceCreateResult> SyncManagedJobContentToDraftAsync(
+        long jobId,
+        IReadOnlyCollection<string>? legacyNoteDescriptions,
+        CancellationToken ct)
+    {
+        await EnsureJobInvoicePdfColumnsAsync(ct);
+        var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (jobInvoice is null)
+        {
+            var invoiceIsStillBeingLinked = await _db.OutboxMessages.AsNoTracking().AnyAsync(
+                x => x.AggregateType == InvoiceOutboxService.JobAggregateType
+                    && x.AggregateId == jobId
+                    && (x.MessageType == InvoiceOutboxService.CreateDraftMessageType
+                        || x.MessageType == InvoiceOutboxService.AttachExistingMessageType
+                        || x.MessageType == InvoiceOutboxService.ReplaceExistingMessageType)
+                    && (x.Status == "pending" || x.Status == "processing"),
+                ct);
+            if (invoiceIsStillBeingLinked)
+                return JobInvoiceCreateResult.Fail(408, "Invoice is still being created or linked.");
+
+            return JobInvoiceCreateResult.Success(null, alreadyExists: true);
+        }
+
+        if (!string.Equals(jobInvoice.Provider, "xero", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(jobInvoice.ExternalStatus, "DRAFT", StringComparison.OrdinalIgnoreCase))
+        {
+            return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true);
+        }
+
+        var pulled = await SyncFromXeroAsync(jobId, ct);
+        if (!pulled.Ok)
+            return pulled;
+
+        jobInvoice = await _db.JobInvoices.FirstAsync(x => x.JobId == jobId, ct);
+        if (!string.Equals(jobInvoice.ExternalStatus, "DRAFT", StringComparison.OrdinalIgnoreCase))
+            return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true);
+
+        var job = await _db.Jobs.AsNoTracking().FirstOrDefaultAsync(x => x.Id == jobId, ct);
+        if (job is null)
+            return JobInvoiceCreateResult.Fail(404, "Job not found.");
+
+        var request = BuildRequestFromPayload(jobInvoice.ResponsePayloadJson, jobInvoice);
+        var legacyNotes = new HashSet<string>(
+            (legacyNoteDescriptions ?? [])
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim()),
+            StringComparer.Ordinal);
+        if (!string.IsNullOrWhiteSpace(job.Notes))
+            legacyNotes.Add(job.Notes.Trim());
+        request.LineItems = request.LineItems
+            .Where(item => !IsManagedJobContentLine(item.Description)
+                && !legacyNotes.Contains(item.Description.Trim()))
+            .ToList();
+
+        AppendManagedJobContentLine(request.LineItems, "JOB-NOTES", job.Notes);
+        AppendManagedJobContentLine(request.LineItems, "OTHER-NOTES", job.PrivateNotes);
+
+        var selectedServiceNames = (await _db.JobServiceSelections.AsNoTracking()
+                .Where(x => x.JobId == jobId)
+                .Select(x => x.ServiceNameSnapshot)
+                .ToListAsync(ct))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var extraMechItems = await _db.JobMechServices.AsNoTracking()
+            .Where(x => x.JobId == jobId)
+            .OrderBy(x => x.CreatedAt)
+            .Select(x => x.Description)
+            .ToListAsync(ct);
+        foreach (var description in extraMechItems.Where(x => !selectedServiceNames.Contains(x.Trim())))
+            AppendManagedJobContentLine(request.LineItems, "MECH", description);
+
+        var extraPartsItems = await _db.JobPartsServices.AsNoTracking()
+            .Where(x => x.JobId == jobId && x.CreatedAt > jobInvoice.CreatedAt)
+            .OrderBy(x => x.CreatedAt)
+            .Select(x => x.Description)
+            .ToListAsync(ct);
+        foreach (var description in extraPartsItems)
+            AppendManagedJobContentLine(request.LineItems, "PARTS", description);
+
+        var extraPaint = await _db.JobPaintServices.AsNoTracking()
+            .Where(x => x.JobId == jobId && x.CreatedAt > jobInvoice.CreatedAt)
+            .OrderBy(x => x.CreatedAt)
+            .Select(x => new { x.Panels })
+            .FirstOrDefaultAsync(ct);
+        if (extraPaint is not null)
+            AppendManagedJobContentLine(request.LineItems, "PAINT", $"Paint service ({extraPaint.Panels} panels)");
+
+        if (request.LineItems.Count == 0)
+            AppendManagedJobContentLine(request.LineItems, "JOB", "Job draft");
+
+        request.Status = "DRAFT";
+        request.LineItems = await SanitizeLineItemsAsync(request.LineItems, ct);
+        var syncResult = await _xeroInvoiceService.CreateInvoiceAsync(
+            request,
+            new XeroInvoiceCreateOptions { SummarizeErrors = true },
+            ct);
+        if (!syncResult.Ok)
+        {
+            return JobInvoiceCreateResult.Fail(
+                syncResult.StatusCode,
+                syncResult.Error ?? "Failed to sync job content to Xero draft invoice.",
+                syncResult.Payload,
+                request,
+                syncResult.RefreshToken,
+                syncResult.RefreshTokenUpdated,
+                syncResult.Scope,
+                syncResult.ExpiresIn);
+        }
+
+        ApplyInvoiceUpdate(jobInvoice, request, syncResult.Payload, syncResult.TenantId);
+        await _db.SaveChangesAsync(ct);
+        return JobInvoiceCreateResult.Success(
+            jobInvoice,
+            alreadyExists: true,
+            payload: syncResult.Payload,
+            requestBody: request,
+            refreshToken: syncResult.RefreshToken,
+            refreshTokenUpdated: syncResult.RefreshTokenUpdated,
+            scope: syncResult.Scope,
+            expiresIn: syncResult.ExpiresIn);
+    }
+
+    public async Task<JobInvoiceCreateResult> SyncVehicleReferenceToXeroAsync(long jobId, CancellationToken ct)
+    {
+        await EnsureJobInvoicePdfColumnsAsync(ct);
+        var jobInvoice = await _db.JobInvoices.FirstOrDefaultAsync(x => x.JobId == jobId, ct);
+        if (jobInvoice is null)
+        {
+            var invoiceIsStillBeingLinked = await _db.OutboxMessages.AsNoTracking().AnyAsync(
+                x => x.AggregateType == InvoiceOutboxService.JobAggregateType
+                    && x.AggregateId == jobId
+                    && (x.MessageType == InvoiceOutboxService.CreateDraftMessageType
+                        || x.MessageType == InvoiceOutboxService.AttachExistingMessageType
+                        || x.MessageType == InvoiceOutboxService.ReplaceExistingMessageType)
+                    && (x.Status == "pending" || x.Status == "processing"),
+                ct);
+            if (invoiceIsStillBeingLinked)
+                return JobInvoiceCreateResult.Fail(408, "Invoice is still being created or linked.");
+
+            return JobInvoiceCreateResult.Success(null, alreadyExists: true);
+        }
+
+        if (!string.Equals(jobInvoice.Provider, "xero", StringComparison.OrdinalIgnoreCase))
+            return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true);
+
+        var job = await _db.Jobs
+            .Include(x => x.Customer)
+            .Include(x => x.Vehicle)
+            .FirstOrDefaultAsync(x => x.Id == jobId, ct);
+        if (job is null)
+            return JobInvoiceCreateResult.Fail(404, "Job not found.");
+
+        if (job.Customer is null || job.Vehicle is null)
+            return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true);
+
+        var isArchived = string.Equals(job.Status, "Archived", StringComparison.OrdinalIgnoreCase);
+        if (isArchived && !HasVehicleReferencePlaceholder(jobInvoice.Reference))
+            return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true);
+
+        // Personal invoice references are intentionally managed outside the vehicle reference format.
+        if (string.Equals(job.Customer.Type, "Personal", StringComparison.OrdinalIgnoreCase))
+            return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true);
+
+        if (!job.Vehicle.Year.HasValue ||
+            job.Vehicle.Year.Value <= 0 ||
+            string.IsNullOrWhiteSpace(job.Vehicle.Make) ||
+            string.IsNullOrWhiteSpace(job.Vehicle.Model))
+        {
+            return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true);
+        }
+
+        if (!Guid.TryParse(jobInvoice.ExternalInvoiceId, out var invoiceId))
+            return JobInvoiceCreateResult.Fail(400, "Missing Xero invoice id.");
+
+        if (IsReferenceUpdateTerminalStatus(jobInvoice.ExternalStatus))
+            return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true);
+
+        var pulled = await SyncFromXeroAsync(jobId, ct);
+        if (!pulled.Ok)
+            return pulled;
+
+        jobInvoice = await _db.JobInvoices.FirstAsync(x => x.JobId == jobId, ct);
+        if (isArchived && !HasVehicleReferencePlaceholder(jobInvoice.Reference))
+            return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true);
+
+        if (!IsManagedVehicleReference(jobInvoice.Reference, job.Vehicle.Plate))
+            return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true);
+
+        var referencePoNumber = string.IsNullOrWhiteSpace(job.PoNumber)
+            ? PoReferenceBuilder.ExtractPoNumber(jobInvoice.Reference)
+            : job.PoNumber;
+        var desiredReference = BuildReference(referencePoNumber, job.Customer, job.Vehicle);
+        if (ReferencesMatch(jobInvoice.Reference, desiredReference))
+            return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true);
+
+        if (!IsReferenceUpdateAllowedStatus(jobInvoice.ExternalStatus))
+            return JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: true);
+
+        var update = await _xeroInvoiceService.UpdateInvoiceReferenceAsync(invoiceId, desiredReference, ct);
+        if (!update.Ok)
+        {
+            return JobInvoiceCreateResult.Fail(
+                update.StatusCode,
+                update.Error ?? "Failed to update Xero invoice vehicle reference.",
+                update.Payload);
+        }
+
+        var verified = await SyncFromXeroAsync(jobId, ct);
+        if (!verified.Ok)
+            return verified;
+
+        jobInvoice = await _db.JobInvoices.FirstAsync(x => x.JobId == jobId, ct);
+        return ReferencesMatch(jobInvoice.Reference, desiredReference)
+            ? JobInvoiceCreateResult.Success(jobInvoice, alreadyExists: false, payload: update.Payload)
+            : JobInvoiceCreateResult.Fail(408, "Xero vehicle reference update could not be verified yet.");
+    }
+
+    private static bool IsReferenceUpdateTerminalStatus(string? status)
+        => status?.Trim().ToUpperInvariant() is "PAID" or "VOIDED" or "DELETED";
+
+    private static bool IsReferenceUpdateAllowedStatus(string? status)
+        => status?.Trim().ToUpperInvariant() is "DRAFT" or "SUBMITTED" or "AUTHORISED";
+
+    private static bool ReferencesMatch(string? left, string? right)
+        => string.Equals(left?.Trim() ?? "", right?.Trim() ?? "", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsManagedVehicleReference(string? reference, string? plate)
+    {
+        var normalized = reference?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return false;
+
+        var normalizedPlate = plate?.Trim();
+        var containsVehicleKey = normalized.Contains("[REGO]", StringComparison.OrdinalIgnoreCase) ||
+                                 (!string.IsNullOrWhiteSpace(normalizedPlate) &&
+                                  ContainsReferenceToken(normalized, normalizedPlate));
+        if (!containsVehicleKey)
+        {
+            return false;
+        }
+
+        if (normalized.StartsWith("[PO]", StringComparison.OrdinalIgnoreCase) ||
+            normalized.StartsWith("Pending", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (normalized.StartsWith("PO", StringComparison.OrdinalIgnoreCase))
+        {
+            var suffix = normalized[2..].TrimStart();
+            if (suffix.StartsWith('#'))
+                suffix = suffix[1..].TrimStart();
+            if (suffix.Equals("Pending", StringComparison.OrdinalIgnoreCase) ||
+                suffix.StartsWith("Pending ", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return PoReferenceBuilder.ExtractPoNumber(normalized) is not null;
+    }
+
+    private static bool HasVehicleReferencePlaceholder(string? reference)
+        => reference?.Contains("[YEAR]", StringComparison.OrdinalIgnoreCase) == true ||
+           reference?.Contains("[MAKE]", StringComparison.OrdinalIgnoreCase) == true ||
+           reference?.Contains("[MODEL]", StringComparison.OrdinalIgnoreCase) == true ||
+           reference?.Contains("[REGO]", StringComparison.OrdinalIgnoreCase) == true;
+
+    private static bool ContainsReferenceToken(string value, string token)
+    {
+        var searchFrom = 0;
+        while (searchFrom < value.Length)
+        {
+            var index = value.IndexOf(token, searchFrom, StringComparison.OrdinalIgnoreCase);
+            if (index < 0)
+                return false;
+
+            var end = index + token.Length;
+            var startsAtBoundary = index == 0 || !char.IsLetterOrDigit(value[index - 1]);
+            var endsAtBoundary = end == value.Length || !char.IsLetterOrDigit(value[end]);
+            if (startsAtBoundary && endsAtBoundary)
+                return true;
+
+            searchFrom = index + 1;
+        }
+
+        return false;
+    }
+
+    private static bool IsManagedJobContentLine(string? description)
+        => description?.TrimStart().StartsWith("[NZAT:", StringComparison.OrdinalIgnoreCase) == true;
+
+    private static void AppendManagedJobContentLine(
+        ICollection<XeroInvoiceLineItemInput> lineItems,
+        string category,
+        string? description)
+    {
+        var normalized = description?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return;
+
+        lineItems.Add(new XeroInvoiceLineItemInput
+        {
+            Description = $"[NZAT:{category}]\n{normalized}",
+            Quantity = 1m,
+            UnitAmount = 0m,
+        });
+    }
+
     public async Task<JobInvoiceCreateResult> RemoveServiceItemsFromDraftAsync(
         long jobId,
         IReadOnlyList<ServiceSelectionSnapshot> selections,
@@ -1678,6 +2008,8 @@ public sealed class JobInvoiceService
         var state = (payload.State ?? "").Trim().ToUpperInvariant();
         if (string.IsNullOrWhiteSpace(state))
             return JobInvoiceStateUpdateResult.Fail(400, "State is required.");
+        var requiresExactPaymentMatch = payload.RequireExactAmountMatch
+            && state is "PAID_CASH" or "PAID_EPOST" or "PAID_BANK_TRANSFER";
 
         if (state == "PAID_PARTIAL_CASH")
         {
@@ -1723,7 +2055,7 @@ public sealed class JobInvoiceService
             return await BuildStateUpdateResultAsync(jobInvoice, ct);
         }
 
-        var synced = await SyncFromXeroAsync(jobId, ct);
+        var synced = await SyncFromXeroAsync(jobId, !requiresExactPaymentMatch, ct);
         if (!synced.Ok || synced.Invoice is null)
             return JobInvoiceStateUpdateResult.Fail(synced.StatusCode, synced.Error ?? "Failed to sync invoice from Xero.", synced.Payload);
 
@@ -1767,13 +2099,43 @@ public sealed class JobInvoiceService
             };
 
             var paymentDate = payload.PaymentDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var amount = payload.Amount is > 0
-                ? payload.Amount.Value
-                : ExtractAmountDue(jobInvoice.ResponsePayloadJson)
-                ?? ExtractInvoiceTotal(jobInvoice.ResponsePayloadJson)
-                ?? ExtractInvoiceTotal(jobInvoice.RequestPayloadJson);
-            if (amount is null || amount <= 0)
-                return JobInvoiceStateUpdateResult.Fail(400, "Unable to determine invoice payment amount.");
+            var amount = requiresExactPaymentMatch
+                ? payload.Amount
+                : payload.Amount is > 0
+                    ? payload.Amount.Value
+                    : ExtractAmountDue(jobInvoice.ResponsePayloadJson)
+                    ?? ExtractInvoiceTotal(jobInvoice.ResponsePayloadJson)
+                    ?? ExtractInvoiceTotal(jobInvoice.RequestPayloadJson);
+            if (amount is null || (requiresExactPaymentMatch ? RoundMoney(amount.Value) <= 0 : amount.Value <= 0))
+            {
+                var error = requiresExactPaymentMatch
+                    ? "EFTPOS payment amount must be greater than zero."
+                    : "Unable to determine invoice payment amount.";
+                return JobInvoiceStateUpdateResult.Fail(400, error);
+            }
+
+            if (requiresExactPaymentMatch)
+            {
+                var xeroAmountDue = ExtractAmountDue(jobInvoice.ResponsePayloadJson)
+                    ?? ExtractInvoiceTotal(jobInvoice.ResponsePayloadJson);
+                if (xeroAmountDue is null)
+                {
+                    return JobInvoiceStateUpdateResult.Fail(
+                        409,
+                        "Unable to verify the current Xero amount due. Refresh Xero and try matching again.");
+                }
+
+                var eftposAmount = RoundMoney(amount.Value);
+                var expectedAmount = RoundMoney(xeroAmountDue.Value);
+                if (eftposAmount != expectedAmount)
+                {
+                    return JobInvoiceStateUpdateResult.Fail(
+                        409,
+                        $"EFTPOS amount ${eftposAmount:0.00} does not match Xero amount due ${expectedAmount:0.00}. Correct Xero and try matching again.");
+                }
+
+                amount = eftposAmount;
+            }
 
             var targetInvoiceStatus = paymentMethod == "cash" ? "DELETED" : "AUTHORISED";
             if (paymentMethod == "cash"
@@ -1791,7 +2153,11 @@ public sealed class JobInvoiceService
                     var fallbackError = paymentMethod == "cash"
                         ? "Failed to delete invoice in Xero."
                         : "Failed to update invoice status in Xero.";
-                    return JobInvoiceStateUpdateResult.Fail(statusSyncResult.StatusCode, statusSyncResult.Error ?? fallbackError, statusSyncResult.Payload);
+                    return JobInvoiceStateUpdateResult.Fail(
+                        statusSyncResult.StatusCode,
+                        statusSyncResult.Error ?? fallbackError,
+                        statusSyncResult.Payload,
+                        exactAmountVerified: requiresExactPaymentMatch);
                 }
 
                 job.InvoiceReference = jobInvoice.Reference;
@@ -1827,7 +2193,7 @@ public sealed class JobInvoiceService
 
             await _db.SaveChangesAsync(ct);
 
-            return await BuildStateUpdateResultAsync(jobInvoice, ct);
+            return await BuildStateUpdateResultAsync(jobInvoice, ct, requiresExactPaymentMatch);
         }
 
         return JobInvoiceStateUpdateResult.Fail(400, $"Unsupported state '{payload.State}'.");
@@ -2221,14 +2587,17 @@ public sealed class JobInvoiceService
         }
     }
 
-    private async Task<JobInvoiceStateUpdateResult> BuildStateUpdateResultAsync(JobInvoice jobInvoice, CancellationToken ct)
+    private async Task<JobInvoiceStateUpdateResult> BuildStateUpdateResultAsync(
+        JobInvoice jobInvoice,
+        CancellationToken ct,
+        bool exactAmountVerified = false)
     {
         var latestPayment = await _db.JobPayments.AsNoTracking()
             .Where(x => x.JobInvoiceId == jobInvoice.Id)
             .OrderByDescending(x => x.CreatedAt)
             .FirstOrDefaultAsync(ct);
 
-        return JobInvoiceStateUpdateResult.Success(jobInvoice, latestPayment);
+        return JobInvoiceStateUpdateResult.Success(jobInvoice, latestPayment, exactAmountVerified);
     }
 
     private string? ResolvePaymentAccountCode(string method) =>
@@ -2275,6 +2644,8 @@ public sealed class JobInvoiceService
     private static decimal? ExtractAmountDue(string? payloadJson) => ExtractDecimalFromInvoicePayload(payloadJson, "AmountDue");
 
     private static decimal? ExtractInvoiceTotal(string? payloadJson) => ExtractDecimalFromInvoicePayload(payloadJson, "Total");
+
+    private static decimal RoundMoney(decimal value) => Math.Round(value, 2, MidpointRounding.AwayFromZero);
 
     private static decimal? ExtractDecimalFromInvoicePayload(string? payloadJson, string propertyName)
     {
@@ -2331,7 +2702,8 @@ public sealed class JobInvoiceService
         inventoryByCode.TryGetValue(JobInvoicePartsLineItemBuilder.DefaultItemCode, out var partsInventoryItem);
         lineItems.AddRange(JobInvoicePartsLineItemBuilder.Build(partsServices, partsInventoryItem));
 
-        AppendJobNoteLineItem(lineItems, job.Notes);
+        AppendManagedJobContentLine(lineItems, "JOB-NOTES", job.Notes);
+        AppendManagedJobContentLine(lineItems, "OTHER-NOTES", job.PrivateNotes);
 
         if (lineItems.Count == 0)
         {
@@ -2379,20 +2751,6 @@ public sealed class JobInvoiceService
             serviceContext.CatalogItemsById,
             serviceContext.OverrideByServiceId,
             inventoryByCode);
-    }
-
-    private static void AppendJobNoteLineItem(List<XeroInvoiceLineItemInput> lineItems, string? jobNotes)
-    {
-        var jobNote = jobNotes?.Trim();
-        if (string.IsNullOrWhiteSpace(jobNote))
-            return;
-
-        lineItems.Add(new XeroInvoiceLineItemInput
-        {
-            Description = jobNote,
-            Quantity = 1m,
-            UnitAmount = 0m,
-        });
     }
 
     private async Task<List<XeroInvoiceLineItemInput>> SanitizeLineItemsAsync(
@@ -2719,14 +3077,17 @@ public sealed class JobInvoiceService
     }
 
     private static string BuildReference(Job job, Customer customer, Vehicle vehicle)
+        => BuildReference(job.PoNumber, customer, vehicle);
+
+    private static string BuildReference(string? poNumber, Customer customer, Vehicle vehicle)
     {
         if (string.Equals(customer.Type, "Personal", StringComparison.OrdinalIgnoreCase))
             return string.Empty;
 
         var rego = string.IsNullOrWhiteSpace(vehicle.Plate) ? "[REGO]" : vehicle.Plate.Trim().ToUpperInvariant();
-        var poPrefix = string.IsNullOrWhiteSpace(job.PoNumber)
+        var poPrefix = string.IsNullOrWhiteSpace(poNumber)
             ? "PO# Pending"
-            : $"PO# {job.PoNumber.Trim()}";
+            : $"PO# {poNumber.Trim()}";
         var year = vehicle.Year.HasValue && vehicle.Year.Value > 0 ? vehicle.Year.Value.ToString() : "[YEAR]";
         var make = string.IsNullOrWhiteSpace(vehicle.Make) ? "[MAKE]" : vehicle.Make.Trim();
         var model = string.IsNullOrWhiteSpace(vehicle.Model) ? "[MODEL]" : vehicle.Model.Trim();
@@ -3224,15 +3585,21 @@ public sealed class JobInvoiceBulkSyncResult
     public string? Error { get; private init; }
     public int RequestedJobs { get; private init; }
     public int SyncedInvoices { get; private init; }
+    public IReadOnlyCollection<long> SyncedJobIds { get; private init; } = Array.Empty<long>();
     public object? Payload { get; private init; }
 
-    public static JobInvoiceBulkSyncResult Success(int requestedJobs, int syncedInvoices, object? payload) =>
+    public static JobInvoiceBulkSyncResult Success(
+        int requestedJobs,
+        int syncedInvoices,
+        object? payload,
+        IReadOnlyCollection<long>? syncedJobIds = null) =>
         new()
         {
             Ok = true,
             StatusCode = 200,
             RequestedJobs = requestedJobs,
             SyncedInvoices = syncedInvoices,
+            SyncedJobIds = syncedJobIds ?? Array.Empty<long>(),
             Payload = payload,
         };
 
@@ -3261,23 +3628,33 @@ public sealed class JobInvoiceStateUpdateResult
     public JobInvoice? Invoice { get; private init; }
     public JobPayment? LatestPayment { get; private init; }
     public object? Payload { get; private init; }
+    public bool ExactAmountVerified { get; private init; }
 
-    public static JobInvoiceStateUpdateResult Success(JobInvoice invoice, JobPayment? latestPayment) =>
+    public static JobInvoiceStateUpdateResult Success(
+        JobInvoice invoice,
+        JobPayment? latestPayment,
+        bool exactAmountVerified = false) =>
         new()
         {
             Ok = true,
             StatusCode = 200,
             Invoice = invoice,
             LatestPayment = latestPayment,
+            ExactAmountVerified = exactAmountVerified,
         };
 
-    public static JobInvoiceStateUpdateResult Fail(int statusCode, string error, object? payload = null) =>
+    public static JobInvoiceStateUpdateResult Fail(
+        int statusCode,
+        string error,
+        object? payload = null,
+        bool exactAmountVerified = false) =>
         new()
         {
             Ok = false,
             StatusCode = statusCode,
             Error = error,
             Payload = payload,
+            ExactAmountVerified = exactAmountVerified,
         };
 }
 

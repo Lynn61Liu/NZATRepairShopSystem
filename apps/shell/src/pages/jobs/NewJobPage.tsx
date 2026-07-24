@@ -806,7 +806,8 @@ export function NewJobPage() {
   useEffect(() => {
     const prefillKey = searchParams.toString();
     if (appointmentPrefillAppliedRef.current === prefillKey) return;
-    if (searchParams.get("source") !== "wof-appointment") return;
+    const prefillSource = searchParams.get("source");
+    if (prefillSource !== "wof-appointment" && prefillSource !== "wof-sheet-recovery") return;
 
     appointmentPrefillAppliedRef.current = prefillKey;
     const prefillRego = normalizePlateInput(searchParams.get("rego") ?? "") ?? "";
@@ -828,6 +829,12 @@ export function NewJobPage() {
     if (prefillNotes) {
       setNotes(prefillNotes);
       notesRef.current = prefillNotes;
+    }
+    if (prefillSource === "wof-sheet-recovery") {
+      setFormAlert({
+        variant: "warning",
+        message: "⚠️ 这是根据 WOF Google Sheet 生成的辅助补单。保存前请确认 WI / Dealership、客户和车辆信息。",
+      });
     }
     setSelectedServices((prev) => (prev.includes("wof") ? prev : [...prev, "wof"]));
   }, [searchParams]);

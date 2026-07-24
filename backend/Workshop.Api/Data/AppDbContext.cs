@@ -39,6 +39,7 @@ public class AppDbContext : DbContext
     public DbSet<WofFailReason> WofFailReasons => Set<WofFailReason>();
     public DbSet<JobWofRecord> JobWofRecords => Set<JobWofRecord>();
     public DbSet<JobWofRecordItem> JobWofRecordItems => Set<JobWofRecordItem>();
+    public DbSet<WofCalendarRecord> WofCalendarRecords => Set<WofCalendarRecord>();
     public DbSet<JobPartsService> JobPartsServices => Set<JobPartsService>();
     public DbSet<JobPartsNote> JobPartsNotes => Set<JobPartsNote>();
     public DbSet<JobMechService> JobMechServices => Set<JobMechService>();
@@ -738,6 +739,22 @@ public class AppDbContext : DbContext
         jwri.HasIndex(x => new { x.JobWofRecordId, x.Code }).IsUnique().HasDatabaseName("ux_job_wof_record_items_record_code");
         jwri.HasOne<JobWofRecord>().WithMany().HasForeignKey(x => x.JobWofRecordId).OnDelete(DeleteBehavior.Cascade);
         jwri.HasOne<WofFailReason>().WithMany().HasForeignKey(x => x.FailReasonId).OnDelete(DeleteBehavior.SetNull);
+
+        var wcr = modelBuilder.Entity<WofCalendarRecord>();
+        wcr.ToTable("wof_calendar_records");
+        wcr.HasKey(x => x.Id);
+        wcr.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
+        wcr.Property(x => x.SourceFile).HasColumnName("source_file").IsRequired();
+        wcr.Property(x => x.ExcelRowNo).HasColumnName("excel_row_no").IsRequired();
+        wcr.Property(x => x.JobId).HasColumnName("job_id");
+        wcr.Property(x => x.OccurredAt).HasColumnName("occurred_at").IsRequired();
+        wcr.Property(x => x.Rego).HasColumnName("rego").IsRequired();
+        wcr.Property(x => x.MakeModel).HasColumnName("make_model");
+        wcr.Property(x => x.RecordState).HasColumnName("record_state").HasColumnType("wof_record_state").IsRequired();
+        wcr.Property(x => x.ImportedAt).HasColumnName("imported_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        wcr.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("date_trunc('milliseconds', now())");
+        wcr.HasIndex(x => new { x.SourceFile, x.ExcelRowNo }).IsUnique();
+        wcr.HasIndex(x => x.OccurredAt);
 
         var jps = modelBuilder.Entity<JobPartsService>();
         jps.ToTable("job_parts_services");

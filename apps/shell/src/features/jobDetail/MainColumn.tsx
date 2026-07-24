@@ -42,6 +42,7 @@ type MainColumnProps = {
   mechLoading?: boolean;
   paintService?: PaintService | null;
   paintLoading?: boolean;
+  paintInitialized?: boolean;
   onAddWof: () => void;
   onRefreshWof?: () => Promise<{ success: boolean; message?: string }>;
   onDeleteWofServer?: () => Promise<{ success: boolean; message?: string }>;
@@ -79,7 +80,10 @@ type MainColumnProps = {
     payload: { description?: string; cost?: number | null }
   ) => Promise<{ success: boolean }>;
   onDeleteMechService?: (id: string) => Promise<{ success: boolean }>;
-  onCreatePaintService?: (status?: string, panels?: number) => Promise<{ success: boolean; message?: string }>;
+  onCreatePaintService?: (
+    status?: string,
+    panels?: number
+  ) => Promise<{ success: boolean; message?: string; panels?: number }>;
   onUpdatePaintStage?: (stageIndex: number) => Promise<{ success: boolean; message?: string }>;
   onUpdatePaintPanels?: (panels: number) => Promise<{ success: boolean; message?: string }>;
   onDeletePaintService?: () => Promise<{ success: boolean; message?: string }>;
@@ -151,6 +155,7 @@ export function MainColumn({
   mechLoading,
   paintService,
   paintLoading,
+  paintInitialized,
   onAddWof,
   onRefreshWof,
   onDeleteWofServer,
@@ -304,6 +309,7 @@ export function MainColumn({
           needsPo={needsPo}
           poNumber={jobData.poNumber}
           paintPanels={paintService?.panels ?? null}
+          paintServiceReady={Boolean(paintInitialized && !paintLoading)}
           vin={jobData.vehicle.vin}
           nzFirstRegistration={jobData.vehicle.nzFirstRegistration}
           hasPaintService={Boolean(paintService?.id)}
@@ -329,6 +335,7 @@ export function MainColumn({
       <SummaryCard
         vehicle={jobData.vehicle}
         customer={jobData.customer}
+        hasWofService={jobData.hasWofService}
         onRefreshVehicle={onRefreshVehicle}
         onSyncVehicleNzta={onSyncVehicleNzta}
         onSaveVehicle={onSaveVehicle}

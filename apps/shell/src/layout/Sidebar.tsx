@@ -72,16 +72,16 @@ export function Sidebar() {
     { to: "/", label: "Dashboard", icon: LayoutDashboard },
     { to: "/jobs", label: "工单中心", icon: FileText },
     { to: "/car-on-yard", label: "Car On Yard", icon: CarFront },
-    { to: "/parts-flow", label: "报价-配件", icon: Cog },
-    { to: "/invoice", label: "发票", icon: CircleDollarSign },
-    { to: "/wof-schedule", label: "WOF 排班表", icon: CalendarClock },
-    { to: "/po-dashboard-preview", label: "PO", icon: ReceiptText },
-    { to: "/paint-board", label: "喷漆看板", icon: Paintbrush2 },
-    { to: "/mech-board", label: "机修看板", icon: Wrench },
-    { to: "/device-communication", label: "找钥匙", icon: KeyRound },
-    { to: "/worklog", label: "工时", icon: Clock3, badge: worklogAlertCount },
-    { to: "/shop", label: "库存", icon: ShoppingBag },
-    { to: "/procurement-admin", label: "采购", icon: PackageOpen },
+    { to: "/parts-flow", label: "Waiting For Parts", icon: Cog },
+    { to: "/invoice", label: "Eftpos", icon: CircleDollarSign },
+    { to: "/wof-schedule", label: "WOF & 预约", icon: CalendarClock },
+    { to: "/po-dashboard-preview", label: "PO Request", icon: ReceiptText },
+    { to: "/paint-board", label: "Painting Dashboard", icon: Paintbrush2 },
+    { to: "/mech-board", label: "Mechanic Dashboard", icon: Wrench },
+    { to: "/device-communication", label: "Key Finder", icon: KeyRound },
+    { to: "/worklog", label: "Jobsheet", icon: Clock3, badge: worklogAlertCount },
+    { to: "/shop", label: "Stock", icon: ShoppingBag },
+    { to: "/procurement-admin", label: "Procurement", icon: PackageOpen },
   ];
 
   const courtesyCarItems: SidebarGroupItem[] = [
@@ -151,7 +151,7 @@ export function Sidebar() {
             >
               <span className="flex min-w-0 items-center gap-3">
                 <CarFront className="h-4 w-4 shrink-0" />
-                <span className="truncate">代步车</span>
+                <span className="truncate">Loan Car</span>
               </span>
               <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${courtesyCarOpen ? "rotate-180" : ""}`} />
             </button>

@@ -22,9 +22,18 @@ public static class VehicleMapper
         var plateFinal = string.IsNullOrWhiteSpace(plateFromData) ? plateInput : plateFromData!;
 
         string? make = WindowJsonParser.GetString(vehicleRoot, "make") ?? HtmlDataKeyParser.GetDataKeyValue(htmlDoc, "make");
-        string? model = WindowJsonParser.GetString(vehicleRoot, "model")
-            ?? HtmlDataKeyParser.GetDataKeyValue(htmlDoc, "model")
-            ?? WindowJsonParser.GetString(jphRoot, "cars", 0, "model");
+        string? model = FirstNonBlank(
+            WindowJsonParser.GetString(vehicleRoot, "model"),
+            HtmlDataKeyParser.GetDataKeyValue(htmlDoc, "model"),
+            WindowJsonParser.GetString(jphRoot, "cars", 0, "model"));
+        string? submodel = FirstNonBlank(
+            WindowJsonParser.GetString(vehicleRoot, "submodel"),
+            WindowJsonParser.GetString(vehicleRoot, "sub_model"),
+            HtmlDataKeyParser.GetDataKeyValue(htmlDoc, "submodel"),
+            HtmlDataKeyParser.GetDataKeyValue(htmlDoc, "sub_model"),
+            WindowJsonParser.GetString(jphRoot, "cars", 0, "submodel"),
+            WindowJsonParser.GetString(jphRoot, "cars", 0, "sub_model"));
+        model = VehicleModelComposer.Combine(model, submodel);
 
         int? year = WindowJsonParser.GetInt(vehicleRoot, "year_of_manufacture")
             ?? ValueParsers.ParseIntLoose(HtmlDataKeyParser.GetDataKeyValue(htmlDoc, "year_of_manufacture"));
@@ -102,4 +111,7 @@ public static class VehicleMapper
         if (element is null) return null;
         return element.Value.Clone();
     }
+
+    private static string? FirstNonBlank(params string?[] values)
+        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 }

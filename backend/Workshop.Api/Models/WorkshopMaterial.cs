@@ -17,6 +17,7 @@ namespace Workshop.Api.Models
 
         public string? ImageUrl { get; set; }
         public string? Specification { get; set; }
+        public string? Location { get; set; }
         public string Unit { get; set; } = "个";
 
         [Column(TypeName = "decimal(18,2)")]

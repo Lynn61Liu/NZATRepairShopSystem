@@ -63,6 +63,7 @@ export function JobDetailPage() {
     mechLoading,
     paintService,
     paintLoading,
+    paintInitialized,
     tagOptions,
     setLoadError,
     setDeleteError,
@@ -168,6 +169,7 @@ export function JobDetailPage() {
         mechLoading={mechLoading}
         paintService={paintService}
         paintLoading={paintLoading}
+        paintInitialized={paintInitialized}
         onAddWof={createWofServer}
         onRefreshWof={importWofRecords}
         onDeleteWofServer={deleteWofServer}

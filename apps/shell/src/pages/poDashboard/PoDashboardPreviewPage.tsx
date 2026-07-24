@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { GmailIcon } from "@/components/common/GmailSearchButton";
 import { XeroIcon } from "@/components/common/XeroButton";
@@ -11,6 +11,7 @@ import {
   confirmPoNumber,
   fetchPoTodo,
   manualConfirmPoSent,
+  refreshPoXeroSummaries,
 } from "@/features/poTodo/poTodoApi";
 import type { PoTodoRow, PoTodoTab } from "@/features/poTodo/poTodo.types";
 import {
@@ -32,6 +33,28 @@ const TABS: Array<{ key: PoTodoTab; label: string }> = [
 ];
 const PO_TODO_PAGE_SIZE = 15;
 const ALL_CUSTOMERS = "all";
+const XERO_SUBTOTAL_REFRESH_TTL_MS = 60_000;
+
+const xeroSubtotalRefreshCache = new Map<
+  string,
+  { requestedAt: number; request: ReturnType<typeof refreshPoXeroSummaries> }
+>();
+
+function loadXeroSubtotals(jobIds: number[]) {
+  const key = [...jobIds].sort((left, right) => left - right).join(",");
+  const cached = xeroSubtotalRefreshCache.get(key);
+  const now = Date.now();
+  if (cached && now - cached.requestedAt < XERO_SUBTOTAL_REFRESH_TTL_MS) {
+    return cached.request;
+  }
+
+  const request = refreshPoXeroSummaries(jobIds).catch((error) => {
+    xeroSubtotalRefreshCache.delete(key);
+    throw error;
+  });
+  xeroSubtotalRefreshCache.set(key, { requestedAt: now, request });
+  return request;
+}
 
 function xeroInvoiceUrl(invoiceId?: string | null) {
   return invoiceId ? `https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(invoiceId)}` : "";
@@ -81,8 +104,12 @@ export function PoDashboardPreviewPage() {
   const [ignoringJobIds, setIgnoringJobIds] = useState<number[]>([]);
   const [confirmingJobIds, setConfirmingJobIds] = useState<number[]>([]);
   const [batchConfirming, setBatchConfirming] = useState(false);
+  const [refreshingSubtotals, setRefreshingSubtotals] = useState(false);
+  const [refreshingDashboard, setRefreshingDashboard] = useState(false);
+  const loadRequestIdRef = useRef(0);
 
   const loadDashboard = useCallback(async (options?: { background?: boolean }) => {
+    const requestId = ++loadRequestIdRef.current;
     const background = options?.background === true;
     if (!background) {
       setLoading(true);
@@ -90,15 +117,17 @@ export function PoDashboardPreviewPage() {
     setError(null);
     try {
       const result = await fetchPoTodo();
+      if (requestId !== loadRequestIdRef.current) return;
       setAllRows(result.items);
     } catch (err) {
+      if (requestId !== loadRequestIdRef.current) return;
       const message = err instanceof Error ? err.message : "Failed to load PO TODO list";
       setError(message);
       if (!background) {
         setAllRows([]);
       }
     } finally {
-      if (!background) {
+      if (requestId === loadRequestIdRef.current) {
         setLoading(false);
       }
     }
@@ -107,6 +136,30 @@ export function PoDashboardPreviewPage() {
   useEffect(() => {
     void loadDashboard();
   }, [loadDashboard]);
+
+  useEffect(() => {
+    const refreshWhenActive = () => {
+      if (document.visibilityState === "visible")
+        void loadDashboard({ background: true });
+    };
+    window.addEventListener("focus", refreshWhenActive);
+    document.addEventListener("visibilitychange", refreshWhenActive);
+    return () => {
+      window.removeEventListener("focus", refreshWhenActive);
+      document.removeEventListener("visibilitychange", refreshWhenActive);
+    };
+  }, [loadDashboard]);
+
+  const handleRefreshDashboard = async () => {
+    setRefreshingDashboard(true);
+    try {
+      await loadDashboard({ background: true });
+    } catch {
+      // loadDashboard already displays the request error.
+    } finally {
+      setRefreshingDashboard(false);
+    }
+  };
 
   const hasProcessingConfirmations = useMemo(
     () => allRows.some((row) => row.confirmationStatus === "processing"),
@@ -172,6 +225,39 @@ export function PoDashboardPreviewPage() {
     const start = (currentPage - 1) * PO_TODO_PAGE_SIZE;
     return filteredRows.slice(start, start + PO_TODO_PAGE_SIZE);
   }, [currentPage, filteredRows]);
+  const xeroRefreshKey = activeTab === "awaitingPo"
+    ? rows.map((row) => row.jobId).join(",")
+    : "";
+
+  useEffect(() => {
+    if (!xeroRefreshKey) return;
+
+    const jobIds = xeroRefreshKey.split(",").map(Number).filter(Boolean);
+    let cancelled = false;
+    setRefreshingSubtotals(true);
+    void loadXeroSubtotals(jobIds)
+      .then((summaries) => {
+        if (cancelled) return;
+        const byJobId = new Map(summaries.map((summary) => [summary.jobId, summary]));
+        setAllRows((prev) => prev.map((row) => {
+          const summary = byJobId.get(row.jobId);
+          return summary
+            ? { ...row, xeroSubtotal: summary.subtotal, reference: summary.reference }
+            : row;
+        }));
+      })
+      .catch(() => {
+        // Keep the cached database value visible if Xero is temporarily unavailable.
+      })
+      .finally(() => {
+        if (!cancelled) setRefreshingSubtotals(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [xeroRefreshKey]);
+
   useEffect(() => {
     if (currentPage > totalPages) {
       setCurrentPage(totalPages);
@@ -312,6 +398,7 @@ export function PoDashboardPreviewPage() {
     try {
       const result = await completePoJobs(targetIds);
       if (result.updated > 0 || result.skipped === targetIds.length) {
+        loadRequestIdRef.current += 1;
         setAllRows((prev) => prev.filter((row) => !targetIds.includes(row.jobId)));
         setSelectedIds((prev) => prev.filter((id) => !targetIds.includes(id)));
       }
@@ -328,6 +415,7 @@ export function PoDashboardPreviewPage() {
     try {
       const result = await completePoJobs([row.jobId]);
       if (result.updated > 0 || result.skipped > 0) {
+        loadRequestIdRef.current += 1;
         toast.success("已忽略");
         setSelectedIds((prev) => prev.filter((id) => id !== row.jobId));
         setAllRows((prev) => prev.filter((item) => item.jobId !== row.jobId));
@@ -345,7 +433,7 @@ export function PoDashboardPreviewPage() {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-normal text-[var(--ds-text)]">PO TO REQUEST</h1>
+          <h1 className="text-2xl font-semibold tracking-normal text-[var(--ds-text)]">PO REQUEST</h1>
         </div>
       </div>
 
@@ -416,11 +504,11 @@ export function PoDashboardPreviewPage() {
       {activeTab === "pendingSend" ? (
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Button
-            leftIcon={allSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
-            onClick={toggleAll}
-            disabled={selectableRows.length === 0 || ignoringJobIds.length > 0}
+            leftIcon={<RefreshCw className={`h-4 w-4 ${refreshingDashboard ? "animate-spin" : ""}`} />}
+            onClick={() => void handleRefreshDashboard()}
+            disabled={refreshingDashboard}
           >
-            全选
+            {refreshingDashboard ? "刷新中…" : "刷新"}
           </Button>
           <Button
             variant="primary"
@@ -433,13 +521,11 @@ export function PoDashboardPreviewPage() {
         </div>
       ) : activeTab === "awaitingPo" ? (
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button
-            leftIcon={allSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
-            onClick={toggleAll}
-            disabled={selectableRows.length === 0 || batchConfirming}
-          >
-            全选
-          </Button>
+          {refreshingSubtotals ? (
+            <span className="inline-flex items-center gap-1.5 text-sm text-[var(--ds-muted)]">
+              <RefreshCw className="h-4 w-4 animate-spin" /> 正在更新 Xero Subtotal…
+            </span>
+          ) : null}
           <Button
             variant="primary"
             leftIcon={<Check className="h-4 w-4" />}
@@ -459,15 +545,7 @@ export function PoDashboardPreviewPage() {
       ) : activeTab === "invoiced" ? (
         <div className="flex justify-end">
           <Button
-            leftIcon={allSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
-            onClick={toggleAll}
-            disabled={rows.length === 0}
-          >
-            全选
-          </Button>
-          <Button
             variant="primary"
-            className="ml-2"
             leftIcon={<Check className="h-4 w-4" />}
             onClick={() => void handleCompleteSelected()}
             disabled={selectedIds.length === 0 || ignoringJobIds.length > 0}
@@ -483,7 +561,20 @@ export function PoDashboardPreviewPage() {
           <table className="w-full min-w-[1180px] border-collapse text-sm">
             <thead>
               <tr className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-normal text-[var(--ds-muted)]">
-                <th className="w-12 px-3 py-3"></th>
+                <th className="w-12 px-3 py-3">
+                  <button
+                    type="button"
+                    onClick={toggleAll}
+                    disabled={selectableRows.length === 0
+                      || (activeTab === "pendingSend" && ignoringJobIds.length > 0)
+                      || (activeTab === "awaitingPo" && batchConfirming)}
+                    className="-m-1 inline-flex rounded-[6px] p-1 text-slate-500 transition hover:bg-white hover:text-[var(--ds-primary)] disabled:cursor-not-allowed disabled:text-slate-300"
+                    title={allSelected ? "取消全选" : "全选当前页"}
+                    aria-label={allSelected ? "取消选择当前页全部记录" : "选择当前页全部记录"}
+                  >
+                    {allSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+                  </button>
+                </th>
                 <th className="px-3 py-3">创建时间</th>
                 <th className="px-3 py-3">Code</th>
                 <th className="px-3 py-3">车牌</th>
@@ -588,7 +679,13 @@ export function PoDashboardPreviewPage() {
                     ) : null}
                     {showPoDraftColumn ? (
                       <td className="px-3 py-3">
-                        <Button href={`/jobs/${row.jobId}?tab=PO`}>发PO</Button>
+                        <Button
+                          href={`/jobs/${row.jobId}?tab=PO`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          发PO
+                        </Button>
                       </td>
                     ) : null}
                     {showSentColumn ? (

@@ -37,9 +37,9 @@ VALUES
 )
 ON CONFLICT (plate)
 DO UPDATE SET
-  make = EXCLUDED.make,
-  model = EXCLUDED.model,
-  year = EXCLUDED.year,
+  make = COALESCE(NULLIF(EXCLUDED.make, ''), vehicles.make),
+  model = COALESCE(NULLIF(EXCLUDED.model, ''), vehicles.model),
+  year = COALESCE(NULLIF(EXCLUDED.year, 0), vehicles.year),
   vin = EXCLUDED.vin,
   engine = EXCLUDED.engine,
   rego_expiry = EXCLUDED.rego_expiry,

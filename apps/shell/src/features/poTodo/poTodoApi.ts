@@ -12,7 +12,7 @@ import type {
 
 export async function fetchPoTodo(tab?: PoTodoTab, page = 1, pageSize = 15): Promise<PoTodoListResponse> {
   if (!tab) {
-    const res = await requestJson<PoTodoListResponse>("/api/po/todo");
+    const res = await requestJson<PoTodoListResponse>("/api/po/todo", { cache: "no-store" });
     if (!res.ok || !res.data) {
       throw new Error(res.error || "Failed to load PO TODO list");
     }
@@ -21,7 +21,9 @@ export async function fetchPoTodo(tab?: PoTodoTab, page = 1, pageSize = 15): Pro
 
   const query = new URLSearchParams({ status: tab, page: String(page), pageSize: String(pageSize) });
   const queryString = query.toString();
-  const res = await requestJson<PoTodoListResponse>(`/api/po/todo${queryString ? `?${queryString}` : ""}`);
+  const res = await requestJson<PoTodoListResponse>(`/api/po/todo${queryString ? `?${queryString}` : ""}`, {
+    cache: "no-store",
+  });
   if (!res.ok || !res.data) {
     throw new Error(res.error || "Failed to load PO TODO list");
   }

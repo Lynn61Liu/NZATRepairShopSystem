@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useRef, type ClipboardEvent, type DragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { ChevronDown, Clock3, ExternalLink, FileSearch, Mail, MailCheck, MessageSquareText, Paperclip, Send, Settings2, X } from "lucide-react";
+import { ChevronDown, Clock3, ExternalLink, FileInput, FileSearch, Mail, MailCheck, MessageSquareText, Paperclip, Send, Settings2, X } from "lucide-react";
 import { Button, Card, Input, Select } from "@/components/ui";
 import { buildSharedEmailSignatureHtml } from "@/features/email/emailSignature";
 import { withApiBase } from "@/utils/api";
@@ -949,8 +949,7 @@ export function PoRequestPanel({
         </div>
       ) : null}
 
-      <div className={`${readOnly ? "mt-4" : "mt-6"} flex flex-wrap items-center justify-between gap-3`}>
-        <div className="space-y-3">
+      <div className={`${readOnly ? "mt-4" : "mt-6"} flex flex-wrap items-center gap-3`}>
         {stateRounds.length === 0 ? (
           <div className="flex items-center gap-2">
             {stateMeta.Draft ?? <MailCheck className="h-4 w-4 text-slate-500" />}
@@ -971,7 +970,6 @@ export function PoRequestPanel({
             ))}
           </div>
         )}
-        </div>
         <Button
           className="h-10 px-3"
           leftIcon={<XeroIcon className="h-5 w-5" />}
@@ -980,6 +978,15 @@ export function PoRequestPanel({
           title={hasXeroInvoice ? "Open Xero Invoice" : "尚未关联 Xero Invoice"}
         >
           Xero
+        </Button>
+        <Button
+          className="h-10 !border-blue-600 !bg-blue-600 px-3 !text-white hover:!bg-blue-700"
+          leftIcon={<FileInput className={`h-5 w-5 ${pullingInvoicePdf ? "animate-pulse" : ""}`} />}
+          onClick={handleInsertInvoice}
+          disabled={!onPullInvoicePdf || readOnly || !canEditDraft || Boolean(pullingInvoicePdf)}
+          title={pullingInvoicePdf ? "正在拉取并插入 Invoice" : "插入 Invoice"}
+        >
+          {pullingInvoicePdf ? "插入中…" : "插入 INV"}
         </Button>
       </div>
 

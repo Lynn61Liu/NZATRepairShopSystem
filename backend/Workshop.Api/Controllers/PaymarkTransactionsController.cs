@@ -27,6 +27,7 @@ public sealed class PaymarkTransactionsController : ControllerBase
     private readonly JobPoStateService _jobPoStateService;
     private readonly XeroInvoiceService _xeroInvoiceService;
     private readonly CarjamImportService _carjamImportService;
+    private readonly InvoiceOutboxService _invoiceOutboxService;
 
     public PaymarkTransactionsController(
         AppDbContext db,
@@ -36,7 +37,8 @@ public sealed class PaymarkTransactionsController : ControllerBase
         JobInvoiceService jobInvoiceService,
         JobPoStateService jobPoStateService,
         XeroInvoiceService xeroInvoiceService,
-        CarjamImportService carjamImportService)
+        CarjamImportService carjamImportService,
+        InvoiceOutboxService invoiceOutboxService)
     {
         _db = db;
         _appCache = appCache;
@@ -46,6 +48,7 @@ public sealed class PaymarkTransactionsController : ControllerBase
         _jobPoStateService = jobPoStateService;
         _xeroInvoiceService = xeroInvoiceService;
         _carjamImportService = carjamImportService;
+        _invoiceOutboxService = invoiceOutboxService;
     }
 
     [HttpGet]
@@ -195,6 +198,8 @@ public sealed class PaymarkTransactionsController : ControllerBase
         var row = await _db.PaymarkTransactions.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (row is null)
             return NotFound(new { error = "Paymark transaction not found." });
+        if (Math.Round(row.PurchaseAmount, 2, MidpointRounding.AwayFromZero) <= 0)
+            return BadRequest(new { error = "EFTPOS purchase amount must be greater than zero." });
 
         var job = await _db.Jobs.FirstOrDefaultAsync(x => x.Id == request.JobId.Value, ct);
         if (job is null)
@@ -516,11 +521,13 @@ public sealed class PaymarkTransactionsController : ControllerBase
                 PaymentDate = paymentDate,
                 Reference = paymentReference,
                 EpostReferenceId = row.RetrievalRef,
+                RequireExactAmountMatch = true,
             },
             ct);
 
-        var canRecordLocalPayment = PayloadIndicatesAuthorisedInvoice(paymentResult.Payload)
-            || ErrorIndicatesAuthorisedInvoice(paymentResult.Error);
+        var canRecordLocalPayment = paymentResult.ExactAmountVerified
+            && (PayloadIndicatesAuthorisedInvoice(paymentResult.Payload)
+                || ErrorIndicatesAuthorisedInvoice(paymentResult.Error));
         if (!paymentResult.Ok)
         {
             if (canRecordLocalPayment)
@@ -664,7 +671,23 @@ public sealed class PaymarkTransactionsController : ControllerBase
 
         try
         {
-            await _carjamImportService.ImportByPlateAsync(normalized, ct);
+            var result = await _carjamImportService.ImportByPlateAsync(normalized, ct);
+            if (!result.Success || result.Vehicle is null)
+                return;
+
+            using var followUpTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var followUpCt = followUpTimeout.Token;
+            var affectedJobIds = await (
+                    from job in _db.Jobs.AsNoTracking()
+                    join vehicle in _db.Vehicles.AsNoTracking() on job.VehicleId equals vehicle.Id
+                    where vehicle.Plate == result.Vehicle.Plate
+                    select job.Id)
+                .ToListAsync(followUpCt);
+            foreach (var jobId in affectedJobIds)
+                await _invoiceOutboxService.EnqueueSyncVehicleReferenceAsync(jobId, followUpCt);
+            await Task.WhenAll(affectedJobIds.Select(jobId =>
+                _appCache.RemoveAsync($"job:detail:{jobId}:v1", followUpCt)));
+            await TouchJobsListVersionAsync(followUpCt);
         }
         catch
         {
@@ -812,6 +835,8 @@ public sealed class PaymarkTransactionsController : ControllerBase
         }
 
         await _db.SaveChangesAsync(ct);
+        using (var referenceSyncTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
+            await _invoiceOutboxService.EnqueueSyncVehicleReferenceAsync(jobId, referenceSyncTimeout.Token);
         if (archivedNow)
         {
             await _jobPoStateService.SyncStateForJobAsync(jobData.Job.Id, ct);
@@ -876,6 +901,8 @@ public sealed class PaymarkTransactionsController : ControllerBase
         jobData.Job.InvoiceReference = jobInvoice.Reference;
         jobData.Job.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        using (var referenceSyncTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
+            await _invoiceOutboxService.EnqueueSyncVehicleReferenceAsync(jobId, referenceSyncTimeout.Token);
 
         return PaymarkQuickInvoiceResult.Success(jobInvoice, createResult.Payload);
     }

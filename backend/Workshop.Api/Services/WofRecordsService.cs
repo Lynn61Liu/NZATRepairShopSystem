@@ -212,7 +212,6 @@ public class WofRecordsService
         var jobs = await (
                 from j in _db.Jobs.AsNoTracking()
                 join v in _db.Vehicles.AsNoTracking() on j.VehicleId equals v.Id
-                where !EF.Functions.ILike(j.Status, "archived")
                 where v.Plate != null && v.Plate != ""
                 orderby j.CreatedAt descending
                 select new
@@ -234,6 +233,9 @@ public class WofRecordsService
             : await _db.JobWofRecords
                 .Where(x => targetJobIds.Contains(x.JobId) && x.SourceFile == sourceFile)
                 .ToDictionaryAsync(x => (x.JobId, x.ExcelRowNo), ct);
+        var existingCalendarRecords = await _db.WofCalendarRecords
+            .Where(x => x.SourceFile == sourceFile)
+            .ToDictionaryAsync(x => x.ExcelRowNo, ct);
 
         var now = DateTime.UtcNow;
         var totalRows = 0;
@@ -241,6 +243,7 @@ public class WofRecordsService
         var updated = 0;
         var skipped = 0;
         var missingRego = 0;
+        var missingDate = 0;
         var unmatchedRego = 0;
 
         await using var tx = await _db.Database.BeginTransactionAsync(ct);
@@ -258,17 +261,55 @@ public class WofRecordsService
             }
 
             var regoKey = NormalizePlate(rego);
-            if (!latestJobByPlate.TryGetValue(regoKey, out var jobId))
+            var matchedJob = latestJobByPlate.TryGetValue(regoKey, out var jobId);
+            var parsedOccurredAt = GetDateTime(row, colDate);
+            var occurredAt = EnsureUtc(parsedOccurredAt ?? now);
+            var recordState = ParseRecordState(GetString(row, colRecordState)) ?? WofRecordState.Pass;
+            var excelRowNo = rowIndex + 2;
+
+            if (!parsedOccurredAt.HasValue)
+            {
+                missingDate++;
+                if (existingCalendarRecords.TryGetValue(excelRowNo, out var invalidCalendarRecord))
+                    _db.WofCalendarRecords.Remove(invalidCalendarRecord);
+            }
+            else
+            {
+                if (existingCalendarRecords.TryGetValue(excelRowNo, out var calendarRecord))
+                {
+                    calendarRecord.JobId = matchedJob ? jobId : null;
+                    calendarRecord.OccurredAt = occurredAt;
+                    calendarRecord.Rego = rego.Trim();
+                    calendarRecord.MakeModel = GetString(row, colMakeModel);
+                    calendarRecord.RecordState = recordState;
+                    calendarRecord.ImportedAt = now;
+                    calendarRecord.UpdatedAt = now;
+                }
+                else
+                {
+                    _db.WofCalendarRecords.Add(new WofCalendarRecord
+                    {
+                        SourceFile = sourceFile,
+                        ExcelRowNo = excelRowNo,
+                        JobId = matchedJob ? jobId : null,
+                        OccurredAt = occurredAt,
+                        Rego = rego.Trim(),
+                        MakeModel = GetString(row, colMakeModel),
+                        RecordState = recordState,
+                        ImportedAt = now,
+                        UpdatedAt = now,
+                    });
+                }
+            }
+
+            if (!matchedJob)
             {
                 unmatchedRego++;
                 skipped++;
                 continue;
             }
 
-            var occurredAt = EnsureUtc(GetDateTime(row, colDate) ?? now);
-            var recordState = ParseRecordState(GetString(row, colRecordState)) ?? WofRecordState.Pass;
             var uiState = ParseUiState(GetString(row, colUiState)) ?? MapUiState(recordState);
-            var excelRowNo = rowIndex + 2;
             var newWofDate = GetDateOnly(row, colNewWofDate);
             var key = (jobId, excelRowNo);
 
@@ -327,10 +368,7 @@ public class WofRecordsService
             inserted++;
         }
 
-        if (inserted > 0 || updated > 0)
-        {
-            await _db.SaveChangesAsync(ct);
-        }
+        await _db.SaveChangesAsync(ct);
 
         await tx.CommitAsync(ct);
 
@@ -342,6 +380,7 @@ public class WofRecordsService
             totalRows,
             unmatchedRego,
             missingRego,
+            missingDate,
             sourceFile,
             sheetName = string.IsNullOrWhiteSpace(sheetName) ? "default" : sheetName,
             matchedJobs = latestJobByPlate.Count,

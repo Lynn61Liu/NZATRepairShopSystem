@@ -1,8 +1,8 @@
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Plus, RefreshCw, Search, Settings2, StickyNote } from "lucide-react";
-import { Button, Card, Input, Pagination, Select, Textarea } from "@/components/ui";
-import { getXeroInvoiceUrl } from "@/components/common/XeroButton";
+import { Button, Card, Input, Pagination, Select, Textarea, useToast } from "@/components/ui";
+import { getXeroInvoiceUrl, XeroIcon } from "@/components/common/XeroButton";
 import { requestJson } from "@/utils/api";
 import { paginate } from "@/utils/pagination";
 
@@ -50,11 +50,13 @@ type PaymarkTransactionRow = {
 
 type JobSearchRow = {
   id: string;
+  vehicleStatus: string;
   plate: string;
   vehicleModel: string;
   customerName: string;
   customerCode: string;
   notes: string;
+  externalInvoiceId?: string | null;
   createdAt: string;
 };
 
@@ -357,6 +359,7 @@ const paymentFilterOptions: Array<{ key: PaymentWayFilter; label: string }> = [
 const GROUPS_PER_PAGE = 7;
 
 export function InvoicePage() {
+  const toast = useToast();
   const [rows, setRows] = useState<InvoicePaymentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -370,6 +373,7 @@ export function InvoicePage() {
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [editingPaymentDate, setEditingPaymentDate] = useState("");
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
+  const [refreshingXeroPaymentId, setRefreshingXeroPaymentId] = useState<string | null>(null);
   const [paymarkDate, setPaymarkDate] = useState(() => formatDateInputValue(new Date()));
   const [paymarkRows, setPaymarkRows] = useState<PaymarkTransactionRow[]>([]);
   const [paymarkLoading, setPaymarkLoading] = useState(false);
@@ -379,6 +383,7 @@ export function InvoicePage() {
   const [activePaymarkId, setActivePaymarkId] = useState<string | null>(null);
   const [paymarkActionMode, setPaymarkActionMode] = useState<PaymarkActionMode>("match");
   const [paymarkActionSaving, setPaymarkActionSaving] = useState(false);
+  const [paymarkMatchSavingJobId, setPaymarkMatchSavingJobId] = useState<string | null>(null);
   const [paymarkSettlementId, setPaymarkSettlementId] = useState<string | null>(null);
   const [paymarkActionError, setPaymarkActionError] = useState("");
   const [paymarkNote, setPaymarkNote] = useState("");
@@ -629,6 +634,31 @@ export function InvoicePage() {
     }
   };
 
+  const refreshPaymentFromXero = async (row: InvoicePaymentRow) => {
+    if (refreshingXeroPaymentId !== null) return;
+
+    setRefreshingXeroPaymentId(row.id);
+    try {
+      const res = await requestJson<{ payment?: InvoicePaymentRow }>(
+        `/api/invoice-payments/${encodeURIComponent(row.id)}/refresh-xero`,
+        { method: "POST" }
+      );
+
+      if (!res.ok || !res.data?.payment) {
+        toast.error(res.error || "Failed to refresh invoice from Xero.");
+        return;
+      }
+
+      const nextRow = res.data.payment;
+      setRows((currentRows) => currentRows.map((item) => (item.id === nextRow.id ? nextRow : item)));
+      toast.success(nextRow.invoiceNumber ? `Xero invoice ${nextRow.invoiceNumber} 已刷新` : "Xero invoice 已刷新");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to refresh invoice from Xero.");
+    } finally {
+      setRefreshingXeroPaymentId(null);
+    }
+  };
+
   const syncPaymarkTransactions = async () => {
     setPaymarkSyncing(true);
     setPaymarkError("");
@@ -833,6 +863,7 @@ export function InvoicePage() {
     }
 
     setPaymarkActionSaving(true);
+    setPaymarkMatchSavingJobId(jobId);
     setPaymarkActionError("");
     try {
       const res = await requestJson<{
@@ -862,6 +893,7 @@ export function InvoicePage() {
       setActivePaymarkId(null);
     } finally {
       setPaymarkActionSaving(false);
+      setPaymarkMatchSavingJobId(null);
     }
   };
 
@@ -1378,27 +1410,58 @@ export function InvoicePage() {
                           {jobSearchLoading ? (
                             <div className="text-sm text-[var(--ds-muted)]">Searching...</div>
                           ) : jobSearch.trim().length >= 2 && jobSearchRows.length === 0 ? (
-                            <div className="text-sm text-[var(--ds-muted)]">No matching open jobs found.</div>
+                            <div className="text-sm text-[var(--ds-muted)]">No matching jobs found.</div>
                           ) : null}
                           {jobSearchRows.length > 0 ? (
                             <div className="overflow-hidden rounded-[8px] border border-[var(--ds-border)] bg-white">
                               {jobSearchRows.map((job) => (
-                                <button
+                                <div
                                   key={job.id}
-                                  type="button"
-                                  onClick={() => void matchPaymarkJob(row, job.id)}
-                                  disabled={paymarkActionSaving}
-                                  className="grid w-full grid-cols-[90px_120px_1fr_140px_110px_90px] gap-3 border-t border-[var(--ds-border)] bg-white px-3 py-2 text-left text-sm first:border-t-0 hover:bg-blue-50 disabled:cursor-wait disabled:opacity-70"
+                                  className="grid w-full grid-cols-[90px_120px_1fr_140px_110px_90px] items-center gap-3 border-t border-[var(--ds-border)] bg-white px-3 py-2 text-left text-sm first:border-t-0 hover:bg-blue-50"
                                 >
-                                  <span className="font-semibold">#{job.id}</span>
-                                  <span className="font-semibold text-blue-600">{job.plate || "-"}</span>
-                                  <span>{job.vehicleModel || "-"}</span>
+                                  <span className="flex min-w-0 items-center gap-1.5 font-semibold">
+                                    <a
+                                      href={`/jobs/${job.id}`}
+                                      className="shrink-0 hover:text-blue-700 hover:underline"
+                                    >
+                                      #{job.id}
+                                    </a>
+                                    {job.vehicleStatus?.trim().toLowerCase() === "archived" ? (
+                                      <span className="truncate text-[10px] font-medium text-amber-700">已归档</span>
+                                    ) : null}
+                                  </span>
+                                  <a
+                                    href={`/jobs/${job.id}`}
+                                    className="font-semibold text-blue-600 hover:text-blue-700 hover:underline"
+                                  >
+                                    {job.plate || "-"}
+                                  </a>
+                                  <span className="flex min-w-0 items-center gap-1.5">
+                                    <span className="truncate">{job.vehicleModel || "-"}</span>
+                                    {job.externalInvoiceId ? (
+                                      <a
+                                        href={getXeroInvoiceUrl(job.externalInvoiceId)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#13B5EA]/40"
+                                        title="Open invoice in Xero"
+                                        aria-label={`Open Xero invoice for job ${job.id}`}
+                                      >
+                                        <XeroIcon className="h-4 w-4" />
+                                      </a>
+                                    ) : null}
+                                  </span>
                                   <span>{job.customerCode || job.customerName || "-"}</span>
                                   <span className="text-xs text-[var(--ds-muted)]">{job.createdAt}</span>
-                                  <span className="text-xs font-semibold text-blue-700">
-                                    {paymarkActionSaving ? "Saving..." : "Match"}
-                                  </span>
-                                </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void matchPaymarkJob(row, job.id)}
+                                    disabled={paymarkActionSaving}
+                                    className="inline-flex h-8 items-center justify-center rounded-[8px] border border-blue-600 bg-blue-600 px-3 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-wait disabled:opacity-70"
+                                  >
+                                    {paymarkMatchSavingJobId === job.id ? "Saving..." : "Match"}
+                                  </button>
+                                </div>
                               ))}
                             </div>
                           ) : null}
@@ -1637,7 +1700,7 @@ export function InvoicePage() {
                         </div>
                       </div>
                     ) : null}
-                    <div className="grid grid-cols-[110px_150px_1fr_1fr_1fr_120px_120px_140px_240px_1fr] gap-3 bg-[rgba(0,0,0,0.03)] px-5 py-3 text-xs font-semibold uppercase tracking-[0.04em] text-[var(--ds-muted)]">
+                    <div className="grid grid-cols-[110px_150px_1fr_1fr_1fr_150px_120px_140px_240px_1fr] gap-3 bg-[rgba(0,0,0,0.03)] px-5 py-3 text-xs font-semibold uppercase tracking-[0.04em] text-[var(--ds-muted)]">
                       <div>Job ID</div>
                       <div>Invoice Number</div>
                       <div>Contact</div>
@@ -1656,9 +1719,16 @@ export function InvoicePage() {
                         group.items.map((row) => (
                           <div
                             key={row.id}
-                            className="grid grid-cols-[110px_150px_1fr_1fr_1fr_120px_120px_140px_240px_1fr] gap-3 border-t border-[var(--ds-border)] px-5 py-4 text-sm text-[var(--ds-text)] first:border-t-0"
+                            className="grid grid-cols-[110px_150px_1fr_1fr_1fr_150px_120px_140px_240px_1fr] gap-3 border-t border-[var(--ds-border)] px-5 py-4 text-sm text-[var(--ds-text)] first:border-t-0"
                           >
-                            <div className="font-semibold text-[var(--ds-text)]">#{row.jobId}</div>
+                            <div className="font-semibold">
+                              <a
+                                href={`/jobs/${row.jobId}`}
+                                className="text-blue-600 hover:text-blue-700 hover:underline"
+                              >
+                                #{row.jobId}
+                              </a>
+                            </div>
                             <div className="font-medium">
                               {row.xeroInvoiceId ? (
                                 <a
@@ -1676,7 +1746,27 @@ export function InvoicePage() {
                             <div>{row.contact || "-"}</div>
                             <div className="break-words">{row.reference || "-"}</div>
                             <div className="break-words text-[var(--ds-muted)]">{row.jobNote || "-"}</div>
-                            <div className="text-right tabular-nums">{formatCurrency(row.xeroTotal)}</div>
+                            <div className="flex items-center justify-end gap-1.5 tabular-nums">
+                              <span>{formatCurrency(row.xeroTotal)}</span>
+                              {row.xeroInvoiceId ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void refreshPaymentFromXero(row)}
+                                  disabled={refreshingXeroPaymentId !== null}
+                                  className="inline-flex h-7 items-center gap-1 rounded-[7px] border border-blue-100 bg-blue-50 px-1.5 text-[11px] font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-wait disabled:opacity-70"
+                                  title="从 Xero 重新读取金额"
+                                  aria-label={`刷新 Xero invoice ${row.invoiceNumber || row.xeroInvoiceId}`}
+                                >
+                                  <RefreshCw
+                                    className={[
+                                      "h-3 w-3",
+                                      refreshingXeroPaymentId === row.id ? "animate-spin" : "",
+                                    ].join(" ")}
+                                  />
+                                  刷新
+                                </button>
+                              ) : null}
+                            </div>
                             <div className="text-right tabular-nums">{formatCurrency(row.paymentTotal ?? row.amount)}</div>
                             <div>
                               <span

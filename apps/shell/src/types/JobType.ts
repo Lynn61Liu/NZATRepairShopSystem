@@ -35,7 +35,7 @@ export type JobRow = {
   createdAt: string; 
 };
 
-export type TimeRange = "" | "week" | "lastWeek" | "month" | "custom";
+export type TimeRange = "" | "today" | "week" | "lastWeek" | "month" | "custom";
 export type PaintFilterStatus =
   | ""
   | "on_hold"
